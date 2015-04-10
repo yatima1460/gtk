@@ -32,10 +32,12 @@
 #include "gtktreestore.h"
 #include "gtktreeview.h"
 #include "gtkbox.h"
+#include "gtkiconview.h"
 
 G_BEGIN_DECLS
 
 #define SETTINGS_KEY_LOCATION_MODE       "location-mode"
+#define SETTINGS_KEY_VIEW_MODE           "view-mode"
 #define SETTINGS_KEY_SHOW_HIDDEN         "show-hidden"
 #define SETTINGS_KEY_SHOW_SIZE_COLUMN    "show-size-column"
 #define SETTINGS_KEY_SORT_COLUMN         "sort-column"

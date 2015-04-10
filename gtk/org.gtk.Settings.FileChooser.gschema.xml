@@ -43,6 +43,11 @@
     <value nick='12h' value='1'/>
   </enum>
 
+  <enum id='org.gtk.Settings.FileChooser.ViewMode'>
+    <value nick='list-view' value='0'/>
+    <value nick='icon-view' value='1'/>
+  </enum>
+
   <schema id='org.gtk.Settings.FileChooser' path='/org/gtk/settings/file-chooser/'>
     <key name='last-folder-uri' type='s'>
       <default>""</default>
@@ -55,6 +60,9 @@
         for the filename as well, for the benefit of typing-oriented users. The
         possible values for these modes are "path-bar" and "filename-entry".
       </description>
+    </key>
+    <key name='view-mode' enum='org.gtk.Settings.FileChooser.ViewMode'>
+      <default>'list-view'</default>
     </key>
     <key name='show-hidden' type='b'>
       <default>false</default>
