@@ -35,6 +35,8 @@
 #include "gtkcelllayout.h"
 #include "gtkcellrenderertext.h"
 #include "gtkcellrendererpixbuf.h"
+#include "gtkcloudprovidermanager.h"
+#include "gtkcloudprovider.h"
 #include "gtkfilesystem.h"
 #include "gtkicontheme.h"
 #include "gtkintl.h"
@@ -109,6 +111,7 @@ struct _GtkPlacesSidebar {
   GtkWidget *new_bookmark_row;
 
   GtkBookmarksManager     *bookmarks_manager;
+  GtkCloudProviderManager *cloud_manager;
   GVolumeMonitor    *volume_monitor;
   GtkTrashMonitor   *trash_monitor;
   GtkSettings       *gtk_settings;
@@ -148,6 +151,9 @@ struct _GtkPlacesSidebar {
   gchar *hostname;
 
   GtkPlacesOpenFlags open_flags;
+
+  GActionGroup *action_group;
+  GtkSidebarRow *menu_selected_row;
 
   guint mounting               : 1;
   guint  drag_data_received    : 1;
@@ -385,11 +391,13 @@ add_place (GtkPlacesSidebar            *sidebar,
            GtkPlacesSidebarPlaceType    place_type,
            GtkPlacesSidebarSectionType  section_type,
            const gchar                 *name,
-           GIcon                       *icon,
+           GIcon                       *left_icon,
+           GIcon                       *right_icon,
            const gchar                 *uri,
            GDrive                      *drive,
            GVolume                     *volume,
            GMount                      *mount,
+           GtkCloudProvider            *cloud_provider,
            const gint                   index,
            const gchar                 *tooltip)
 {
@@ -414,7 +422,8 @@ add_place (GtkPlacesSidebar            *sidebar,
   tooltip_escaped = g_markup_escape_text (tooltip, -1);
   row = g_object_new (GTK_TYPE_SIDEBAR_ROW,
                       "sidebar", sidebar,
-                      "icon", icon,
+                      "left-icon", left_icon,
+                      "right-icon", right_icon,
                       "label", name,
                       "tooltip", tooltip_escaped,
                       "ejectable", show_eject_button,
@@ -425,6 +434,7 @@ add_place (GtkPlacesSidebar            *sidebar,
                       "drive", drive,
                       "volume", volume,
                       "mount", mount,
+                      "cloud-provider", cloud_provider,
                       NULL);
 
   g_free (tooltip_escaped);
@@ -551,7 +561,7 @@ add_special_dirs (GtkPlacesSidebar *sidebar)
     {
       const gchar *path;
       GFile *root;
-      GIcon *icon;
+      GIcon *left_icon;
       gchar *name;
       gchar *mount_uri;
       gchar *tooltip;
@@ -576,18 +586,18 @@ add_special_dirs (GtkPlacesSidebar *sidebar)
       if (!name)
         name = g_file_get_basename (root);
 
-      icon = special_directory_get_gicon (index);
+      left_icon = special_directory_get_gicon (index);
       mount_uri = g_file_get_uri (root);
       tooltip = g_file_get_parse_name (root);
 
       add_place (sidebar, PLACES_XDG_DIR,
                  SECTION_COMPUTER,
-                 name, icon, mount_uri,
-                 NULL, NULL, NULL, 0,
+                 name, left_icon, NULL, mount_uri,
+                 NULL, NULL, NULL, NULL, 0,
                  tooltip);
       g_free (name);
       g_object_unref (root);
-      g_object_unref (icon);
+      g_object_unref (left_icon);
       g_free (mount_uri);
       g_free (tooltip);
 
@@ -690,11 +700,11 @@ on_app_shortcuts_query_complete (GObject      *source,
       gchar *uri;
       gchar *tooltip;
       const gchar *name;
-      GIcon *icon;
+      GIcon *left_icon;
       int pos = 0;
 
       name = g_file_info_get_display_name (info);
-      icon = g_file_info_get_symbolic_icon (info);
+      left_icon = g_file_info_get_symbolic_icon (info);
       uri = g_file_get_uri (file);
       tooltip = g_file_get_parse_name (file);
 
@@ -707,8 +717,8 @@ on_app_shortcuts_query_complete (GObject      *source,
 
       add_place (sidebar, PLACES_BUILT_IN,
                  SECTION_COMPUTER,
-                 name, icon, uri,
-                 NULL, NULL, NULL,
+                 name, left_icon, NULL, uri,
+                 NULL, NULL, NULL, NULL,
                  pos,
                  tooltip);
 
@@ -763,7 +773,7 @@ on_bookmark_query_info_complete (GObject      *source,
   gchar *bookmark_name;
   gchar *mount_uri;
   gchar *tooltip;
-  GIcon *icon;
+  GIcon *left_icon;
 
   info = g_file_query_info_finish (root, result, &error);
   if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
@@ -784,23 +794,23 @@ on_bookmark_query_info_complete (GObject      *source,
     }
 
   if (info)
-    icon = g_object_ref (g_file_info_get_symbolic_icon (info));
+    left_icon = g_object_ref (g_file_info_get_symbolic_icon (info));
   else
-    icon = g_themed_icon_new_with_default_fallbacks (clos->is_native ? ICON_NAME_FOLDER : ICON_NAME_FOLDER_NETWORK);
+    left_icon = g_themed_icon_new_with_default_fallbacks (clos->is_native ? ICON_NAME_FOLDER : ICON_NAME_FOLDER_NETWORK);
 
   mount_uri = g_file_get_uri (root);
   tooltip = g_file_get_parse_name (root);
 
   add_place (sidebar, PLACES_BOOKMARK,
              SECTION_BOOKMARKS,
-             bookmark_name, icon, mount_uri,
-             NULL, NULL, NULL, clos->index,
+             bookmark_name, left_icon, NULL, mount_uri,
+             NULL, NULL, NULL, NULL, clos->index,
              tooltip);
 
   g_free (mount_uri);
   g_free (tooltip);
   g_free (bookmark_name);
-  g_object_unref (icon);
+  g_object_unref (left_icon);
 
 out:
   g_clear_object (&info);
@@ -822,11 +832,15 @@ update_places (GtkPlacesSidebar *sidebar)
   gchar *original_uri, *mount_uri, *name, *identifier;
   GtkListBoxRow *selected;
   gchar *home_uri;
-  GIcon *icon;
+  GIcon *left_icon;
+  GIcon *right_icon;
   GFile *root;
   gchar *tooltip;
   GList *network_mounts, *network_volumes;
   GIcon *new_bookmark_icon;
+  GList *cloud_providers;
+  guint provider_status;
+  const gchar *provider_name;
   GtkStyleContext *context;
 
   /* save original selection */
@@ -854,24 +868,24 @@ update_places (GtkPlacesSidebar *sidebar)
   if (should_show_recent (sidebar))
     {
       mount_uri = "recent:///";
-      icon = g_themed_icon_new_with_default_fallbacks ("document-open-recent-symbolic");
+      left_icon = g_themed_icon_new_with_default_fallbacks ("document-open-recent-symbolic");
       add_place (sidebar, PLACES_BUILT_IN,
                  SECTION_COMPUTER,
-                 _("Recent"), icon, mount_uri,
-                 NULL, NULL, NULL, 0,
+                 _("Recent"), left_icon, NULL, mount_uri,
+                 NULL, NULL, NULL, NULL, 0,
                  _("Recent files"));
-      g_object_unref (icon);
+      g_object_unref (left_icon);
     }
 
   /* home folder */
   home_uri = get_home_directory_uri ();
-  icon = g_themed_icon_new_with_default_fallbacks (ICON_NAME_HOME);
+  left_icon = g_themed_icon_new_with_default_fallbacks (ICON_NAME_HOME);
   add_place (sidebar, PLACES_BUILT_IN,
              SECTION_COMPUTER,
-             _("Home"), icon, home_uri,
-             NULL, NULL, NULL, 0,
+             _("Home"), left_icon, NULL, home_uri,
+             NULL, NULL, NULL, NULL, 0,
              _("Open your personal folder"));
-  g_object_unref (icon);
+  g_object_unref (left_icon);
   g_free (home_uri);
 
   /* desktop */
@@ -880,13 +894,13 @@ update_places (GtkPlacesSidebar *sidebar)
       mount_uri = get_desktop_directory_uri ();
       if (mount_uri)
         {
-          icon = g_themed_icon_new_with_default_fallbacks (ICON_NAME_DESKTOP);
+          left_icon = g_themed_icon_new_with_default_fallbacks (ICON_NAME_DESKTOP);
           add_place (sidebar, PLACES_BUILT_IN,
                      SECTION_COMPUTER,
-                     _("Desktop"), icon, mount_uri,
-                     NULL, NULL, NULL, 0,
+                     _("Desktop"), left_icon, NULL, mount_uri,
+                     NULL, NULL, NULL, NULL, 0,
                      _("Open the contents of your desktop in a folder"));
-          g_object_unref (icon);
+          g_object_unref (left_icon);
           g_free (mount_uri);
         }
     }
@@ -896,30 +910,72 @@ update_places (GtkPlacesSidebar *sidebar)
 
   if (sidebar->show_enter_location)
     {
-      icon = g_themed_icon_new_with_default_fallbacks (ICON_NAME_NETWORK_SERVER);
+      left_icon = g_themed_icon_new_with_default_fallbacks (ICON_NAME_NETWORK_SERVER);
       add_place (sidebar, PLACES_ENTER_LOCATION,
                  SECTION_COMPUTER,
-                 _("Enter Location"), icon, NULL,
-                 NULL, NULL, NULL, 0,
+                 _("Enter Location"), left_icon, NULL, NULL,
+                 NULL, NULL, NULL, NULL, 0,
                  _("Manually enter a location"));
-      g_object_unref (icon);
+      g_object_unref (left_icon);
     }
 
   /* Trash */
   if (!sidebar->local_only && sidebar->show_trash)
     {
       mount_uri = "trash:///"; /* No need to strdup */
-      icon = _gtk_trash_monitor_get_icon (sidebar->trash_monitor);
+      left_icon = _gtk_trash_monitor_get_icon (sidebar->trash_monitor);
       add_place (sidebar, PLACES_BUILT_IN,
                  SECTION_COMPUTER,
-                 _("Trash"), icon, mount_uri,
-                 NULL, NULL, NULL, 0,
+                 _("Trash"), left_icon, NULL, mount_uri,
+                 NULL, NULL, NULL, NULL, 0,
                  _("Open the trash"));
-      g_object_unref (icon);
+      g_object_unref (left_icon);
     }
 
   /* Application-side shortcuts */
   add_application_shortcuts (sidebar);
+
+  /* Cloud providers */
+  cloud_providers = gtk_cloud_provider_manager_get_providers (sidebar->cloud_manager);
+  g_print ("cloud providers length %d\n", g_list_length (cloud_providers));
+  for (l = cloud_providers; l != NULL; l = l->next)
+    {
+      left_icon = gtk_cloud_provider_get_icon (l->data);
+      name = gtk_cloud_provider_get_name (l->data);
+      provider_status = gtk_cloud_provider_get_status (l->data);
+      if (left_icon == NULL || name == NULL || provider_status == GTK_CLOUD_PROVIDER_STATUS_INVALID)
+        continue;
+
+      switch (provider_status)
+        {
+        case GTK_CLOUD_PROVIDER_STATUS_IDLE:
+          right_icon = NULL;
+          break;
+
+        case GTK_CLOUD_PROVIDER_STATUS_SYNCING:
+          right_icon = g_themed_icon_new ("emblem-synchronizing-symbolic");
+          break;
+
+        case GTK_CLOUD_PROVIDER_STATUS_ERROR:
+          right_icon = g_themed_icon_new ("dialog-warning-symbolic");
+          break;
+
+        default:
+          continue;
+        }
+
+      tooltip = g_strdup_printf ("Open %s", name);
+
+      mount_uri = "recent:///";
+      add_place (sidebar, PLACES_BUILT_IN,
+                 SECTION_CLOUD,
+                 name, left_icon, right_icon, mount_uri,
+                 NULL, NULL, NULL, l->data, 0,
+                 tooltip);
+
+      if (right_icon)
+        g_object_unref (right_icon);
+    }
 
   /* go through all connected drives */
   drives = g_volume_monitor_get_connected_drives (sidebar->volume_monitor);
@@ -948,7 +1004,7 @@ update_places (GtkPlacesSidebar *sidebar)
               if (mount != NULL)
                 {
                   /* Show mounted volume in the sidebar */
-                  icon = g_mount_get_symbolic_icon (mount);
+                  left_icon = g_mount_get_symbolic_icon (mount);
                   root = g_mount_get_default_location (mount);
                   mount_uri = g_file_get_uri (root);
                   name = g_mount_get_name (mount);
@@ -956,11 +1012,11 @@ update_places (GtkPlacesSidebar *sidebar)
 
                   add_place (sidebar, PLACES_MOUNTED_VOLUME,
                              SECTION_DEVICES,
-                             name, icon, mount_uri,
-                             drive, volume, mount, 0, tooltip);
+                             name, left_icon, NULL, mount_uri,
+                             drive, volume, mount, NULL, 0, tooltip);
                   g_object_unref (root);
                   g_object_unref (mount);
-                  g_object_unref (icon);
+                  g_object_unref (left_icon);
                   g_free (tooltip);
                   g_free (name);
                   g_free (mount_uri);
@@ -975,15 +1031,15 @@ update_places (GtkPlacesSidebar *sidebar)
                    * cue that the user should remember to yank out the media if
                    * he just unmounted it.
                    */
-                  icon = g_volume_get_symbolic_icon (volume);
+                  left_icon = g_volume_get_symbolic_icon (volume);
                   name = g_volume_get_name (volume);
                   tooltip = g_strdup_printf (_("Mount and open “%s”"), name);
 
                   add_place (sidebar, PLACES_MOUNTED_VOLUME,
                              SECTION_DEVICES,
-                             name, icon, NULL,
-                             drive, volume, NULL, 0, tooltip);
-                  g_object_unref (icon);
+                             name, left_icon, NULL, NULL,
+                             drive, volume, NULL, NULL, 0, tooltip);
+                  g_object_unref (left_icon);
                   g_free (name);
                   g_free (tooltip);
                 }
@@ -1003,15 +1059,15 @@ update_places (GtkPlacesSidebar *sidebar)
                * work.. but it's also for human beings who like to turn off media detection
                * in the OS to save battery juice.
                */
-              icon = g_drive_get_symbolic_icon (drive);
+              left_icon = g_drive_get_symbolic_icon (drive);
               name = g_drive_get_name (drive);
               tooltip = g_strdup_printf (_("Mount and open “%s”"), name);
 
               add_place (sidebar, PLACES_BUILT_IN,
                          SECTION_DEVICES,
-                         name, icon, NULL,
-                         drive, NULL, NULL, 0, tooltip);
-              g_object_unref (icon);
+                         name, left_icon, NULL, NULL,
+                         drive, NULL, NULL, NULL, 0, tooltip);
+              g_object_unref (left_icon);
               g_free (tooltip);
               g_free (name);
             }
@@ -1046,18 +1102,18 @@ update_places (GtkPlacesSidebar *sidebar)
       mount = g_volume_get_mount (volume);
       if (mount != NULL)
         {
-          icon = g_mount_get_symbolic_icon (mount);
+          left_icon = g_mount_get_symbolic_icon (mount);
           root = g_mount_get_default_location (mount);
           mount_uri = g_file_get_uri (root);
           tooltip = g_file_get_parse_name (root);
           name = g_mount_get_name (mount);
           add_place (sidebar, PLACES_MOUNTED_VOLUME,
                      SECTION_DEVICES,
-                     name, icon, mount_uri,
-                     NULL, volume, mount, 0, tooltip);
+                     name, left_icon, NULL, mount_uri,
+                     NULL, volume, mount, NULL, 0, tooltip);
           g_object_unref (mount);
           g_object_unref (root);
-          g_object_unref (icon);
+          g_object_unref (left_icon);
           g_free (name);
           g_free (tooltip);
           g_free (mount_uri);
@@ -1065,13 +1121,13 @@ update_places (GtkPlacesSidebar *sidebar)
       else
         {
           /* see comment above in why we add an icon for an unmounted mountable volume */
-          icon = g_volume_get_symbolic_icon (volume);
+          left_icon = g_volume_get_symbolic_icon (volume);
           name = g_volume_get_name (volume);
           add_place (sidebar, PLACES_MOUNTED_VOLUME,
                      SECTION_DEVICES,
-                     name, icon, NULL,
-                     NULL, volume, NULL, 0, name);
-          g_object_unref (icon);
+                     name, left_icon, NULL, NULL,
+                     NULL, volume, NULL, NULL, 0, name);
+          g_object_unref (left_icon);
           g_free (name);
         }
       g_object_unref (volume);
@@ -1080,13 +1136,13 @@ update_places (GtkPlacesSidebar *sidebar)
 
   /* file system root */
   mount_uri = "file:///"; /* No need to strdup */
-  icon = g_themed_icon_new_with_default_fallbacks (ICON_NAME_FILESYSTEM);
+  left_icon = g_themed_icon_new_with_default_fallbacks (ICON_NAME_FILESYSTEM);
   add_place (sidebar, PLACES_BUILT_IN,
              SECTION_DEVICES,
-             sidebar->hostname, icon, mount_uri,
-             NULL, NULL, NULL, 0,
+             sidebar->hostname, left_icon, NULL, mount_uri,
+             NULL, NULL, NULL, NULL, 0,
              _("Open the contents of the file system"));
-  g_object_unref (icon);
+  g_object_unref (left_icon);
 
   /* add mounts that has no volume (/etc/mtab mounts, ftp, sftp,...) */
   mounts = g_volume_monitor_get_mounts (sidebar->volume_monitor);
@@ -1115,17 +1171,17 @@ update_places (GtkPlacesSidebar *sidebar)
           continue;
         }
 
-      icon = g_mount_get_symbolic_icon (mount);
+      left_icon = g_mount_get_symbolic_icon (mount);
       mount_uri = g_file_get_uri (root);
       name = g_mount_get_name (mount);
       tooltip = g_file_get_parse_name (root);
       add_place (sidebar, PLACES_MOUNTED_VOLUME,
                  SECTION_COMPUTER,
-                 name, icon, mount_uri,
-                 NULL, NULL, mount, 0, tooltip);
+                 name, left_icon, NULL, mount_uri,
+                 NULL, NULL, mount, NULL, 0, tooltip);
       g_object_unref (root);
       g_object_unref (mount);
-      g_object_unref (icon);
+      g_object_unref (left_icon);
       g_free (name);
       g_free (mount_uri);
       g_free (tooltip);
@@ -1169,8 +1225,8 @@ update_places (GtkPlacesSidebar *sidebar)
   new_bookmark_icon = g_themed_icon_new ("bookmark-new-symbolic");
   sidebar->new_bookmark_row = add_place (sidebar, PLACES_DROP_FEEDBACK,
                                          SECTION_BOOKMARKS,
-                                         _("New bookmark"), new_bookmark_icon, NULL,
-                                         NULL, NULL, NULL, 0,
+                                         _("New bookmark"), new_bookmark_icon, NULL, NULL,
+                                         NULL, NULL, NULL, NULL, 0,
                                          _("Add a new bookmark"));
   context = gtk_widget_get_style_context (sidebar->new_bookmark_row);
   gtk_style_context_add_class (context, "sidebar-new-bookmark-row");
@@ -1180,23 +1236,23 @@ update_places (GtkPlacesSidebar *sidebar)
   if (!sidebar->local_only)
     {
       mount_uri = "network:///";
-      icon = g_themed_icon_new_with_default_fallbacks (ICON_NAME_NETWORK);
+      left_icon = g_themed_icon_new_with_default_fallbacks (ICON_NAME_NETWORK);
       add_place (sidebar, PLACES_BUILT_IN,
                  SECTION_NETWORK,
-                 _("Browse Network"), icon, mount_uri,
-                 NULL, NULL, NULL, 0,
+                 _("Browse Network"), left_icon, NULL, mount_uri,
+                 NULL, NULL, NULL, NULL, 0,
                  _("Browse the contents of the network"));
-      g_object_unref (icon);
+      g_object_unref (left_icon);
 
       if (sidebar->show_connect_to_server)
         {
-          icon = g_themed_icon_new_with_default_fallbacks (ICON_NAME_NETWORK_SERVER);
+          left_icon = g_themed_icon_new_with_default_fallbacks (ICON_NAME_NETWORK_SERVER);
           add_place (sidebar, PLACES_CONNECT_TO_SERVER,
                      SECTION_NETWORK,
-                     _("Connect to Server"), icon, NULL,
-                     NULL, NULL, NULL, 0,
+                     _("Connect to Server"), left_icon, NULL, NULL,
+                     NULL, NULL, NULL, NULL, 0,
                      _("Connect to a network server address"));
-          g_object_unref (icon);
+          g_object_unref (left_icon);
         }
 
       network_volumes = g_list_reverse (network_volumes);
@@ -1212,15 +1268,15 @@ update_places (GtkPlacesSidebar *sidebar)
             }
           else
             {
-              icon = g_volume_get_symbolic_icon (volume);
+              left_icon = g_volume_get_symbolic_icon (volume);
               name = g_volume_get_name (volume);
               tooltip = g_strdup_printf (_("Mount and open “%s”"), name);
 
               add_place (sidebar, PLACES_MOUNTED_VOLUME,
                          SECTION_NETWORK,
-                         name, icon, NULL,
-                         NULL, volume, NULL, 0, tooltip);
-              g_object_unref (icon);
+                         name, left_icon, NULL, NULL,
+                         NULL, volume, NULL, NULL, 0, tooltip);
+              g_object_unref (left_icon);
               g_free (name);
               g_free (tooltip);
             }
@@ -1231,16 +1287,16 @@ update_places (GtkPlacesSidebar *sidebar)
         {
           mount = l->data;
           root = g_mount_get_default_location (mount);
-          icon = g_mount_get_symbolic_icon (mount);
+          left_icon = g_mount_get_symbolic_icon (mount);
           mount_uri = g_file_get_uri (root);
           name = g_mount_get_name (mount);
           tooltip = g_file_get_parse_name (root);
           add_place (sidebar, PLACES_MOUNTED_VOLUME,
                      SECTION_NETWORK,
-                     name, icon, mount_uri,
-                     NULL, NULL, mount, 0, tooltip);
+                     name, left_icon, NULL, mount_uri,
+                     NULL, NULL, mount, NULL, 0, tooltip);
           g_object_unref (root);
-          g_object_unref (icon);
+          g_object_unref (left_icon);
           g_free (name);
           g_free (mount_uri);
           g_free (tooltip);
@@ -2246,6 +2302,17 @@ open_row (GtkSidebarRow      *row,
 
 /* Callback used for the "Open" menu item in the context menu */
 static void
+action_open (GSimpleAction *action,
+			       GVariant      *state,
+			       gpointer       user_data)
+{
+  GtkPlacesSidebar *sidebar = GTK_PLACES_SIDEBAR (user_data);
+
+  open_row (sidebar->menu_selected_row, GTK_PLACES_OPEN_NORMAL);
+}
+
+/* Callback used for the "Open" menu item in the context menu */
+static void
 open_shortcut_cb (GtkMenuItem   *item,
                   GtkSidebarRow *row)
 {
@@ -2254,10 +2321,32 @@ open_shortcut_cb (GtkMenuItem   *item,
 
 /* Callback used for the "Open in new tab" menu item in the context menu */
 static void
+action_open_new_tab (GSimpleAction *action,
+			               GVariant      *state,
+			               gpointer       user_data)
+{
+  GtkPlacesSidebar *sidebar = GTK_PLACES_SIDEBAR (user_data);
+
+  open_row (sidebar->menu_selected_row, GTK_PLACES_OPEN_NEW_TAB);
+}
+
+/* Callback used for the "Open in new tab" menu item in the context menu */
+static void
 open_shortcut_in_new_tab_cb (GtkMenuItem   *item,
                              GtkSidebarRow *row)
 {
   open_row (row, GTK_PLACES_OPEN_NEW_TAB);
+}
+
+/* Callback used for the "Open in new window" menu item in the context menu */
+static void
+action_open_new_window (GSimpleAction *action,
+			                  GVariant      *state,
+			                  gpointer       user_data)
+{
+  GtkPlacesSidebar *sidebar = GTK_PLACES_SIDEBAR (user_data);
+
+  open_row (sidebar->menu_selected_row, GTK_PLACES_OPEN_NEW_WINDOW);
 }
 
 /* Callback used for the "Open in new window" menu item in the context menu */
@@ -3240,6 +3329,55 @@ append_menu_separator (GtkMenu *menu)
   return GTK_MENU_ITEM (menu_item);
 }
 
+static void
+build_popup_menu_using_gmenu (GtkSidebarRow *row)
+{
+  GtkCloudProvider *cloud_provider;
+  GtkPlacesSidebar *sidebar;
+  GMenuModel *cloud_provider_menu;
+  GActionGroup *cloud_provider_action_group;
+  GMenu *menu;
+  GMenu *open_section;
+
+  g_object_get (row,
+                "sidebar", &sidebar,
+                "cloud-provider", &cloud_provider,
+                NULL);
+
+  sidebar->menu_selected_row = row;
+  menu = g_menu_new ();
+  open_section = g_menu_new ();
+  g_menu_append (open_section, _("_Open"), "sidebar.open");
+  g_menu_append (open_section, _("Open in New _Tab"), "sidebar.open-new-tab");
+  g_menu_append (open_section, _("Open in New _Window"), "sidebar.open-new-window");
+  g_menu_append_section (menu, NULL, G_MENU_MODEL (open_section));
+
+  /* Cloud provider */
+  if (cloud_provider)
+    {
+      gint n_items;
+      gint i;
+      GMenuItem *item;
+
+      cloud_provider_menu = gtk_cloud_provider_get_menu_model (cloud_provider);
+      cloud_provider_action_group = gtk_cloud_provider_get_action_group (cloud_provider);
+	    gtk_widget_insert_action_group (GTK_WIDGET (sidebar),
+                                      "actions",
+                                      G_ACTION_GROUP (cloud_provider_action_group));
+      n_items = g_menu_model_get_n_items (cloud_provider_menu);
+      g_print ("n items %d\n", n_items);
+      for (i = 0; i < n_items; i++)
+        {
+          item = g_menu_item_new_from_model (cloud_provider_menu, i);
+          g_menu_append_item (menu, item);
+        }
+    }
+  sidebar->popup_menu = gtk_menu_new_from_model (G_MENU_MODEL (menu));
+  gtk_menu_attach_to_widget (GTK_MENU (sidebar->popup_menu),
+                             GTK_WIDGET (sidebar),
+                             bookmarks_popup_menu_detach_cb);
+}
+
 /* Constructs the popup menu for the file list if needed */
 static void
 bookmarks_build_popup_menu (GtkSidebarRow *row)
@@ -3249,12 +3387,14 @@ bookmarks_build_popup_menu (GtkSidebarRow *row)
   GFile *file;
   gchar *uri;
   GVolume *volume;
+  GtkCloudProvider *cloud_provider;
   GtkPlacesSidebar *sidebar;
 
   g_object_get (row,
                 "sidebar", &sidebar,
                 "uri", &uri,
                 "volume", &volume,
+                "cloud-provider", &cloud_provider,
                 NULL);
 
   sidebar->popup_menu = gtk_menu_new ();
@@ -3385,13 +3525,18 @@ bookmarks_popup_menu (GtkSidebarRow  *row,
 {
   gint button;
   GtkPlacesSidebar *sidebar;
+  GtkCloudProvider *cloud_provider;
 
   g_object_get (row, "sidebar", &sidebar, NULL);
 
   if (sidebar->popup_menu)
     gtk_widget_destroy (sidebar->popup_menu);
 
-  bookmarks_build_popup_menu (row);
+  g_object_get (row, "cloud-provider", &cloud_provider, NULL);
+  if (cloud_provider)
+    build_popup_menu_using_gmenu (row);
+  else
+    bookmarks_build_popup_menu (row);
 
   /* The event button needs to be 0 if we're popping up this menu from
    * a button release, else a 2nd click outside the menu with any button
@@ -3701,6 +3846,12 @@ shell_shows_desktop_changed (GtkSettings *settings,
     }
 }
 
+static GActionEntry actions [] = {
+	{ "open",  action_open },
+	{ "open-new-tab",  action_open_new_tab },
+	{ "open-new-window",  action_open_new_window },
+};
+
 static void
 gtk_places_sidebar_init (GtkPlacesSidebar *sidebar)
 {
@@ -3814,6 +3965,22 @@ gtk_places_sidebar_init (GtkPlacesSidebar *sidebar)
   g_object_get (sidebar->gtk_settings, "gtk-shell-shows-desktop", &show_desktop, NULL);
   sidebar->show_desktop = show_desktop;
 
+  /* Cloud providers */
+  sidebar->cloud_manager = gtk_cloud_provider_manager_dup_singleton ();
+  g_signal_connect_swapped (sidebar->cloud_manager,
+                            "changed",
+                            G_CALLBACK (update_places),
+                            sidebar);
+  gtk_cloud_provider_manager_update (sidebar->cloud_manager);
+
+  sidebar->action_group = G_ACTION_GROUP (g_simple_action_group_new ());
+	g_action_map_add_action_entries (G_ACTION_MAP (sidebar->action_group),
+                                   actions,
+                                   G_N_ELEMENTS (actions),
+                                   sidebar);
+	gtk_widget_insert_action_group (GTK_WIDGET (sidebar),
+                                  "sidebar",
+                                  G_ACTION_GROUP (sidebar->action_group));
   /* populate the sidebar */
   update_places (sidebar);
 }

@@ -26,12 +26,15 @@
 #include "gtkstylecontext.h"
 #include "gtkrevealer.h"
 #include "gtkselection.h"
+#include "gtkcloudprovider.h"
 
 struct _GtkSidebarRow
 {
   GtkListBoxRow parent_instance;
-  GIcon *icon;
-  GtkWidget *icon_widget;
+  GIcon *left_icon;
+  GIcon *right_icon;
+  GtkWidget *left_icon_widget;
+  GtkWidget *right_icon_widget;
   gchar *label;
   gchar *tooltip;
   GtkWidget *label_widget;
@@ -44,6 +47,7 @@ struct _GtkSidebarRow
   GDrive *drive;
   GVolume *volume;
   GMount *mount;
+  GtkCloudProvider *cloud_provider;
   gboolean sensitive;
   gboolean placeholder;
   GtkPlacesSidebar *sidebar;
@@ -56,7 +60,8 @@ G_DEFINE_TYPE (GtkSidebarRow, gtk_sidebar_row, GTK_TYPE_LIST_BOX_ROW)
 enum
 {
   PROP_0,
-  PROP_ICON,
+  PROP_LEFT_ICON,
+  PROP_RIGHT_ICON,
   PROP_LABEL,
   PROP_TOOLTIP,
   PROP_EJECTABLE,
@@ -68,6 +73,7 @@ enum
   PROP_DRIVE,
   PROP_VOLUME,
   PROP_MOUNT,
+  PROP_CLOUD_PROVIDER,
   PROP_SENSITIVE,
   PROP_PLACEHOLDER,
   LAST_PROP
@@ -89,9 +95,17 @@ gtk_sidebar_row_get_property (GObject    *object,
       g_value_set_object (value, self->sidebar);
       break;
 
-    case PROP_ICON:
-      g_value_set_object (value, self->icon);
-      break;
+    case PROP_LEFT_ICON:
+      {
+        g_value_set_object (value, self->left_icon);
+        break;
+      }
+
+    case PROP_RIGHT_ICON:
+      {
+        g_value_set_object (value, self->right_icon);
+        break;
+      }
 
     case PROP_LABEL:
       g_value_set_string (value, self->label);
@@ -133,6 +147,12 @@ gtk_sidebar_row_get_property (GObject    *object,
       g_value_set_object (value, self->mount);
       break;
 
+    case PROP_CLOUD_PROVIDER:
+      {
+        g_value_set_object (value, self->cloud_provider);
+        break;
+      }
+
     case PROP_SENSITIVE:
       g_value_set_boolean (value, self->sensitive);
       break;
@@ -161,13 +181,43 @@ gtk_sidebar_row_set_property (GObject      *object,
       self->sidebar = g_value_get_object (value);
       break;
 
-    case PROP_ICON:
-      g_set_object (&self->icon, g_value_get_object (value));
-      if (self->icon != NULL)
-        gtk_image_set_from_gicon (GTK_IMAGE (self->icon_widget), self->icon, GTK_ICON_SIZE_MENU);
-      else
-        gtk_image_clear (GTK_IMAGE (self->icon_widget));
-      break;
+    case PROP_LEFT_ICON:
+      {
+        g_clear_object (&self->left_icon);
+        object = g_value_get_object (value);
+        if (object != NULL)
+          {
+            self->left_icon = g_object_ref (object);
+            gtk_image_set_from_gicon (GTK_IMAGE (self->left_icon_widget),
+                                      self->left_icon,
+                                      GTK_ICON_SIZE_MENU);
+          }
+        else
+          {
+            gtk_image_clear (GTK_IMAGE (self->left_icon_widget));
+          }
+        break;
+      }
+
+    case PROP_RIGHT_ICON:
+      {
+        g_clear_object (&self->right_icon);
+        object = g_value_get_object (value);
+        if (object != NULL)
+          {
+            self->right_icon = g_object_ref (object);
+            gtk_image_set_from_gicon (GTK_IMAGE (self->right_icon_widget),
+                                      self->right_icon,
+                                      GTK_ICON_SIZE_MENU);
+            gtk_widget_show (self->right_icon_widget);
+          }
+        else
+          {
+            gtk_image_clear (GTK_IMAGE (self->right_icon_widget));
+            gtk_widget_hide (self->right_icon_widget);
+          }
+        break;
+      }
 
     case PROP_LABEL:
       g_free (self->label);
@@ -222,6 +272,17 @@ gtk_sidebar_row_set_property (GObject      *object,
       g_set_object (&self->mount, g_value_get_object (value));
       break;
 
+    case PROP_CLOUD_PROVIDER:
+      {
+        gpointer *object;
+
+        g_clear_object (&self->mount);
+        object = g_value_get_object (value);
+        if (object != NULL)
+          self->cloud_provider = g_object_ref (object);
+        break;
+      }
+
     case PROP_SENSITIVE:
       self->sensitive = g_value_get_boolean (value);
       context = gtk_widget_get_style_context (GTK_WIDGET (self));
@@ -237,32 +298,38 @@ gtk_sidebar_row_set_property (GObject      *object,
       break;
 
     case PROP_PLACEHOLDER:
-      self->placeholder = g_value_get_boolean (value);
-      if (self->placeholder)
-        {
-          g_clear_object (&self->icon);
-          g_free (self->label);
-          self->label = NULL;
-          g_free (self->tooltip);
-          self->tooltip = NULL;
-          gtk_widget_set_tooltip_text (GTK_WIDGET (self), NULL);
-          self->ejectable = FALSE;
-          self->section_type = SECTION_BOOKMARKS;
-          self->place_type = PLACES_BOOKMARK_PLACEHOLDER;
-          g_free (self->uri);
-          self->uri = NULL;
-          g_clear_object (&self->drive);
-          g_clear_object (&self->volume);
-          g_clear_object (&self->mount);
+      {
+	      GtkStyleContext *context;
 
-          gtk_container_foreach (GTK_CONTAINER (self),
-                                 (GtkCallback) gtk_widget_destroy,
-                                 NULL);
+        self->placeholder = g_value_get_boolean (value);
+        if (self->placeholder)
+          {
+            g_clear_object (&self->left_icon);
+            g_clear_object (&self->right_icon);
+            g_free (self->label);
+            self->label = NULL;
+            g_free (self->tooltip);
+            self->tooltip = NULL;
+            gtk_widget_set_tooltip_text (GTK_WIDGET (self), NULL);
+            self->ejectable = FALSE;
+            self->section_type = SECTION_BOOKMARKS;
+            self->place_type = PLACES_BOOKMARK_PLACEHOLDER;
+            g_free (self->uri);
+            self->uri = NULL;
+            g_clear_object (&self->drive);
+            g_clear_object (&self->volume);
+            g_clear_object (&self->mount);
 
-	  context = gtk_widget_get_style_context (GTK_WIDGET (self));
-          gtk_style_context_add_class (context, "sidebar-placeholder-row");
-        }
-      break;
+            gtk_container_foreach (GTK_CONTAINER (self),
+                                   (GtkCallback) gtk_widget_destroy,
+                                   NULL);
+
+	          context = gtk_widget_get_style_context (GTK_WIDGET (self));
+            gtk_style_context_add_class (context, "sidebar-placeholder-row");
+          }
+
+        break;
+      }
 
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -308,7 +375,8 @@ gtk_sidebar_row_finalize (GObject *object)
 {
   GtkSidebarRow *self = GTK_SIDEBAR_ROW (object);
 
-  g_clear_object (&self->icon);
+  g_clear_object (&self->left_icon);
+  g_clear_object (&self->right_icon);
   g_free (self->label);
   self->label = NULL;
   g_free (self->tooltip);
@@ -345,10 +413,18 @@ gtk_sidebar_row_class_init (GtkSidebarRowClass *klass)
                           G_PARAM_CONSTRUCT_ONLY |
                           G_PARAM_STATIC_STRINGS));
 
-  properties [PROP_ICON] =
-    g_param_spec_object ("icon",
-                         "icon",
-                         "The place icon.",
+  properties [PROP_LEFT_ICON] =
+    g_param_spec_object ("left-icon",
+                         "left-icon",
+                         "The left icon.",
+                         G_TYPE_ICON,
+                         (G_PARAM_READWRITE |
+                          G_PARAM_STATIC_STRINGS));
+
+  properties [PROP_RIGHT_ICON] =
+    g_param_spec_object ("right-icon",
+                         "right-icon",
+                         "The right icon.",
                          G_TYPE_ICON,
                          (G_PARAM_READWRITE |
                           G_PARAM_STATIC_STRINGS));
@@ -439,6 +515,14 @@ gtk_sidebar_row_class_init (GtkSidebarRowClass *klass)
                           G_PARAM_CONSTRUCT_ONLY |
                           G_PARAM_STATIC_STRINGS));
 
+  properties [PROP_CLOUD_PROVIDER] =
+    g_param_spec_object ("cloud-provider",
+                         "CloudProvider",
+                         "CloudProvider",
+                         GTK_TYPE_CLOUD_PROVIDER,
+                         (G_PARAM_READWRITE |
+                          G_PARAM_STATIC_STRINGS));
+
   properties [PROP_SENSITIVE] =
     g_param_spec_boolean ("sensitive",
                           "Sensitive",
@@ -461,7 +545,8 @@ gtk_sidebar_row_class_init (GtkSidebarRowClass *klass)
   gtk_widget_class_set_template_from_resource (widget_class,
                                                "/org/gtk/libgtk/ui/gtksidebarrow.ui");
 
-  gtk_widget_class_bind_template_child (widget_class, GtkSidebarRow, icon_widget);
+  gtk_widget_class_bind_template_child (widget_class, GtkSidebarRow, left_icon_widget);
+  gtk_widget_class_bind_template_child (widget_class, GtkSidebarRow, right_icon_widget);
   gtk_widget_class_bind_template_child (widget_class, GtkSidebarRow, label_widget);
   gtk_widget_class_bind_template_child (widget_class, GtkSidebarRow, eject_button);
   gtk_widget_class_bind_template_child (widget_class, GtkSidebarRow, event_box);
@@ -470,34 +555,35 @@ gtk_sidebar_row_class_init (GtkSidebarRowClass *klass)
   gtk_widget_class_bind_template_callback (widget_class, on_child_revealed);
 }
 
-
-GtkSidebarRow*
-gtk_sidebar_row_clone (GtkSidebarRow *self)
-{
- return g_object_new (GTK_TYPE_SIDEBAR_ROW,
-                      "sidebar", self->sidebar,
-                      "icon", self->icon,
-                      "label", self->label,
-                      "tooltip", self->tooltip,
-                      "ejectable", self->ejectable,
-                      "order-index", self->order_index,
-                      "section-type", self->section_type,
-                      "place-type", self->place_type,
-                      "uri", self->uri,
-                      "drive", self->drive,
-                      "volume", self->volume,
-                      "mount", self->mount,
-                      NULL);
-}
-
-GtkWidget *
+GtkWidget*
 gtk_sidebar_row_get_eject_button (GtkSidebarRow *self)
 {
   return self->eject_button;
 }
 
-GtkWidget *
+GtkWidget*
 gtk_sidebar_row_get_event_box (GtkSidebarRow *self)
 {
   return self->event_box;
+}
+
+GtkSidebarRow*
+gtk_sidebar_row_clone (GtkSidebarRow *self)
+{
+ return  g_object_new (GTK_TYPE_SIDEBAR_ROW,
+                       "sidebar", self->sidebar,
+                       "left-icon", self->left_icon,
+                       "right-icon", self->right_icon,
+                       "label", self->label,
+                       "tooltip", self->tooltip,
+                       "ejectable", self->ejectable,
+                       "order-index", self->order_index,
+                       "section-type", self->section_type,
+                       "place-type", self->place_type,
+                       "uri", self->uri,
+                       "drive", self->drive,
+                       "volume", self->volume,
+                       "mount", self->mount,
+                       "cloud-provider", self->cloud_provider,
+                       NULL);
 }

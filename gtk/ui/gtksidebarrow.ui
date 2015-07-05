@@ -19,7 +19,7 @@
               <object class="GtkGrid">
                 <property name="visible">True</property>
                 <child>
-                  <object class="GtkImage" id="icon_widget">
+                  <object class="GtkImage" id="left_icon_widget">
                     <property name="visible">True</property>
                     <style>
                       <class name="sidebar-icon"/>
@@ -39,6 +39,21 @@
                   </object>
                   <packing>
                     <property name="left_attach">1</property>
+                    <property name="top_attach">0</property>
+                  </packing>
+                </child>
+                <child>
+                  <object class="GtkImage" id="right_icon_widget">
+                    <property name="visible">False</property>
+                    <property name="hexpand">True</property>
+                    <property name="halign">end</property>
+                    <property name="valign">center</property>
+                    <style>
+                      <class name="sidebar-icon"/>
+                    </style>
+                  </object>
+                  <packing>
+                    <property name="left_attach">2</property>
                     <property name="top_attach">0</property>
                   </packing>
                 </child>
@@ -63,7 +78,7 @@
                     </style>
                   </object>
                   <packing>
-                    <property name="left_attach">2</property>
+                    <property name="left_attach">3</property>
                     <property name="top_attach">0</property>
                   </packing>
                 </child>
@@ -80,7 +95,8 @@
     <widgets>
       <widget name="eject_button"/>
       <widget name="label_widget"/>
-      <widget name="icon_widget"/>
+      <widget name="left_icon_widget"/>
+      <widget name="right_icon_widget"/>
     </widgets>
   </object>
 </interface>
