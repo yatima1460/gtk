@@ -164,6 +164,8 @@ gtk_public_h_sources = 		\
 	gtkcontainer.h		\
 	gtkcssprovider.h	\
 	gtkcsssection.h 	\
+	gtkcloudprovider.h 	\
+	gtkcloudprovidermanager.h	\
 	gtkdebug.h		\
 	gtkdialog.h		\
 	gtkdnd.h		\
@@ -666,6 +668,8 @@ gtk_base_c_sources = 		\
 	gtkcsstypes.c		\
 	gtkcssvalue.c		\
 	gtkcsswidgetnode.c	\
+	gtkcloudprovider.c	\
+	gtkcloudprovidermanager.c	\
 	gtkdialog.c		\
 	gtkdrawingarea.c	\
 	gtkeditable.c		\
