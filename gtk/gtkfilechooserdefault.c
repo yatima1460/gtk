@@ -9970,7 +9970,7 @@ check_preview_change (GtkFileChooserDefault *impl)
   if (impl->view_mode == VIEW_MODE_LIST)
     gtk_tree_view_get_cursor (GTK_TREE_VIEW (impl->browse_files_tree_view), &cursor_path, NULL);
   else if (impl->view_mode == VIEW_MODE_ICON)
-    gtk_icon_view_get_cursor (GTK_ICON_VIEW (impl->browse_files_icon_view), &cursor_path, NULL);
+    cursor_path = NULL;
   else
     g_assert_not_reached ();
 
