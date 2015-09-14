@@ -4474,6 +4474,7 @@ create_browse_files_icon_view (GtkFileChooserDefault *impl)
 {
   impl->browse_files_icon_view = gtk_icon_view_new ();
   
+  g_object_set_data (G_OBJECT (impl->browse_files_icon_view), I_("GtkFileChooserDefault"), impl);
   gtk_icon_view_set_item_padding (GTK_ICON_VIEW (impl->browse_files_icon_view), 0);
 
   g_signal_connect (impl->browse_files_icon_view, "item-activated",
@@ -4894,8 +4895,8 @@ view_mode_set (GtkFileChooserDefault *impl, ViewMode view_mode)
   else
     g_assert_not_reached ();
 
-  if (impl->browse_shortcuts_popup_menu)
-    gtk_menu_detach (GTK_MENU (impl->browse_shortcuts_popup_menu));
+  if (impl->browse_files_popup_menu)
+    gtk_menu_detach (GTK_MENU (impl->browse_files_popup_menu));
 
   gtk_widget_destroy (old_view);
 
