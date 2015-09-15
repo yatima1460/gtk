@@ -184,6 +184,11 @@ struct _GtkFileChooserDefault
   GtkWidget *browse_files_popup_menu_add_shortcut_item;
   GtkWidget *browse_files_popup_menu_hidden_files_item;
   GtkWidget *browse_files_popup_menu_size_column_item;
+  GtkWidget *browse_files_popup_menu_sort_by_name_item;
+  GtkWidget *browse_files_popup_menu_sort_by_size_item;
+  GtkWidget *browse_files_popup_menu_sort_by_mtime_item;
+  GtkWidget *browse_files_popup_menu_sort_ascending_item;
+  GtkWidget *browse_files_popup_menu_sort_descending_item;
   GtkWidget *browse_new_folder_button;
   GtkWidget *browse_path_bar_hbox;
   GtkSizeGroup *browse_path_bar_size_group;

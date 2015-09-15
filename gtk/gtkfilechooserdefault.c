@@ -342,6 +342,7 @@ static void show_hidden_handler     (GtkFileChooserDefault *impl);
 static void search_shortcut_handler (GtkFileChooserDefault *impl);
 static void recent_shortcut_handler (GtkFileChooserDefault *impl);
 static void update_appearance       (GtkFileChooserDefault *impl);
+static void set_sort_column         (GtkFileChooserDefault *impl);
 
 static void set_current_filter   (GtkFileChooserDefault *impl,
 				  GtkFileFilter         *filter);
@@ -3945,6 +3946,145 @@ show_size_column_toggled_cb (GtkCheckMenuItem *item,
                                     impl->show_size_column);
 }
 
+/* Callback used when "Sort by Name" menu item is toggled */
+static void
+sort_by_name_toggled_cb (GtkCheckMenuItem *item,
+                         GtkFileChooserDefault *impl)
+{
+  GtkCheckMenuItem *size_item = GTK_CHECK_MENU_ITEM (impl->browse_files_popup_menu_sort_by_size_item),
+                   *mtime_item = GTK_CHECK_MENU_ITEM (impl->browse_files_popup_menu_sort_by_mtime_item);
+
+  // This could be avoided if we used GtkAction's
+  if (!gtk_check_menu_item_get_active (item) &&
+      !gtk_check_menu_item_get_active (size_item) &&
+      !gtk_check_menu_item_get_active (mtime_item))
+    {
+      gtk_check_menu_item_set_active (item, TRUE);
+      return;
+    }
+
+  if (gtk_check_menu_item_get_active (item))
+    {
+      gtk_check_menu_item_set_active (size_item, FALSE);
+      gtk_check_menu_item_set_active (mtime_item, FALSE);
+
+      impl->sort_column = MODEL_COL_NAME;
+      set_sort_column (impl);
+    }
+}
+
+/* Callback used when "Sort by Size" menu item is toggled */
+static void
+sort_by_size_toggled_cb (GtkCheckMenuItem *item,
+                         GtkFileChooserDefault *impl)
+{
+  GtkCheckMenuItem *name_item = GTK_CHECK_MENU_ITEM (impl->browse_files_popup_menu_sort_by_name_item),
+                   *mtime_item = GTK_CHECK_MENU_ITEM (impl->browse_files_popup_menu_sort_by_mtime_item);
+
+  // This could be avoided if we used GtkAction's
+  if (!gtk_check_menu_item_get_active (item) &&
+      !gtk_check_menu_item_get_active (name_item) &&
+      !gtk_check_menu_item_get_active (mtime_item))
+    {
+      gtk_check_menu_item_set_active (item, TRUE);
+      return;
+    }
+
+  if (gtk_check_menu_item_get_active (item))
+    {
+      gtk_check_menu_item_set_active (name_item, FALSE);
+      gtk_check_menu_item_set_active (mtime_item, FALSE);
+
+      impl->sort_column = MODEL_COL_SIZE;
+      set_sort_column (impl);
+    }
+}
+
+/* Callback used when "Sort by Modification Date" menu item is toggled */
+static void
+sort_by_mtime_toggled_cb (GtkCheckMenuItem *item,
+                         GtkFileChooserDefault *impl)
+{
+  GtkCheckMenuItem *name_item = GTK_CHECK_MENU_ITEM (impl->browse_files_popup_menu_sort_by_name_item),
+                   *size_item = GTK_CHECK_MENU_ITEM (impl->browse_files_popup_menu_sort_by_size_item);
+
+  // This could be avoided if we used GtkAction's
+  if (!gtk_check_menu_item_get_active (item) &&
+      !gtk_check_menu_item_get_active (name_item) &&
+      !gtk_check_menu_item_get_active (size_item))
+    {
+      gtk_check_menu_item_set_active (item, TRUE);
+      return;
+    }
+
+  if (gtk_check_menu_item_get_active (item))
+    {
+      gtk_check_menu_item_set_active (name_item, FALSE);
+      gtk_check_menu_item_set_active (size_item, FALSE);
+
+      impl->sort_column = MODEL_COL_MTIME;
+      set_sort_column (impl);
+    }
+}
+
+/* Callback used when "Ascending" menu item is toggled */
+static void
+sort_ascending_toggled_cb (GtkCheckMenuItem *item,
+                         GtkFileChooserDefault *impl)
+{
+  GtkCheckMenuItem *desc_item = GTK_CHECK_MENU_ITEM (impl->browse_files_popup_menu_sort_descending_item);
+
+  // This could be avoided if we used GtkAction's
+  if (!gtk_check_menu_item_get_active (item) &&
+      !gtk_check_menu_item_get_active (desc_item))
+    {
+      gtk_check_menu_item_set_active (item, TRUE);
+      return;
+    }
+
+  if (gtk_check_menu_item_get_active (item))
+    {
+      gtk_check_menu_item_set_active (desc_item, FALSE);
+
+      // The sort column is explicitly set to mtime for the recent model
+      // This prevents it from switching when changing sort order
+      if (impl->view_mode == VIEW_MODE_ICON && impl->current_model == GTK_TREE_MODEL (impl->recent_model))
+          gtk_tree_sortable_get_sort_column_id (GTK_TREE_SORTABLE (impl->current_model), &impl->sort_column, NULL);
+
+      impl->sort_order = GTK_SORT_ASCENDING;
+      set_sort_column (impl);
+    }
+}
+
+/* Callback used when "Descending" menu item is toggled */
+static void
+sort_descending_toggled_cb (GtkCheckMenuItem *item,
+                         GtkFileChooserDefault *impl)
+{
+  GtkCheckMenuItem *asc_item = GTK_CHECK_MENU_ITEM (impl->browse_files_popup_menu_sort_ascending_item);
+
+  // This could be avoided if we used GtkAction's
+  if (!gtk_check_menu_item_get_active (item) &&
+      !gtk_check_menu_item_get_active (asc_item))
+    {
+      gtk_check_menu_item_set_active (item, TRUE);
+      return;
+    }
+
+  if (gtk_check_menu_item_get_active (item))
+    {
+      gtk_check_menu_item_set_active (asc_item, FALSE);
+
+      // The sort column is explicitly set to mtime for the recent model
+      // This prevents it from switching when changing sort order
+      if (impl->view_mode == VIEW_MODE_ICON && impl->current_model == GTK_TREE_MODEL (impl->recent_model))
+          gtk_tree_sortable_get_sort_column_id (GTK_TREE_SORTABLE (impl->current_model), &impl->sort_column, NULL);
+
+      impl->sort_order = GTK_SORT_DESCENDING;
+      set_sort_column (impl);
+    }
+}
+
 /* Shows an error dialog about not being able to select a dragged file */
 static void
 error_selecting_dragged_file_dialog (GtkFileChooserDefault *impl,
@@ -4145,12 +4285,72 @@ file_list_build_popup_menu (GtkFileChooserDefault *impl)
   gtk_widget_show (item);
   gtk_menu_shell_append (GTK_MENU_SHELL (impl->browse_files_popup_menu), item);
 
-  item = gtk_check_menu_item_new_with_mnemonic (_("Show _Size Column"));
-  impl->browse_files_popup_menu_size_column_item = item;
-  g_signal_connect (item, "toggled",
-                    G_CALLBACK (show_size_column_toggled_cb), impl);
-  gtk_widget_show (item);
-  gtk_menu_shell_append (GTK_MENU_SHELL (impl->browse_files_popup_menu), item);
+  if (impl->view_mode == VIEW_MODE_LIST)
+    {
+      item = gtk_check_menu_item_new_with_mnemonic (_("Show _Size Column"));
+      impl->browse_files_popup_menu_size_column_item = item;
+      g_signal_connect (item, "toggled",
+                        G_CALLBACK (show_size_column_toggled_cb), impl);
+      gtk_widget_show (item);
+      gtk_menu_shell_append (GTK_MENU_SHELL (impl->browse_files_popup_menu), item);
+    }
+  else if (impl->view_mode == VIEW_MODE_ICON)
+    {
+      GtkWidget *menu, *subitem;
+
+      item = gtk_menu_item_new_with_label (_("Arrange Items"));
+      menu = gtk_menu_new ();
+      gtk_menu_item_set_submenu (GTK_MENU_ITEM (item), menu);
+
+      subitem = gtk_check_menu_item_new_with_mnemonic (_("Sort by _Name"));
+      impl->browse_files_popup_menu_sort_by_name_item = subitem;
+      gtk_check_menu_item_set_draw_as_radio (GTK_CHECK_MENU_ITEM (subitem), TRUE);
+      g_signal_connect (subitem, "toggled",
+                        G_CALLBACK (sort_by_name_toggled_cb), impl);
+      gtk_widget_show (subitem);
+      gtk_menu_shell_append (GTK_MENU_SHELL (menu), subitem);
+
+      subitem = gtk_check_menu_item_new_with_mnemonic (_("Sort by _Size"));
+      impl->browse_files_popup_menu_sort_by_size_item = subitem;
+      gtk_check_menu_item_set_draw_as_radio (GTK_CHECK_MENU_ITEM (subitem), TRUE);
+      g_signal_connect (subitem, "toggled",
+                        G_CALLBACK (sort_by_size_toggled_cb), impl);
+      gtk_widget_show (subitem);
+      gtk_menu_shell_append (GTK_MENU_SHELL (menu), subitem);
+
+      subitem = gtk_check_menu_item_new_with_mnemonic (_("Sort by Modification _Date"));
+      impl->browse_files_popup_menu_sort_by_mtime_item = subitem;
+      gtk_check_menu_item_set_draw_as_radio (GTK_CHECK_MENU_ITEM (subitem), TRUE);
+      g_signal_connect (subitem, "toggled",
+                        G_CALLBACK (sort_by_mtime_toggled_cb), impl);
+      gtk_widget_show (subitem);
+      gtk_menu_shell_append (GTK_MENU_SHELL (menu), subitem);
+
+      subitem = gtk_separator_menu_item_new ();
+      gtk_widget_show (subitem);
+      gtk_menu_shell_append (GTK_MENU_SHELL (menu), subitem);
+
+      subitem = gtk_check_menu_item_new_with_mnemonic (_("_Ascending"));
+      impl->browse_files_popup_menu_sort_ascending_item = subitem;
+      gtk_check_menu_item_set_draw_as_radio (GTK_CHECK_MENU_ITEM (subitem), TRUE);
+      g_signal_connect (subitem, "toggled",
+                        G_CALLBACK (sort_ascending_toggled_cb), impl);
+      gtk_widget_show (subitem);
+      gtk_menu_shell_append (GTK_MENU_SHELL (menu), subitem);
+
+      subitem = gtk_check_menu_item_new_with_mnemonic (_("_Descending"));
+      impl->browse_files_popup_menu_sort_descending_item = subitem;
+      gtk_check_menu_item_set_draw_as_radio (GTK_CHECK_MENU_ITEM (subitem), TRUE);
+      g_signal_connect (subitem, "toggled",
+                        G_CALLBACK (sort_descending_toggled_cb), impl);
+      gtk_widget_show (subitem);
+      gtk_menu_shell_append (GTK_MENU_SHELL (menu), subitem);
+      
+      gtk_widget_show (item);
+      gtk_menu_shell_append (GTK_MENU_SHELL (impl->browse_files_popup_menu), item);
+    }
+  else
+    g_assert_not_reached ();
 
   bookmarks_check_add_sensitivity (impl);
 }
@@ -4175,13 +4375,61 @@ file_list_update_popup_menu (GtkFileChooserDefault *impl)
   g_signal_handlers_unblock_by_func (impl->browse_files_popup_menu_hidden_files_item,
 				     G_CALLBACK (show_hidden_toggled_cb), impl);
 
-  /* 'Show Size Column' */
-  g_signal_handlers_block_by_func (impl->browse_files_popup_menu_size_column_item,
-				   G_CALLBACK (show_size_column_toggled_cb), impl);
-  gtk_check_menu_item_set_active (GTK_CHECK_MENU_ITEM (impl->browse_files_popup_menu_size_column_item),
-				  impl->show_size_column);
-  g_signal_handlers_unblock_by_func (impl->browse_files_popup_menu_size_column_item,
-				     G_CALLBACK (show_size_column_toggled_cb), impl);
+  if (impl->view_mode == VIEW_MODE_LIST)
+    {
+      /* 'Show Size Column' */
+      g_signal_handlers_block_by_func (impl->browse_files_popup_menu_size_column_item,
+               G_CALLBACK (show_size_column_toggled_cb), impl);
+      gtk_check_menu_item_set_active (GTK_CHECK_MENU_ITEM (impl->browse_files_popup_menu_size_column_item),
+              impl->show_size_column);
+      g_signal_handlers_unblock_by_func (impl->browse_files_popup_menu_size_column_item,
+                 G_CALLBACK (show_size_column_toggled_cb), impl);
+    }
+  else if (impl->view_mode == VIEW_MODE_ICON)
+    {
+      gint column = impl->sort_column;
+      GtkSortType order = impl->sort_order;
+
+      if (impl->current_model == GTK_TREE_MODEL (impl->recent_model))
+        gtk_tree_sortable_get_sort_column_id (GTK_TREE_SORTABLE (impl->current_model), &column, &order);
+
+      g_signal_handlers_block_by_func (impl->browse_files_popup_menu_sort_by_name_item,
+               G_CALLBACK (sort_by_name_toggled_cb), impl);
+      gtk_check_menu_item_set_active (GTK_CHECK_MENU_ITEM (impl->browse_files_popup_menu_sort_by_name_item),
+              column == MODEL_COL_NAME);
+      g_signal_handlers_unblock_by_func (impl->browse_files_popup_menu_sort_by_name_item,
+                 G_CALLBACK (sort_by_name_toggled_cb), impl);
+
+      g_signal_handlers_block_by_func (impl->browse_files_popup_menu_sort_by_size_item,
+               G_CALLBACK (sort_by_size_toggled_cb), impl);
+      gtk_check_menu_item_set_active (GTK_CHECK_MENU_ITEM (impl->browse_files_popup_menu_sort_by_size_item),
+              column == MODEL_COL_SIZE);
+      g_signal_handlers_unblock_by_func (impl->browse_files_popup_menu_sort_by_size_item,
+                 G_CALLBACK (sort_by_size_toggled_cb), impl);
+
+      g_signal_handlers_block_by_func (impl->browse_files_popup_menu_sort_by_mtime_item,
+               G_CALLBACK (sort_by_mtime_toggled_cb), impl);
+      gtk_check_menu_item_set_active (GTK_CHECK_MENU_ITEM (impl->browse_files_popup_menu_sort_by_mtime_item),
+              column == MODEL_COL_MTIME);
+      g_signal_handlers_unblock_by_func (impl->browse_files_popup_menu_sort_by_mtime_item,
+                 G_CALLBACK (sort_by_mtime_toggled_cb), impl);
+
+      g_signal_handlers_block_by_func (impl->browse_files_popup_menu_sort_ascending_item,
+               G_CALLBACK (sort_ascending_toggled_cb), impl);
+      gtk_check_menu_item_set_active (GTK_CHECK_MENU_ITEM (impl->browse_files_popup_menu_sort_ascending_item),
+              order == GTK_SORT_ASCENDING);
+      g_signal_handlers_unblock_by_func (impl->browse_files_popup_menu_sort_ascending_item,
+                 G_CALLBACK (sort_ascending_toggled_cb), impl);
+
+      g_signal_handlers_block_by_func (impl->browse_files_popup_menu_sort_descending_item,
+               G_CALLBACK (sort_descending_toggled_cb), impl);
+      gtk_check_menu_item_set_active (GTK_CHECK_MENU_ITEM (impl->browse_files_popup_menu_sort_descending_item),
+              order == GTK_SORT_DESCENDING);
+      g_signal_handlers_unblock_by_func (impl->browse_files_popup_menu_sort_descending_item,
+                 G_CALLBACK (sort_descending_toggled_cb), impl);
+    }
+  else
+    g_assert_not_reached ();
 }
 
 static void
