@@ -1916,6 +1916,13 @@ window.csd > .titlebar:not(headerbar) {
 .path-bar button:active {
   border-color: #2a76c6; }
 
+.path-bar button:backdrop,
+.path-bar button:backdrop:disabled {
+  background-color: transparent;
+  border-color: transparent;
+  background-image: none; }
+
+.path-bar button:backdrop:active,
 .path-bar button:backdrop:checked {
   border-color: #a5a5a1; }
 

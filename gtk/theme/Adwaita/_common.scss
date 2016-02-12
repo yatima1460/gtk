@@ -1417,6 +1417,13 @@ headerbar {
 }
   .path-bar button:hover { border-color: transparentize($selected_bg_color, .5); }
   .path-bar button:active { border-color: darken($selected_bg_color, 10%) }
+  .path-bar button:backdrop,
+  .path-bar button:backdrop:disabled { 
+    background-color: transparent;
+    border-color: transparent;
+    background-image: none;
+  }
+  .path-bar button:backdrop:active,
   .path-bar button:backdrop:checked { border-color: $backdrop_borders_color; }
   
 /**************
