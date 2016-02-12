@@ -1882,16 +1882,38 @@ window.csd > .titlebar:not(headerbar) {
 /************
  * Pathbars *
  ************/
-.path-bar button:only-child {
-  padding-left: 12px;
-  padding-right: 12px; }
-.path-bar button label:last-child {
-  padding-left: 2px; }
-.path-bar button label:first-child {
-  padding-right: 2px; }
-.path-bar button label:only-child {
-  padding-right: 0;
-  padding-left: 0; }
+.path-bar button, .path-bar headerbar button.titlebutton, headerbar .path-bar button.titlebutton,
+.path-bar .titlebar button.titlebutton,
+.titlebar .path-bar button.titlebutton {
+  /* non-buttons */
+  border-radius: 0;
+  background-image: none;
+  background-color: transparent;
+  border-width: 0;
+  border-bottom: 3px solid transparent;
+  /* not padding due to transitions */ }
+  .path-bar button:checked {
+    border-color: #215d9c;
+    font-weight: bold; }
+  .path-bar button:only-child {
+    padding-left: 12px;
+    padding-right: 12px; }
+  .path-bar button label:last-child {
+    padding-left: 2px; }
+  .path-bar button label:first-child {
+    padding-right: 2px; }
+  .path-bar button label:only-child {
+    padding-right: 0;
+    padding-left: 0; }
+
+.path-bar button:hover {
+  border-color: rgba(33, 93, 156, 0.5); }
+
+.path-bar button:active {
+  border-color: #184472; }
+
+.path-bar button:backdrop:checked {
+  border-color: #1f2222; }
 
 /**************
  * Tree Views *

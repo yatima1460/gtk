@@ -1395,6 +1395,16 @@ headerbar {
  ************/
 
 .path-bar button {
+  /* non-buttons */
+  border-radius: 0;
+  background-image: none;
+  background-color: transparent;
+  border-width: 0;
+  border-bottom: 3px solid transparent; /* not padding due to transitions */
+  &:checked {
+    border-color: $selected_bg_color;
+    font-weight: bold;
+  }
   &:only-child {
     padding-left: 12px;
     padding-right: 12px;
@@ -1405,7 +1415,10 @@ headerbar {
   & label:first-child { padding-right: 2px; }
   & label:only-child { padding-right: 0; padding-left: 0; }
 }
-
+  .path-bar button:hover { border-color: transparentize($selected_bg_color, .5); }
+  .path-bar button:active { border-color: darken($selected_bg_color, 10%) }
+  .path-bar button:backdrop:checked { border-color: $backdrop_borders_color; }
+  
 /**************
  * Tree Views *
  **************/
