@@ -69,6 +69,7 @@
 #include "gtkcssnodeprivate.h"
 #include "gtkimageprivate.h"
 #include "gtkemojichooser.h"
+#include "gtkemojicompletions.h"
 
 #include "a11y/gtkentryaccessible.h"
 
@@ -650,6 +651,7 @@ static void         buffer_disconnect_signals          (GtkEntry       *entry);
 static GtkEntryBuffer *get_buffer                      (GtkEntry       *entry);
 static void         set_show_emoji_icon                (GtkEntry       *entry,
                                                         gboolean        value);
+static void         check_emoji_completion             (GtkEntry       *entry);
 
 static void     gtk_entry_measure (GtkWidget           *widget,
                                    GtkOrientation       orientation,
@@ -5050,6 +5052,7 @@ gtk_entry_backspace (GtkEntry *entry)
     }
 
   gtk_entry_pend_cursor_blink (entry);
+  check_emoji_completion (entry);
 }
 
 static void
@@ -5306,6 +5309,7 @@ gtk_entry_enter_text (GtkEntry       *entry,
   gtk_editable_set_position (editable, tmp_pos);
 
   priv->need_im_reset = old_need_im_reset;
+  check_emoji_completion (entry);
 }
 
 /* All changes to priv->current_pos and priv->selection_bound
@@ -9891,4 +9895,91 @@ set_show_emoji_icon (GtkEntry *entry,
 
   g_object_notify_by_pspec (G_OBJECT (entry), entry_props[PROP_SHOW_EMOJI_ICON]);
   gtk_widget_queue_resize (GTK_WIDGET (entry));
+}
+
+static void
+dismiss_emoji_completions (GtkEntry *entry)
+{
+  GtkWidget *popup;
+
+g_print ("dismiss emoji completions\n");
+  popup = GTK_WIDGET (g_object_get_data (G_OBJECT (entry), "emoji-completion-popup"));
+  if (popup)
+    gtk_popover_popdown (GTK_POPOVER (popup));
+}
+
+static void
+emoji_picked (GtkEmojiCompletions *completions,
+              const char          *emoji_text,
+              gpointer             data)
+{
+  GtkEntry *entry = data;
+  const char *text;
+  const char *completion_text;
+  guint length;
+
+  text = gtk_entry_buffer_get_text (get_buffer (entry));
+  length = gtk_entry_buffer_get_length (get_buffer (entry));
+
+  completion_text = g_object_get_data (entry, "emoji-completion-text");
+  gtk_entry_set_positions (entry, length - strlen (completion_text), length);
+  gtk_entry_enter_text (entry, emoji_text);
+}
+
+static void
+update_emoji_completions (GtkEntry   *entry,
+                          const char *text)
+{
+  GtkWidget *popup;
+
+g_print ("update emoji completions\n");
+
+  g_object_set_data_full (G_OBJECT (entry), "emoji-completion-text", g_strdup (text), g_free);
+
+  popup = GTK_WIDGET (g_object_get_data (G_OBJECT (entry), "emoji-completion-popup"));
+  if (popup == NULL)
+    {
+      popup = gtk_emoji_completions_new (entry);
+      g_object_set_data_full (G_OBJECT (entry), "emoji-completion-popup", popup, (GDestroyNotify)gtk_widget_destroy);
+      g_signal_connect (popup, "emoji-picked", G_CALLBACK (emoji_picked), entry);
+    }
+
+  gtk_emoji_completions_show (GTK_EMOJI_COMPLETIONS (popup), text);
+}
+
+static void
+check_emoji_completion (GtkEntry *entry)
+{
+  const char *text;
+  guint length;
+  const char *p;
+
+  text = gtk_entry_buffer_get_text (get_buffer (entry));
+  length = gtk_entry_buffer_get_length (get_buffer (entry));
+
+  if (length > 0)
+    {
+      gboolean found_candidate = FALSE;
+
+      p = text + length;
+      do
+        {
+          p = g_utf8_prev_char (p);
+          if (*p == ':')
+            {
+              if (p == text || !g_unichar_isalnum (g_utf8_get_char (p - 1)))
+                found_candidate = TRUE;
+              break;
+            }
+        }
+      while (g_unichar_isalnum (g_utf8_get_char (p)) || *p == '_');
+
+      if (found_candidate)
+        {
+          update_emoji_completions (entry, p);
+          return;
+        }
+    }
+
+  dismiss_emoji_completions (entry);
 }

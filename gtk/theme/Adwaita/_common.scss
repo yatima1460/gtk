@@ -4419,3 +4419,13 @@ button.emoji-section:backdrop:checked { color: $backdrop_fg_color; }
 .emoji:hover {
   background: $selected_bg_color;
 }
+
+popover.emoji-completions arrow {
+  border: none;
+  background: none;
+}
+
+popover.emoji-completions contents row box {
+  border-spacing: 10px;
+  padding: 2px 10px;
+}
