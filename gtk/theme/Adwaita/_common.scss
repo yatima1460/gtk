@@ -1589,11 +1589,20 @@ headerbar {
 
   // squared corners when the window is maximized, tiled, or fullscreen
   .tiled &,
+  .tiled-top &,
   .maximized &,
   .fullscreen & {
     &:backdrop, & {
       border-radius: 0;
     }
+  }
+
+  .tiled-left & {
+    border-top-left-radius: 0;
+  }
+
+  .tiled-right & {
+    border-top-right-radius: 0;
   }
 
   &.default-decoration {
@@ -1636,12 +1645,16 @@ headerbar {
   }
 }
 
-.background:not(.tiled):not(.maximized):not(.solid-csd) .titlebar {
+.background:not(.tiled):not(.maximized):not(.solid-csd) .titlebar,
+.background:not(.tiled-top):not(.maximized):not(.solid-csd) .titlebar {
   &:backdrop, & {
     border-top-left-radius: 7px;
     border-top-right-radius: 7px;
   }
 }
+
+.background:not(.tiled-left):not(.maximized):not(.solid-csd) .titlebar { &:backdrop, & { border-top-left-radius: 7px; }}
+.background:not(.tiled-right):not(.maximized):not(.solid-csd) .titlebar { &:backdrop, & { border-top-right-radius: 7px; }}
 
 headerbar { // headerbar border rounding
   window:not(.tiled):not(.maximized):not(.fullscreen):not(.solid-csd) separator:first-child + &, // tackles the paned container case
@@ -4256,6 +4269,33 @@ decoration {
   .maximized &,
   .fullscreen &,
   .tiled & { border-radius: 0; }
+
+  // Don't round corners on tiled windows
+  .tiled-top &,
+  .tiled-left & { border-top-left-radius: 0; }
+
+  .tiled-top &,
+  .tiled-right & { border-top-right-radius: 0; }
+
+  // Since we cannot have individual box-shadow selectors, special-case
+  // each possible case here.
+
+  // No shadow
+  .tiled-top.tiled-right.tiled-bottom.tiled-left & {
+    box-shadow: 0 0 0 1px $_wm_border;
+  }
+
+  // Right-only
+  .tiled-top.tiled-left.tiled-right & {
+    box-shadow: 3px 0 9px -9px transparentize(black, 0.5),
+                0 0 0 1px $_wm_border;
+  }
+
+  // Left-only
+  .tiled-top.tiled-left.tiled-right & {
+    box-shadow: -3px 0 9px -9px transparentize(black, 0.5),
+                0 0 0 1px $_wm_border;
+  }
 
   .popup & { box-shadow: none; }
 
