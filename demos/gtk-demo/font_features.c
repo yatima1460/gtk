@@ -35,16 +35,17 @@ static GtkWidget *variations_heading;
 static GtkWidget *variations_grid;
 static GtkWidget *instance_combo;
 
-#define num_features 40
+#define num_features 41
 
-static GtkWidget *toggle[num_features];
-static GtkWidget *icon[num_features];
 static const char *feature_names[num_features] = {
   "kern", "liga", "dlig", "hlig", "clig", "smcp", "c2sc", "pcap", "c2pc", "unic",
   "cpsp", "case", "lnum", "onum", "pnum", "tnum", "frac", "afrc", "zero", "nalt",
   "sinf", "swsh", "cswh", "locl", "calt", "hist", "salt", "titl", "rand", "subs",
-  "sups", "init", "medi", "fina", "isol", "ss01", "ss02", "ss03", "ss04", "ss05"
+  "sups", "init", "medi", "fina", "isol", "ss01", "ss02", "ss03", "ss04", "ss05",
+  "ss06"
 };
+static GtkWidget *toggle[num_features];
+static GtkWidget *icon[num_features];
 
 static void add_font_variations (GString *s);
 
