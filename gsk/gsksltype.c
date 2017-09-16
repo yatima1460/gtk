@@ -20,6 +20,9 @@
 
 #include "gsksltypeprivate.h"
 
+#include "gsksltokenizerprivate.h"
+#include "gsksltokenstreamprivate.h"
+
 #include <string.h>
 
 struct _GskSlType

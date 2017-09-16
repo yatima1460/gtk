@@ -20,6 +20,8 @@
 
 #include "gsksltokenstreamprivate.h"
 
+#include "gsksltokenizerprivate.h"
+
 struct _GskSlTokenStream
 {
   int ref_count;

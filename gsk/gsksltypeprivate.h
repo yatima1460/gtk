@@ -21,7 +21,7 @@
 
 #include <glib.h>
 
-#include "gsksltokenstreamprivate.h"
+#include "gsksltypesprivate.h"
 
 G_BEGIN_DECLS
 
