@@ -38,6 +38,8 @@ typedef struct _GskSlType GskSlType;
 
 GskSlType *             gsk_sl_type_new_parse                   (GskSlTokenStream    *stream);
 GskSlType *             gsk_sl_type_get_scalar                  (GskSlScalarType      scalar);
+GskSlType *             gsk_sl_type_get_vector                  (GskSlScalarType      scalar,
+                                                                 guint                length);
 
 GskSlType *             gsk_sl_type_ref                         (GskSlType           *type);
 void                    gsk_sl_type_unref                       (GskSlType           *type);
