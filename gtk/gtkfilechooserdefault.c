@@ -205,9 +205,9 @@ enum {
   MODEL_COL_FILE,
   MODEL_COL_NAME_COLLATED,
   MODEL_COL_IS_FOLDER,
+  MODEL_COL_IS_SENSITIVE,
   MODEL_COL_LIST_PIXBUF,
   MODEL_COL_ICON_PIXBUF,
-  MODEL_COL_IS_SENSITIVE,
   MODEL_COL_SIZE_TEXT,
   MODEL_COL_MTIME_TEXT,
   MODEL_COL_ELLIPSIZE,
@@ -223,9 +223,9 @@ enum {
 	G_TYPE_FILE,		  /* MODEL_COL_FILE */		\
 	G_TYPE_STRING,		  /* MODEL_COL_NAME_COLLATED */	\
 	G_TYPE_BOOLEAN,		  /* MODEL_COL_IS_FOLDER */	\
+	G_TYPE_BOOLEAN,		  /* MODEL_COL_IS_SENSITIVE */	\
 	GDK_TYPE_PIXBUF,	  /* MODEL_COL_LIST_PIXBUF */	\
 	GDK_TYPE_PIXBUF,	  /* MODEL_COL_ICON_PIXBUF */	\
-	G_TYPE_BOOLEAN,		  /* MODEL_COL_IS_SENSITIVE */	\
 	G_TYPE_STRING,		  /* MODEL_COL_SIZE_TEXT */	\
 	G_TYPE_STRING,		  /* MODEL_COL_MTIME_TEXT */	\
 	PANGO_TYPE_ELLIPSIZE_MODE /* MODEL_COL_ELLIPSIZE */
@@ -7349,8 +7349,6 @@ file_system_model_set (GtkFileSystemModel *model,
     case MODEL_COL_IS_FOLDER:
       g_value_set_boolean (value, info == NULL || _gtk_file_info_consider_as_directory (info));
       break;
-    case MODEL_COL_LIST_PIXBUF:
-    case MODEL_COL_ICON_PIXBUF:
     case MODEL_COL_IS_SENSITIVE:
       if (info)
         {
@@ -7377,6 +7375,8 @@ file_system_model_set (GtkFileSystemModel *model,
         }
       else
         g_value_set_boolean (value, TRUE);
+    case MODEL_COL_LIST_PIXBUF:
+    case MODEL_COL_ICON_PIXBUF:
       break;
       if (info)
         {
