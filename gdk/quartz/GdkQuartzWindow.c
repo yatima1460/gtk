@@ -24,6 +24,14 @@
 
 @implementation GdkQuartzWindow
 
+- (void)windowWillClose:(NSNotification*)notification
+{
+  // Clears the delegate when window is going to be closed; since EL
+  // Capitan it is possible that the methods of delegate would get
+  // called after the window has been closed.
+  [self setDelegate:nil];
+}
+
 -(BOOL)windowShouldClose:(id)sender
 {
   GdkWindow *window = [[self contentView] gdkWindow];
@@ -175,28 +183,13 @@
     }
 }
 
--(void)windowDidMove:(NSNotification *)aNotification
-{
-  GdkWindow *window = [[self contentView] gdkWindow];
-  GdkWindowObject *private = (GdkWindowObject *)window;
-  GdkEvent *event;
-
-  _gdk_quartz_window_update_position (window);
-
-  /* Synthesize a configure event */
-  event = gdk_event_new (GDK_CONFIGURE);
-  event->configure.window = g_object_ref (window);
-  event->configure.x = private->x;
-  event->configure.y = private->y;
-  event->configure.width = private->width;
-  event->configure.height = private->height;
-
-  _gdk_event_queue_append (gdk_display_get_default (), event);
-
-  [self checkSendEnterNotify];
-}
-
--(void)windowDidResize:(NSNotification *)aNotification
+/* Always update both the position and size. Certain resize operations
+ * (e.g. going fullscreen) also move the origin of the window. Move
+ * notifications sometimes also indicate a different window size (for
+ * example if the window size requested in the configure request was not
+ * fully granted).
+ */
+-(void)handleDidMoveResize
 {
   NSRect content_rect = [self contentRectForFrameRect:[self frame]];
   GdkWindow *window = [[self contentView] gdkWindow];
@@ -206,9 +199,6 @@
   private->width = content_rect.size.width;
   private->height = content_rect.size.height;
 
-  /* Certain resize operations (e.g. going fullscreen), also move the
-   * origin of the window.
-   */
   _gdk_quartz_window_update_position (window);
 
   [[self contentView] setFrame:NSMakeRect (0, 0, private->width, private->height)];
@@ -226,6 +216,16 @@
   _gdk_event_queue_append (gdk_display_get_default (), event);
 
   [self checkSendEnterNotify];
+}
+
+-(void)windowDidMove:(NSNotification *)aNotification
+{
+  [self handleDidMoveResize];
+}
+
+-(void)windowDidResize:(NSNotification *)aNotification
+{
+  [self handleDidMoveResize];
 }
 
 -(id)initWithContentRect:(NSRect)contentRect styleMask:(NSUInteger)styleMask backing:(NSBackingStoreType)backingType defer:(BOOL)flag screen:(NSScreen *)screen

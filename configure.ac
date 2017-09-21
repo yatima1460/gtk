@@ -13,8 +13,8 @@ AC_PREREQ(2.62)
 
 m4_define([gtk_major_version], [2])
 m4_define([gtk_minor_version], [24])
-m4_define([gtk_micro_version], [28])
-m4_define([gtk_interface_age], [28])
+m4_define([gtk_micro_version], [31])
+m4_define([gtk_interface_age], [31])
 m4_define([gtk_binary_age],
           [m4_eval(100 * gtk_minor_version + gtk_micro_version)])
 m4_define([gtk_version],
@@ -1192,6 +1192,9 @@ if test "x$gdktarget" = "xx11"; then
   if $PKG_CONFIG --exists "xrandr >= 1.2.99" ; then
      AC_DEFINE(HAVE_RANDR, 1, [Have the Xrandr extension library])
 
+     if $PKG_CONFIG --exists "xrandr >= 1.5.0" ; then
+       AC_DEFINE(HAVE_RANDR15, 1, [Have the Xrandr 1.5 extension library])
+     fi
      X_PACKAGES="$X_PACKAGES xrandr"
   fi
        
@@ -1620,6 +1623,12 @@ fi
 
 AM_CONDITIONAL(ENABLE_MAN, test x$enable_man != xno)
 
+##################################################
+# Check whether MSVC toolset is explicitly set
+##################################################
+
+AM_CONDITIONAL(MSVC_BASE_NO_TOOLSET_SET, [test x$MSVC_BASE_TOOLSET = x])
+AM_CONDITIONAL(MSVC_NO_TOOLSET_SET, [test x$MSVC_TOOLSET = x])
 
 ##################################################
 # Output commands
@@ -1738,9 +1747,13 @@ docs/tutorial/Makefile
 build/Makefile
 build/win32/Makefile
 build/win32/vs9/Makefile
+build/win32/vs9/gtk-version-paths.vsprops
 build/win32/vs10/Makefile
+build/win32/vs10/gtk-version-paths.props
 build/win32/vs11/Makefile
 build/win32/vs12/Makefile
+build/win32/vs14/Makefile
+build/win32/vs15/Makefile
 gdk/Makefile
 gdk/x11/Makefile
 gdk/win32/Makefile

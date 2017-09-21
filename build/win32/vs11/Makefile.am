@@ -19,14 +19,15 @@ EXTRA_DIST +=	\
 	gailutil.vcxproj.filters	\
 	libwimp.vcxproj	\
 	libwimp.vcxproj.filters	\
-	gtk-install.vcxproj
+	gtk-update-icon-cache.vcxproj	\
+	gtk-update-icon-cache.vcxproj.filters	\
+	gtk-install.vcxproj	\
+	gtk-install.vcxproj.filters
 
 DISTCLEANFILES = $(EXTRA_DIST)
 
-MSVC_SLN = gtk+
-
 MSVC_VER = 11
-
 MSVC_VER_LONG = 2012
+MSVC_FORMAT_VER = 12
 
 include $(top_srcdir)/build/Makefile-newvs.am

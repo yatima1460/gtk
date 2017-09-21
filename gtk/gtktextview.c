@@ -5066,6 +5066,24 @@ move_cursor (GtkTextView       *text_view,
   gtk_text_view_check_cursor_blink (text_view);
 }
 
+static gboolean
+iter_line_is_rtl (const GtkTextIter *iter)
+{
+  GtkTextIter start, end;
+  char *text;
+  PangoDirection direction;
+
+  start = end = *iter;
+  gtk_text_iter_set_line_offset (&start, 0);
+  gtk_text_iter_forward_line (&end);
+  text = gtk_text_iter_get_visible_text (&start, &end);
+  direction = pango_find_base_dir (text, -1);
+
+  g_free (text);
+
+  return direction == PANGO_DIRECTION_RTL;
+}
+
 static void
 gtk_text_view_move_cursor_internal (GtkTextView     *text_view,
                                     GtkMovementStep  step,
@@ -5154,15 +5172,19 @@ gtk_text_view_move_cursor_internal (GtkTextView     *text_view,
 
   if (! extend_selection)
     {
+      gboolean move_forward = count > 0;
       GtkTextIter sel_bound;
 
       gtk_text_buffer_get_iter_at_mark (get_buffer (text_view), &sel_bound,
                                         gtk_text_buffer_get_selection_bound (get_buffer (text_view)));
 
+      if (iter_line_is_rtl (&insert))
+        move_forward = !move_forward;
+
       /* if we move forward, assume the cursor is at the end of the selection;
        * if we move backward, assume the cursor is at the start
        */
-      if (count > 0)
+      if (move_forward)
         gtk_text_iter_order (&sel_bound, &insert);
       else
         gtk_text_iter_order (&insert, &sel_bound);
@@ -5194,6 +5216,9 @@ gtk_text_view_move_cursor_internal (GtkTextView     *text_view,
       break;
 
     case GTK_MOVEMENT_WORDS:
+      if (iter_line_is_rtl (&newplace))
+        count *= -1;
+
       if (count < 0)
         gtk_text_iter_backward_visible_word_starts (&newplace, -count);
       else if (count > 0) 

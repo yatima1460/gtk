@@ -3,6 +3,7 @@ include $(top_srcdir)/Makefile.decl
 -include $(INTROSPECTION_MAKEFILE)
 INTROSPECTION_GIRS =
 INTROSPECTION_SCANNER_ARGS = \
+   --warn-all \
    --add-include-path=../gdk
 INTROSPECTION_COMPILER_ARGS = \
    --includedir=$(srcdir) \
@@ -191,18 +192,21 @@ libgdk_win32_2_0_la_LDFLAGS = -Wl,win32/rc/gdk-win32-res.o -export-symbols $(src
 
 if HAVE_INTROSPECTION
 
-introspection_files = 		\
+base_introspection_files = 		\
 	$(filter-out gdkkeysyms-compat.h, $(gdk_public_h_sources))	\
 	$(gdk_c_sources)	\
 	gdkkeynames.c		\
         gdkenumtypes.c		\
         gdkenumtypes.h
 
+introspection_files = $(base_introspection_files)
+
 Gdk-2.0.gir: $(gdktargetlib) Makefile
-Gdk_2_0_gir_SCANNERFLAGS = --warn-all
+Gdk_2_0_gir_SCANNERFLAGS = --c-include="gdk/gdk.h"
 Gdk_2_0_gir_INCLUDES = Gio-2.0 GdkPixbuf-2.0 Pango-1.0 cairo-1.0
 Gdk_2_0_gir_LIBS = $(gdktargetlib)
 Gdk_2_0_gir_FILES = $(introspection_files)
+Gdk_2_0_gir_EXPORT_PACKAGES = gdk-2.0
 Gdk_2_0_gir_CFLAGS = $(INCLUDES)
 INTROSPECTION_GIRS += Gdk-2.0.gir
 
@@ -240,10 +244,12 @@ x11_introspection_files = 		\
         x11/gdkx.h
 
 GdkX11-2.0.gir: $(gdktargetlib) Gdk-2.0.gir Makefile
-GdkX11_2_0_gir_SCANNERFLAGS = --warn-all --strip-prefix=Gdk
-GdkX11_2_0_gir_INCLUDES = Gio-2.0 Gdk-2.0 GdkPixbuf-2.0 Pango-1.0 xlib-2.0
+GdkX11_2_0_gir_SCANNERFLAGS = --identifier-prefix=Gdk --include-uninstalled=Gdk-2.0.gir
+GdkX11_2_0_gir_INCLUDES = Gio-2.0 GdkPixbuf-2.0 Pango-1.0 xlib-2.0
+
 GdkX11_2_0_gir_LIBS = $(gdktargetlib)
 GdkX11_2_0_gir_FILES = $(x11_introspection_files)
+GdkX11_2_0_gir_EXPORT_PACKAGES = gdk-x11-2.0
 GdkX11_2_0_gir_CFLAGS = $(INCLUDES) -L$(top_builddir)/gdk
 INTROSPECTION_GIRS += GdkX11-2.0.gir
 
@@ -368,37 +374,48 @@ stamp-gc-h: $(top_builddir)/config.status
 	cd $(top_builddir) && $(SHELL) ./config.status gdk/gdkconfig.h
 	echo timestamp > stamp-gc-h
 
-dist-hook: ../build/win32/vs9/gdk.vcproj ../build/win32/vs10/gdk.vcxproj ../build/win32/vs10/gdk.vcxproj.filters
+# ---------------- MSVC Projects ----------------
+MSVCPROJS = gdk
 
-../build/win32/vs9/gdk.vcproj: ../build/win32/vs9/gdk.vcprojin
-	for F in $(libgdk_win32_2_0_la_SOURCES); do \
-		case $$F in \
-		*.c) echo '   <File RelativePath="..\..\..\gdk\'$$F'" />' \
-		     ;; \
-		esac; \
-	done >libgdk.sourcefiles
-	$(CPP) -P - <$(top_srcdir)/build/win32/vs9/gdk.vcprojin >$@
-	rm libgdk.sourcefiles
-	
-../build/win32/vs10/gdk.vcxproj: ../build/win32/vs10/gdk.vcxprojin
-	for F in $(libgdk_win32_2_0_la_SOURCES); do \
-		case $$F in \
-		*.c) echo '   <ClCompile Include="..\..\..\gdk\'$$F'" />' \
-		     ;; \
-		esac; \
-	done >libgdk.vs10.sourcefiles
-	$(CPP) -P - <$(top_srcdir)/build/win32/vs10/gdk.vcxprojin >$@
-	rm libgdk.vs10.sourcefiles
-	
-../build/win32/vs10/gdk.vcxproj.filters: ../build/win32/vs10/gdk.vcxproj.filtersin
-	for F in $(libgdk_win32_2_0_la_SOURCES); do \
-		case $$F in \
-		*.c) echo '   <ClCompile Include="..\..\..\gdk\'$$F'"><Filter>Source Files</Filter></ClCompile>' \
-		     ;; \
-		esac; \
-	done >libgdk.vs10.sourcefiles.filters
-	$(CPP) -P - <$(top_srcdir)/build/win32/vs10/gdk.vcxproj.filtersin >$@
-	rm libgdk.vs10.sourcefiles.filters
+gdk_FILES = $(libgdk_win32_2_0_la_SOURCES)
+gdk_EXCLUDES = gdkdummy
+
+gdk_HEADERS_DIR = $(gdkincludedir)
+gdk_HEADERS_INST = $(gdkinclude_HEADERS)
+gdk_HEADERS_EXCLUDES = gdkdummy
+
+include $(top_srcdir)/build/Makefile.msvcproj
+
+if HAVE_INTROSPECTION
+# Introspection Items for MSVC
+MSVC_INTROSPECT_GIRS = Gdk-2.0.gir
+
+BASE_MSVC_GIR_CFLAGS =			\
+	-DG_LOG_DOMAIN=\"Gdk\"		\
+	-DGDK_COMPILATION		\
+	-I../.. -I../../gdk -I.../../gdk/win32
+
+INTROSPECTION_INTERMEDIATE_ITEMS = \
+	$(top_builddir)/build/win32/Gdk-2.0.gir.msvc.introspect	\
+	$(top_builddir)/build/win32/Gdk_2_0_gir_list
+
+Gdk_2_0_gir_MSVC_FILES = $(filter-out gdkmedialib.c, $(base_introspection_files))
+Gdk_2_0_gir_MSVC_EXPORT_PACKAGES = $(Gdk_2_0_gir_EXPORT_PACKAGES)
+Gdk_2_0_gir_MSVC_INCLUDE_GIRS = $(Gdk_2_0_gir_INCLUDES)
+Gdk_2_0_gir_MSVC_LIBS = gdk-win32-2.0
+Gdk_2_0_gir_MSVC_CFLAGS = $(BASE_MSVC_GIR_CFLAGS)
+Gdk_2_0_gir_MSVC_SCANNERFLAGS = $(Gdk_2_0_gir_SCANNERFLAGS)
+
+include $(top_srcdir)/build/Makefile.msvc-introspection
+
+else
+INTROSPECTION_INTERMEDIATE_ITEMS =
+endif
+
+dist-hook:	\
+	$(top_builddir)/build/win32/vs9/gdk.vcproj	\
+	$(top_builddir)/build/win32/vs9/gdk.headers	\
+	$(INTROSPECTION_INTERMEDIATE_ITEMS)
 
 DISTCLEANFILES = gdkconfig.h stamp-gc-h
 

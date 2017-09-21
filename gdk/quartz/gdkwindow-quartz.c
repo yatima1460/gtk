@@ -57,10 +57,18 @@ static FullscreenSavedGeometry *get_fullscreen_geometry (GdkWindow *window);
 
 static void gdk_window_impl_iface_init (GdkWindowImplIface *iface);
 
+gboolean
+gdk_quartz_window_is_quartz (GdkWindow *window)
+{
+  return GDK_WINDOW_IS_QUARTZ (window);
+}
+
 NSView *
 gdk_quartz_window_get_nsview (GdkWindow *window)
 {
   GdkWindowObject *private = (GdkWindowObject *)window;
+
+  g_return_val_if_fail (GDK_WINDOW_IS_QUARTZ (window), NULL);
 
   if (GDK_WINDOW_DESTROYED (window))
     return NULL;
@@ -1953,7 +1961,8 @@ gdk_window_quartz_get_pointer_helper (GdkWindow       *window,
   
   toplevel = GDK_WINDOW_OBJECT (gdk_window_get_effective_toplevel (window));
 
-  *mask = _gdk_quartz_events_get_current_event_mask ();
+  *mask = _gdk_quartz_events_get_current_keyboard_modifiers ()
+	| _gdk_quartz_events_get_current_mouse_modifiers ();
 
   /* Get the y coordinate, needs to be flipped. */
   if (window == _gdk_root)
@@ -3002,7 +3011,14 @@ gdk_window_fullscreen (GdkWindow *window)
       clear_toplevel_order ();
     }
 
-  SetSystemUIMode (kUIModeAllHidden, kUIOptionAutoShowMenuBar);
+  if ([NSWindow respondsToSelector:@selector(toggleFullScreen:)])
+    {
+       [impl->toplevel toggleFullScreen:nil];
+    }
+  else
+    {
+      SetSystemUIMode (kUIModeAllHidden, kUIOptionAutoShowMenuBar);
+    }
 
   gdk_synthesize_window_state (window, 0, GDK_WINDOW_STATE_FULLSCREEN);
 }
@@ -3021,14 +3037,21 @@ gdk_window_unfullscreen (GdkWindow *window)
   geometry = get_fullscreen_geometry (window);
   if (geometry)
     {
-      SetSystemUIMode (kUIModeNormal, 0);
+      if ([NSWindow respondsToSelector:@selector(toggleFullScreen:)])
+        {
+          [impl->toplevel toggleFullScreen:nil];
+        }
+      else
+        {
+	  SetSystemUIMode (kUIModeNormal, 0);
+	}
 
       move_resize_window_internal (window,
                                    geometry->x,
                                    geometry->y,
                                    geometry->width,
                                    geometry->height);
-      
+
       gdk_window_set_decorations (window, geometry->decor);
 
       g_object_set_data (G_OBJECT (window), FULLSCREEN_DATA, NULL);

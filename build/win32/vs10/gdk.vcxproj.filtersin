@@ -20,7 +20,7 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-#include "libgdk.vs10.sourcefiles.filters"
+#include "gdk.vs10.sourcefiles.filters"
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="..\..\..\gdk\gdk.symbols">
