@@ -20,6 +20,7 @@
 #include "gdkdevicemanagerprivate.h"
 #include "gdkdisplayprivate.h"
 #include "gdkdeviceprivate.h"
+#include "gdkseatdefaultprivate.h"
 
 #include "gdkmir.h"
 #include "gdkmir-private.h"
@@ -59,7 +60,6 @@ static GList *
 gdk_mir_device_manager_list_devices (GdkDeviceManager *device_manager,
                                      GdkDeviceType     type)
 {
-  //g_printerr ("gdk_mir_device_manager_list_devices (%u)\n", type);
   GdkMirDeviceManager *dm = GDK_MIR_DEVICE_MANAGER (device_manager);
 
   if (type == GDK_DEVICE_TYPE_MASTER)
@@ -78,7 +78,6 @@ gdk_mir_device_manager_list_devices (GdkDeviceManager *device_manager,
 static GdkDevice *
 gdk_mir_device_manager_get_client_pointer (GdkDeviceManager *device_manager)
 {
-  //g_printerr ("gdk_mir_device_manager_get_client_pointer\n");
   return GDK_MIR_DEVICE_MANAGER (device_manager)->pointer;
 }
 
@@ -97,13 +96,19 @@ static void
 gdk_mir_device_manager_constructed (GObject *object)
 {
   GdkMirDeviceManager *device_manager = GDK_MIR_DEVICE_MANAGER (object);
+  GdkDisplay *display;
+  GdkSeat *seat;
 
   device_manager->keyboard = _gdk_mir_keyboard_new (GDK_DEVICE_MANAGER (device_manager), "Mir Keyboard");
   device_manager->pointer = _gdk_mir_pointer_new (GDK_DEVICE_MANAGER (device_manager), "Mir Pointer");
   _gdk_device_set_associated_device (device_manager->keyboard, device_manager->pointer);
   _gdk_device_set_associated_device (device_manager->pointer, device_manager->keyboard);
 
-  gdk_device_manager_get_display (GDK_DEVICE_MANAGER (device_manager))->core_pointer = device_manager->pointer;
+  display = gdk_device_manager_get_display (GDK_DEVICE_MANAGER (device_manager));
+
+  seat = gdk_seat_default_new_for_master_pair (device_manager->pointer, device_manager->keyboard);
+  gdk_display_add_seat (display, seat);
+  g_object_unref (seat);
 
   G_OBJECT_CLASS (gdk_mir_device_manager_parent_class)->constructed (object);
 }

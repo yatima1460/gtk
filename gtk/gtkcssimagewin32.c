@@ -35,24 +35,24 @@ gtk_css_image_win32_draw (GtkCssImage        *image,
   cairo_surface_t *surface;
   int dx, dy;
 
-  surface = _gtk_win32_theme_part_create_surface (wimage->theme, wimage->part, wimage->state, wimage->margins,
-						  width, height, &dx, &dy);
+  surface = gtk_win32_theme_create_surface (wimage->theme, wimage->part, wimage->state, wimage->margins,
+				            width, height, &dx, &dy);
   
   if (wimage->state2 >= 0)
     {
       cairo_surface_t *surface2;
-      cairo_t *cr;
+      cairo_t *cr2;
       int dx2, dy2;
 
-      surface2 = _gtk_win32_theme_part_create_surface (wimage->theme, wimage->part2, wimage->state2, wimage->margins,
-						       width, height, &dx2, &dy2);
+      surface2 = gtk_win32_theme_create_surface (wimage->theme, wimage->part2, wimage->state2, wimage->margins,
+						 width, height, &dx2, &dy2);
 
-      cr = cairo_create (surface);
+      cr2 = cairo_create (surface);
 
-      cairo_set_source_surface (cr, surface2, dx2 - dx, dy2-dy);
-      cairo_paint_with_alpha (cr, wimage->over_alpha);
-      
-      cairo_destroy (cr);
+      cairo_set_source_surface (cr2, surface2, dx2 - dx, dy2-dy);
+      cairo_paint_with_alpha (cr2, wimage->over_alpha);
+
+      cairo_destroy (cr2);
 
       cairo_surface_destroy (surface2);
     }
@@ -70,7 +70,6 @@ gtk_css_image_win32_parse (GtkCssImage  *image,
                            GtkCssParser *parser)
 {
   GtkCssImageWin32 *wimage = GTK_CSS_IMAGE_WIN32 (image);
-  char *class;
 
   if (!_gtk_css_parser_try (parser, "-gtk-win32-theme-part", TRUE))
     {
@@ -85,15 +84,9 @@ gtk_css_image_win32_parse (GtkCssImage  *image,
       return FALSE;
     }
   
-  class = _gtk_css_parser_try_name (parser, TRUE);
-  if (class == NULL)
-    {
-      _gtk_css_parser_error (parser,
-                             "Expected name as first argument to  '-gtk-win32-theme-part'");
-      return FALSE;
-    }
-  wimage->theme = _gtk_win32_lookup_htheme_by_classname (class);
-  g_free (class);
+  wimage->theme = gtk_win32_theme_parse (parser);
+  if (wimage->theme == NULL)
+    return FALSE;
 
   if (! _gtk_css_parser_try (parser, ",", TRUE))
     {
@@ -104,6 +97,12 @@ gtk_css_image_win32_parse (GtkCssImage  *image,
   if (!_gtk_css_parser_try_int (parser, &wimage->part))
     {
       _gtk_css_parser_error (parser, "Expected a valid integer value");
+      return FALSE;
+    }
+
+  if (! _gtk_css_parser_try (parser, ",", TRUE))
+    {
+      _gtk_css_parser_error (parser, "Expected ','");
       return FALSE;
     }
 
@@ -127,6 +126,12 @@ gtk_css_image_win32_parse (GtkCssImage  *image,
           if (!_gtk_css_parser_try_int (parser, &wimage->part2))
             {
               _gtk_css_parser_error (parser, "Expected a valid integer value");
+              return FALSE;
+            }
+
+          if (! _gtk_css_parser_try (parser, ",", TRUE))
+            {
+              _gtk_css_parser_error (parser, "Expected ','");
               return FALSE;
             }
 
@@ -211,13 +216,31 @@ static void
 gtk_css_image_win32_print (GtkCssImage *image,
                            GString     *string)
 {
-  g_string_append (string, "none /* printing win32 theme components is not implemented */");
+  GtkCssImageWin32 *wimage = GTK_CSS_IMAGE_WIN32 (image);
+
+  g_string_append (string, "-gtk-win32-theme-part(");
+  gtk_win32_theme_print (wimage->theme, string);
+  g_string_append_printf (string, ", %d, %d)", wimage->part, wimage->state);
+}
+
+static void
+gtk_css_image_win32_finalize (GObject *object)
+{
+  GtkCssImageWin32 *wimage = GTK_CSS_IMAGE_WIN32 (object);
+
+  if (wimage->theme)
+    gtk_win32_theme_unref (wimage->theme);
+
+  G_OBJECT_CLASS (_gtk_css_image_win32_parent_class)->finalize (object);
 }
 
 static void
 _gtk_css_image_win32_class_init (GtkCssImageWin32Class *klass)
 {
   GtkCssImageClass *image_class = GTK_CSS_IMAGE_CLASS (klass);
+  GObjectClass *object_class = G_OBJECT_CLASS (klass);
+
+  object_class->finalize = gtk_css_image_win32_finalize;
 
   image_class->draw = gtk_css_image_win32_draw;
   image_class->parse = gtk_css_image_win32_parse;

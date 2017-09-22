@@ -2,18 +2,27 @@ AUTOMAKE_OPTIONS = subdir-objects
 
 include $(top_srcdir)/Makefile.decl
 
-AM_CPPFLAGS =						\
+GTK_BASE_CFLAGS_DEFINES =				\
 	-DG_LOG_DOMAIN=\"Gtk\"				\
+	-DG_LOG_USE_STRUCTURED=1			\
+	-DGTK_VERSION=\"$(GTK_VERSION)\"		\
+	-DGTK_BINARY_VERSION=\"$(GTK_BINARY_VERSION)\"	\
+	-DGTK_COMPILATION				\
+	-DGTK_PRINT_BACKEND_ENABLE_UNSUPPORTED
+
+GTK_PLAT_CFLAGS_DEFINES =				\
 	-DGTK_LIBDIR=\"$(libdir)\"			\
+	-DGTK_LOCALEDIR=\"$(localedir)\"		\
 	-DGTK_DATADIR=\"$(datadir)\"			\
 	-DGTK_DATA_PREFIX=\"$(prefix)\"			\
 	-DGTK_SYSCONFDIR=\"$(sysconfdir)\"		\
-	-DGTK_VERSION=\"$(GTK_VERSION)\"		\
-	-DGTK_BINARY_VERSION=\"$(GTK_BINARY_VERSION)\"	\
 	-DGTK_HOST=\"$(host)\"				\
-	-DGTK_COMPILATION				\
-	-DGTK_PRINT_BACKENDS=\"$(GTK_PRINT_BACKENDS)\"	\
-	-DGTK_PRINT_BACKEND_ENABLE_UNSUPPORTED		\
+	-DGTK_PRINT_BACKENDS=\"$(GTK_PRINT_BACKENDS)\"
+
+AM_CPPFLAGS =						\
+	$(GTK_BASE_CFLAGS_DEFINES)			\
+	$(GTK_PLAT_CFLAGS_DEFINES)			\
+	-DX11_DATA_PREFIX=\"$(X11_PREFIX)\"		\
 	-I$(top_builddir)				\
 	-I$(top_builddir)/gtk				\
 	-I$(top_srcdir) 				\
@@ -34,6 +43,11 @@ gtk_win32_res_ldflag = -Wl,gtk-win32-res.o
 gtk-win32-res.o : gtk-win32.rc libgtk3.manifest
 	$(WINDRES) gtk-win32.rc $@
 
+gtk-win32.rc: gtk-win32.rc.body
+	echo "#include <winuser.h>" >>$@
+	cat $< >>$@
+	echo "ISOLATIONAWARE_MANIFEST_RESOURCE_ID RT_MANIFEST libgtk3.manifest" >>$@
+
 gtk.def: libgtk-3.la
 	echo "LIBRARY libgtk-$(GTK_MAJOR_VERSION)-@LT_CURRENT_MINUS_AGE@" >$@
 	echo "EXPORTS" >>$@
@@ -51,7 +65,7 @@ endif
 if MS_LIB_AVAILABLE
 noinst_DATA = gtk-win32-$(GTK_API_VERSION).lib
 
-gtk-win32-$(GTK_API_VERSION).lib: libgtk-win32-$(GTK_API_VERSION).la gtk.def
+gtk-win32-$(GTK_API_VERSION).lib: libgtk-3.la gtk.def
 	lib -machine:@LIB_EXE_MACHINE_FLAG@ -name:libgtk-win32-$(GTK_API_VERSION)-@LT_CURRENT_MINUS_AGE@.dll -def:gtk.def -out:$@
 
 install-ms-lib:
@@ -167,6 +181,8 @@ gtk_public_h_sources = 		\
 	gtkdebug.h		\
 	gtkdialog.h		\
 	gtkdnd.h		\
+	gtkdragdest.h		\
+	gtkdragsource.h		\
 	gtkdrawingarea.h	\
 	gtkeditable.h		\
 	gtkentry.h		\
@@ -179,6 +195,7 @@ gtk_public_h_sources = 		\
 	gtkfilechooser.h	\
 	gtkfilechooserbutton.h	\
 	gtkfilechooserdialog.h	\
+	gtkfilechoosernative.h	\
 	gtkfilechooserwidget.h	\
 	gtkfilefilter.h		\
 	gtkfixed.h		\
@@ -228,10 +245,12 @@ gtk_public_h_sources = 		\
 	gtkmodelbutton.h	\
 	gtkmodules.h		\
 	gtkmountoperation.h	\
+	gtknativedialog.h	\
 	gtknotebook.h		\
 	gtkoffscreenwindow.h	\
 	gtkorientable.h		\
 	gtkoverlay.h		\
+	gtkpadcontroller.h	\
 	gtkpagesetup.h		\
 	gtkpaned.h		\
 	gtkpapersize.h		\
@@ -268,6 +287,11 @@ gtk_public_h_sources = 		\
 	gtkseparatormenuitem.h	\
 	gtkseparatortoolitem.h	\
 	gtksettings.h		\
+	gtkshortcutlabel.h	\
+	gtkshortcutsgroup.h	\
+	gtkshortcutssection.h	\
+	gtkshortcutsshortcut.h	\
+	gtkshortcutswindow.h	\
 	gtkshow.h		\
 	gtkstacksidebar.h	\
 	gtksizegroup.h		\
@@ -346,6 +370,7 @@ gtk_private_h_sources =		\
 	gtkactionobserver.h	\
 	gtkactionobservable.h	\
 	gtkadjustmentprivate.h	\
+	gtkapplicationaccelsprivate.h	\
 	gtkapplicationprivate.h	\
 	gtkaccelgroupprivate.h	\
 	gtkaccelmapprivate.h	\
@@ -357,10 +382,14 @@ gtk_private_h_sources =		\
 	gtkbitmaskprivateimpl.h	\
 	gtkbookmarksmanager.h	\
 	gtkboxprivate.h         \
+	gtkboxgadgetprivate.h	\
 	gtkbuilderprivate.h	\
+	gtkbuiltiniconprivate.h	\
 	gtkbuttonprivate.h	\
 	gtkcairoblurprivate.h	\
 	gtkcellareaboxcontextprivate.h	\
+	gtkcheckbuttonprivate.h	\
+	gtkcheckmenuitemprivate.h	\
 	gtkclipboardprivate.h		\
 	gtkcolorswatchprivate.h	\
 	gtkcoloreditorprivate.h	\
@@ -368,27 +397,35 @@ gtk_private_h_sources =		\
 	gtkcolorscaleprivate.h	\
 	gtkcolorchooserprivate.h	\
 	gtkcomboboxprivate.h	\
+	gtkcomposetable.h	\
 	gtkcontainerprivate.h   \
 	gtkcssanimationprivate.h	\
 	gtkcssanimatedstyleprivate.h	\
 	gtkcssarrayvalueprivate.h	\
 	gtkcssbgsizevalueprivate.h	\
 	gtkcssbordervalueprivate.h	\
+	gtkcsscalcvalueprivate.h	\
 	gtkcsscolorvalueprivate.h	\
 	gtkcsscornervalueprivate.h	\
-	gtkcsscustompropertyprivate.h \
+	gtkcsscustomgadgetprivate.h	\
+	gtkcsscustompropertyprivate.h 	\
+	gtkcssdimensionvalueprivate.h	\
 	gtkcsseasevalueprivate.h	\
 	gtkcssenginevalueprivate.h	\
 	gtkcssenumvalueprivate.h	\
+	gtkcssgadgetprivate.h		\
 	gtkcssiconthemevalueprivate.h	\
 	gtkcssimagebuiltinprivate.h	\
 	gtkcssimagecrossfadeprivate.h	\
+	gtkcssimagefallbackprivate.h	\
 	gtkcssimagegradientprivate.h	\
 	gtkcssimageiconthemeprivate.h	\
 	gtkcssimagelinearprivate.h	\
+	gtkcssimageradialprivate.h	\
 	gtkcssimageprivate.h	\
 	gtkcssimagesurfaceprivate.h	\
 	gtkcssimageurlprivate.h	\
+	gtkcssimagerecolorprivate.h	\
 	gtkcssimagescaledprivate.h	\
 	gtkcssimagevalueprivate.h	\
 	gtkcssimagewin32private.h	\
@@ -399,7 +436,9 @@ gtk_private_h_sources =		\
 	gtkcssmatcherprivate.h	\
 	gtkcssnodeprivate.h		\
 	gtkcssnodedeclarationprivate.h	\
+	gtkcssnodestylecacheprivate.h	\
 	gtkcssnumbervalueprivate.h	\
+	gtkcsspalettevalueprivate.h	\
 	gtkcssparserprivate.h	\
 	gtkcsspathnodeprivate.h	\
 	gtkcsspositionvalueprivate.h	\
@@ -414,6 +453,7 @@ gtk_private_h_sources =		\
 	gtkcssstaticstyleprivate.h	\
 	gtkcssstringvalueprivate.h	\
 	gtkcssstylefuncsprivate.h \
+	gtkcssstylechangeprivate.h 	\
 	gtkcssstyleprivate.h 	\
 	gtkcssstylepropertyprivate.h \
 	gtkcsstransformvalueprivate.h	\
@@ -422,15 +462,21 @@ gtk_private_h_sources =		\
 	gtkcsstypedvalueprivate.h	\
 	gtkcssunsetvalueprivate.h	\
 	gtkcssvalueprivate.h	\
+	gtkcsswin32sizevalueprivate.h   \
 	gtkcsswidgetnodeprivate.h	\
 	gtkcustompaperunixdialog.h \
 	gtkdialogprivate.h 	\
+	gtkdndprivate.h		\
+	gtkemojichooser.h	\
 	gtkentryprivate.h	\
 	gtkeventcontrollerprivate.h	\
 	gtkfilechooserembed.h	\
 	gtkfilechooserentry.h	\
 	gtkfilechooserprivate.h	\
+	gtkfilechoosernativeprivate.h	\
+	gtkfilechooserwidgetprivate.h	\
 	gtkfilechooserutils.h	\
+	gtkfilefilterprivate.h	\
 	gtkfilesystem.h		\
 	gtkfilesystemmodel.h	\
 	gtkfontchooserprivate.h	\
@@ -448,8 +494,12 @@ gtk_private_h_sources =		\
 	gtkhslaprivate.h	\
 	gtkiconcache.h		\
 	gtkiconhelperprivate.h  \
+	gtkiconprivate.h	\
+	gtkiconthemeprivate.h  \
 	gtkiconviewprivate.h	\
+	gtkimagedefinitionprivate.h	\
 	gtkimageprivate.h	\
+	gtkimcontextsimpleprivate.h	\
 	gtkimmoduleprivate.h	\
 	gtkimcontextsimpleseqs.h \
 	gtkintl.h		\
@@ -470,14 +520,19 @@ gtk_private_h_sources =		\
 	gtkmodifierstyle.h	\
 	gtkmodulesprivate.h	\
 	gtkmountoperationprivate.h \
+	gtknativedialogprivate.h \
 	gtkorientableprivate.h	\
 	gtkpango.h		\
 	gtkpathbar.h		\
+	gtkplacessidebarprivate.h	\
+	gtkplacesviewprivate.h	\
+	gtkplacesviewrowprivate.h	\
 	gtkpopoverprivate.h	\
 	gtkprintoperation-private.h \
 	gtkprintutils.h		\
 	gtkprivate.h		\
 	gtkpixelcacheprivate.h	\
+	gtkprogresstrackerprivate.h	\
 	gtkquery.h		\
 	gtkrangeprivate.h	\
 	gtkrbtree.h		\
@@ -490,12 +545,15 @@ gtk_private_h_sources =		\
 	gtkrenderprivate.h	\
 	gtkresources.h		\
 	gtkroundedboxprivate.h	\
-	gtkscaleprivate.h	\
 	gtksearchengine.h	\
 	gtksearchenginesimple.h	\
+	gtksearchenginemodel.h	\
 	gtksearchentryprivate.h \
 	gtkselectionprivate.h	\
 	gtksettingsprivate.h	\
+	gtkshortcutswindowprivate.h	\
+	gtkshortcutsshortcutprivate.h	\
+	gtksidebarrowprivate.h	\
 	gtksizegroup-private.h	\
 	gtksizerequestcacheprivate.h	\
 	gtksocketprivate.h	\
@@ -506,6 +564,7 @@ gtk_private_h_sources =		\
 	gtkstyleproviderprivate.h \
 	gtktextattributesprivate.h \
 	gtktextbtree.h		\
+	gtktextbufferprivate.h \
 	gtktextbufferserialize.h \
 	gtktextchildprivate.h	\
 	gtktexthandleprivate.h	\
@@ -520,12 +579,17 @@ gtk_private_h_sources =		\
 	gtktoolbarprivate.h	\
 	gtktoolpaletteprivate.h	\
 	gtktooltipprivate.h	\
+	gtktooltipwindowprivate.h \
 	gtktreedatalist.h	\
 	gtktreeprivate.h	\
+	gtkutilsprivate.h	\
 	gtkwidgetprivate.h	\
+	gtkwidgetpathprivate.h	\
+	gtkwin32drawprivate.h	\
 	gtkwin32themeprivate.h	\
 	gtkwindowprivate.h	\
-	gtktreemenu.h
+	gtktreemenu.h		\
+	gdkpixbufutilsprivate.h
 
 # GTK+ C sources to build the library from
 gtk_base_c_sources = 		\
@@ -541,6 +605,7 @@ gtk_base_c_sources = 		\
 	gtksearchentry.c	\
 	gtksearchengine.c	\
 	gtksearchenginesimple.c	\
+	gtksearchenginemodel.c	\
 	fnmatch.c		\
 	gtkaboutdialog.c	\
 	gtkaccelgroup.c		\
@@ -556,6 +621,7 @@ gtk_base_c_sources = 		\
 	gtkappchooserbutton.c	\
 	gtkappchooserdialog.c	\
 	gtkapplication.c	\
+	gtkapplicationaccels.c	\
 	gtkapplicationimpl.c	\
 	gtkapplicationwindow.c	\
 	gtkaspectframe.c	\
@@ -566,10 +632,12 @@ gtk_base_c_sources = 		\
 	gtkbookmarksmanager.c	\
 	gtkborder.c		\
 	gtkbox.c		\
+	gtkboxgadget.c		\
 	gtkbuildable.c		\
 	gtkbuilder.c		\
 	gtkbuilderparser.c	\
 	gtkbuilder-menus.c	\
+	gtkbuiltinicon.c	\
 	gtkbutton.c		\
 	gtkcairoblur.c		\
 	gtkcalendar.c		\
@@ -602,27 +670,35 @@ gtk_base_c_sources = 		\
 	gtkcolorutils.c		\
 	gtkcombobox.c		\
 	gtkcomboboxtext.c	\
+	gtkcomposetable.c	\
 	gtkcontainer.c		\
 	gtkcssanimation.c	\
 	gtkcssanimatedstyle.c	\
 	gtkcssarrayvalue.c	\
 	gtkcssbgsizevalue.c	\
 	gtkcssbordervalue.c	\
+	gtkcsscalcvalue.c	\
 	gtkcsscolorvalue.c	\
 	gtkcsscornervalue.c	\
+	gtkcsscustomgadget.c	\
 	gtkcsscustomproperty.c	\
+	gtkcssdimensionvalue.c	\
 	gtkcsseasevalue.c	\
 	gtkcssenumvalue.c	\
 	gtkcssenginevalue.c	\
+	gtkcssgadget.c		\
 	gtkcssiconthemevalue.c	\
 	gtkcssimage.c		\
 	gtkcssimagebuiltin.c	\
 	gtkcssimagecrossfade.c	\
+	gtkcssimagefallback.c	\
 	gtkcssimagegradient.c	\
 	gtkcssimageicontheme.c	\
 	gtkcssimagelinear.c	\
+	gtkcssimageradial.c	\
 	gtkcssimagesurface.c	\
 	gtkcssimageurl.c	\
+	gtkcssimagerecolor.c	\
 	gtkcssimagescaled.c	\
 	gtkcssimagevalue.c	\
 	gtkcssimagewin32.c	\
@@ -633,7 +709,9 @@ gtk_base_c_sources = 		\
 	gtkcssmatcher.c		\
 	gtkcssnode.c		\
 	gtkcssnodedeclaration.c	\
+	gtkcssnodestylecache.c	\
 	gtkcssnumbervalue.c	\
+	gtkcsspalettevalue.c	\
 	gtkcssparser.c		\
 	gtkcsspathnode.c	\
 	gtkcsspositionvalue.c	\
@@ -644,6 +722,7 @@ gtk_base_c_sources = 		\
 	gtkcssselector.c	\
 	gtkcssstringvalue.c	\
 	gtkcssstyle.c		\
+	gtkcssstylechange.c 	\
 	gtkcssshadowsvalue.c	\
 	gtkcssshadowvalue.c	\
 	gtkcssshorthandproperty.c \
@@ -660,9 +739,12 @@ gtk_base_c_sources = 		\
 	gtkcsstypes.c		\
 	gtkcssvalue.c		\
 	gtkcsswidgetnode.c	\
+        gtkcsswin32sizevalue.c  \
 	gtkdialog.c		\
+	gtkdragsource.c		\
 	gtkdrawingarea.c	\
 	gtkeditable.c		\
+	gtkemojichooser.c	\
 	gtkentry.c		\
 	gtkentrybuffer.c	\
 	gtkentrycompletion.c	\
@@ -674,6 +756,8 @@ gtk_base_c_sources = 		\
 	gtkfilechooserdialog.c	\
 	gtkfilechooserembed.c	\
 	gtkfilechooserentry.c	\
+	gtkfilechoosernative.c	\
+	gtkfilechoosernativeportal.c	\
 	gtkfilechooserutils.c	\
 	gtkfilechooserwidget.c	\
 	gtkfilefilter.c		\
@@ -701,12 +785,14 @@ gtk_base_c_sources = 		\
 	gtkgrid.c		\
 	gtkheaderbar.c		\
 	gtkhsla.c		\
+	gtkicon.c		\
 	gtkiconcache.c		\
 	gtkiconcachevalidator.c	\
 	gtkiconhelper.c		\
 	gtkicontheme.c		\
 	gtkiconview.c		\
 	gtkimage.c		\
+	gtkimagedefinition.c	\
 	gtkimcontext.c		\
 	gtkimcontextsimple.c	\
 	gtkimmodule.c		\
@@ -741,16 +827,20 @@ gtk_base_c_sources = 		\
 	gtkmodifierstyle.c	\
 	gtkmodules.c		\
 	gtkmountoperation.c	\
+	gtknativedialog.c	\
 	gtknotebook.c		\
 	gtkoffscreenwindow.c	\
 	gtkorientable.c		\
 	gtkoverlay.c		\
+	gtkpadcontroller.c	\
 	gtkpagesetup.c		\
 	gtkpaned.c		\
 	gtkpango.c		\
 	gtkpapersize.c		\
 	gtkpathbar.c		\
 	gtkplacessidebar.c	\
+	gtkplacesview.c		\
+	gtkplacesviewrow.c	\
 	gtkprintcontext.c	\
 	gtkprintoperation.c	\
 	gtkprintoperationpreview.c \
@@ -759,6 +849,7 @@ gtk_base_c_sources = 		\
 	gtkprivate.c		\
 	gtkprivatetypebuiltins.c \
 	gtkprogressbar.c	\
+	gtkprogresstracker.c	\
 	gtkpixelcache.c		\
 	gtkpopover.c		\
 	gtkpopovermenu.c	\
@@ -792,6 +883,12 @@ gtk_base_c_sources = 		\
 	gtkseparatormenuitem.c	\
 	gtkseparatortoolitem.c	\
 	gtksettings.c		\
+	gtkshortcutsgroup.c	\
+	gtkshortcutlabel.c	\
+	gtkshortcutsshortcut.c	\
+	gtkshortcutssection.c	\
+	gtkshortcutswindow.c	\
+	gtksidebarrow.c		\
 	gtksizegroup.c		\
 	gtksizerequest.c	\
 	gtksizerequestcache.c	\
@@ -836,6 +933,7 @@ gtk_base_c_sources = 		\
 	gtktoolpalette.c	\
 	gtktoolshell.c		\
 	gtktooltip.c		\
+	gtktooltipwindow.c	\
 	gtktrashmonitor.c	\
 	gtktreedatalist.c	\
 	gtktreednd.c		\
@@ -849,13 +947,16 @@ gtk_base_c_sources = 		\
 	gtktreeview.c		\
 	gtktreeviewcolumn.c	\
 	gtktypebuiltins.c	\
+	gtkutils.c		\
 	gtkvolumebutton.c	\
 	gtkviewport.c		\
 	gtkwidget.c		\
 	gtkwidgetpath.c		\
 	gtkwindow.c		\
 	gtkwindowgroup.c	\
-	gtkwin32theme.c
+	gtkwin32draw.c		\
+	gtkwin32theme.c		\
+	gdkpixbufutils.c
 
 if USE_QUARTZ
 gtk_base_c_sources += 		\
@@ -864,7 +965,8 @@ gtk_base_c_sources += 		\
 else
 gtk_base_c_sources += 		\
 	gtkclipboard.c 		\
-	gtkdnd.c
+	gtkdnd.c		\
+	gtkdragdest.c
 endif
 
 nodist_gtk_c_sources =
@@ -890,9 +992,12 @@ gtk_os_unix_c_sources = 		\
 	gtkprinteroptionwidget.c	\
 	gtkprintjob.c			\
 	gtkprintoperation-unix.c	\
+	gtkprintoperation-portal.h	\
+	gtkprintoperation-portal.c	\
 	gtkprintunixdialog.c		\
         gtkprintbackend.c		\
 	gtksearchenginetracker.c
+
 if OS_UNIX
 gtk_private_h_sources += \
 	gtkiconcachevalidator.h		\
@@ -902,12 +1007,14 @@ gtk_private_h_sources += \
 	gtkprinteroptionset.h		\
 	gtkprinteroptionwidget.h	\
 	gtksearchenginetracker.h
+
 gtk_c_sources += $(gtk_os_unix_c_sources)
 endif
 
 gtk_os_win32_c_sources = \
 	gtkprint-win32.c		\
 	gtkprintoperation-win32.c	\
+	gtkfilechoosernativewin32.c	\
 	gtkwin32.c
 if OS_WIN32
 gtk_private_h_sources += gtkprint-win32.h
@@ -937,6 +1044,7 @@ gtk_use_quartz_c_sources = 	\
 	gtkmountoperation-stub.c \
 	gtkapplication-quartz.c \
 	gtkapplication-quartz-menu.c \
+	gtkfilechoosernativequartz.c \
 	gtkquartz.c
 gtk_use_stub_c_sources = 	\
 	gtkmountoperation-stub.c
@@ -1045,9 +1153,14 @@ gtk_extra_sources =				\
 MAINTAINERCLEANFILES = \
 	$(gtk_built_sources) 			\
 	$(gtk_dbus_built_sources)		\
+	$(print_portal_built_sources)		\
 	$(stamp_files)
 
 DISTCLEANFILES =
+
+if OS_WIN32
+DISTCLEANFILES += gtk-win32.rc
+endif
 
 EXTRA_DIST += $(gtk_all_private_h_sources) $(gtk_extra_sources)
 EXTRA_DIST += $(gtk_built_sources)
@@ -1057,6 +1170,11 @@ pkgdatadir = $(datadir)/gtk-$(GTK_API_VERSION)
 pkgdata_DATA = gtkbuilder.rng
 
 EXTRA_DIST += gtkbuilder.rnc gtkbuilder.rng
+
+itsdir = $(datadir)/gettext/its
+its_DATA = gtkbuilder.loc gtkbuilder.its
+
+EXTRA_DIST += $(its_DATA)
 
 templates =				\
 	$(inspector_templates)		\
@@ -1068,8 +1186,10 @@ templates =				\
 	ui/gtkassistant.ui		\
 	ui/gtkcolorchooserdialog.ui	\
 	ui/gtkcoloreditor.ui		\
+	ui/gtkcombobox.ui		\
 	ui/gtkdialog.ui		\
 	ui/gtkfilechooserbutton.ui	\
+	ui/gtkemojichooser.ui		\
 	ui/gtkfilechooserwidget.ui	\
 	ui/gtkfilechooserdialog.ui	\
 	ui/gtkfontbutton.ui		\
@@ -1080,12 +1200,16 @@ templates =				\
 	ui/gtkmessagedialog.ui	\
 	ui/gtkpagesetupunixdialog.ui	\
 	ui/gtkpathbar.ui		\
+	ui/gtkplacesview.ui		\
+	ui/gtkplacesviewrow.ui		\
 	ui/gtkprintunixdialog.ui	\
 	ui/gtkrecentchooserdefault.ui	\
 	ui/gtksearchbar.ui		\
 	ui/gtkscalebutton.ui		\
 	ui/gtkstatusbar.ui		\
-	ui/gtkvolumebutton.ui
+	ui/gtktooltipwindow.ui		\
+	ui/gtkvolumebutton.ui		\
+	ui/gtksidebarrow.ui
 
 #
 # rules to generate built sources
@@ -1096,7 +1220,8 @@ CLEANFILES = $(gen_sources)
 
 BUILT_SOURCES = \
 	$(gtk_built_sources) \
-	$(gtk_dbus_built_sources)
+	$(gtk_dbus_built_sources) \
+	$(print_portal_built_sources)
 
 # all autogenerated files need to be generated in the srcdir,
 # so old versions get remade and are not confused with newer
@@ -1106,13 +1231,20 @@ BUILT_SOURCES = \
 gtkmarshalers.h: stamp-gtkmarshalers.h
 	@true
 stamp-gtkmarshalers.h: gtkmarshalers.list
-	$(AM_V_GEN) $(GLIB_GENMARSHAL) --prefix=_gtk_marshal $(srcdir)/gtkmarshalers.list --header --valist-marshallers >> xgen-gmlh \
+	$(AM_V_GEN) $(GLIB_GENMARSHAL) \
+		--prefix=_gtk_marshal \
+		--header \
+		--valist-marshallers \
+		$(srcdir)/gtkmarshalers.list >> xgen-gmlh \
 	&& (cmp -s xgen-gmlh gtkmarshalers.h || cp xgen-gmlh gtkmarshalers.h) \
 	&& rm -f xgen-gmlh \
 	&& echo timestamp > $(@F)
 gtkmarshalers.c: gtkmarshalers.list
-	$(AM_V_GEN) (echo "#include \"gtkmarshalers.h\""; \
-	 $(GLIB_GENMARSHAL) --prefix=_gtk_marshal $(srcdir)/gtkmarshalers.list --body  --valist-marshallers) >> xgen-gmlc \
+	$(AM_V_GEN) (echo "#undef G_ENABLE_DEBUG"; \
+	 $(GLIB_GENMARSHAL) \
+	 	--prefix=_gtk_marshal \
+		--body \
+		--valist-marshallers $(srcdir)/gtkmarshalers.list) >> xgen-gmlc \
 	&& cp xgen-gmlc gtkmarshalers.c \
 	&& rm -f xgen-gmlc
 
@@ -1136,26 +1268,41 @@ gtk.gresource.xml: Makefile.am inspector/Makefile.inc
 	echo "  <gresource prefix='/org/gtk/libgtk'>" >> $@; \
 	for f in $(srcdir)/theme/Raleigh/*.css; do \
 	  n=`basename $$f`; \
-	  echo "    <file alias='theme/Raleigh.css'>theme/Raleigh/$$n</file>" >> $@; \
+	  echo "    <file alias='theme/Raleigh/gtk.css'>theme/Raleigh/$$n</file>" >> $@; \
 	done; \
-        echo "    <file alias='theme/Adwaita.css'>theme/Adwaita/gtk.css</file>" >> $@; \
-        echo "    <file alias='theme/Adwaita-dark.css'>theme/Adwaita/gtk-dark.css</file>" >> $@; \
+        echo "    <file>theme/Adwaita/gtk.css</file>" >> $@; \
+        echo "    <file>theme/Adwaita/gtk-dark.css</file>" >> $@; \
         echo "    <file>theme/Adwaita/gtk-contained.css</file>" >> $@; \
         echo "    <file>theme/Adwaita/gtk-contained-dark.css</file>" >> $@; \
-        for f in $(srcdir)/theme/Adwaita/assets/*; do \
+        for f in $(srcdir)/theme/Adwaita/assets/*.png; do \
           n=`basename $$f`; \
           echo "    <file preprocess='to-pixdata'>theme/Adwaita/assets/$$n</file>" >> $@; \
         done; \
-	echo "    <file alias='theme/HighContrast.css'>theme/HighContrast/gtk.css</file>" >> $@; \
-	if test "$(win32_theme)" = "yes"; then \
-	  for f in $(srcdir)/theme/win32/*.css; do \
-	    n=`basename $$f`; \
-	    echo "    <file alias='theme/$$n'>theme/win32/$$n</file>" >> $@; \
-	  done; \
-	fi; \
+        for f in $(srcdir)/theme/Adwaita/assets/*.svg; do \
+          n=`basename $$f`; \
+          echo "    <file>theme/Adwaita/assets/$$n</file>" >> $@; \
+        done; \
+	echo "    <file>theme/HighContrast/gtk.css</file>" >> $@; \
+	echo "    <file alias='theme/HighContrastInverse/gtk.css'>theme/HighContrast/gtk-inverse.css</file>" >> $@; \
+	echo "    <file>theme/HighContrast/gtk-contained.css</file>" >> $@; \
+	echo "    <file>theme/HighContrast/gtk-contained-inverse.css</file>" >> $@; \
+	      for f in $(srcdir)/theme/HighContrast/assets/*.png; do \
+          n=`basename $$f`; \
+          echo "    <file preprocess='to-pixdata'>theme/HighContrast/assets/$$n</file>" >> $@; \
+        done; \
+        for f in $(srcdir)/theme/HighContrast/assets/*.svg; do \
+          n=`basename $$f`; \
+          echo "    <file>theme/HighContrast/assets/$$n</file>" >> $@; \
+        done; \
+	echo "    <file>theme/win32/gtk-win32-base.css</file>" >> $@; \
+	echo "    <file>theme/win32/gtk.css</file>" >> $@; \
 	for f in $(srcdir)/cursor/*.png; do \
 	  n=`basename $$f`; \
 	  echo "    <file>cursor/$$n</file>" >> $@; \
+	done; \
+	for f in $(srcdir)/gesture/*.symbolic.png; do \
+	  n=`basename $$f`; \
+	  echo "    <file alias='icons/64x64/actions/$$n'>gesture/$$n</file>" >> $@; \
 	done; \
 	for f in $(srcdir)/ui/*.ui; do \
 	  n=`basename $$f`; \
@@ -1175,37 +1322,75 @@ gtk.gresource.xml: Makefile.am inspector/Makefile.inc
 	  echo "    <file compressed='true'>inspector/$$n</file>" >> $@; \
 	done; \
 	echo "    <file>inspector/logo.png</file>" >> $@; \
+	echo "    <file>emoji/emoji.data</file>" >> $@; \
 	echo "  </gresource>" >> $@; \
 	echo "</gresources>" >> $@;
 
-theme_sources = 				\
-	theme/win32/gtk-win32.css 		\
-	theme/win32/gtk-win32-base.css 		\
-	theme/win32/gtk-win32-classic.css 	\
-	theme/win32/gtk-win32-xp.css 		\
-	theme/Adwaita/assets.txt 		\
-	theme/Adwaita/assets.svg 		\
+gesture_sources = 				\
+	gesture/gesture-pinch-symbolic.svg			\
+	gesture/gesture-stretch-symbolic.svg			\
+	gesture/gesture-rotate-clockwise-symbolic.svg		\
+	gesture/gesture-rotate-anticlockwise-symbolic.svg	\
+	gesture/gesture-two-finger-swipe-left-symbolic.svg	\
+	gesture/gesture-two-finger-swipe-right-symbolic.svg
+
+adwaita_theme_scss = \
 	theme/Adwaita/_colors-public.scss 	\
 	theme/Adwaita/_colors.scss 		\
 	theme/Adwaita/_common.scss 		\
 	theme/Adwaita/_drawing.scss 		\
 	theme/Adwaita/gtk-contained-dark.scss 	\
 	theme/Adwaita/gtk-contained.scss 	\
-	theme/Adwaita/parse-sass.sh 		\
-	theme/Adwaita/render-assets.sh 		\
-	theme/Adwaita/Gemfile 			\
+	$()
+
+highcontrast_theme_scss = \
+	theme/HighContrast/_colors.scss 	\
+	theme/HighContrast/_common.scss 	\
+	theme/HighContrast/_drawing.scss 	\
+	theme/HighContrast/gtk-contained-inverse.scss \
+	theme/HighContrast/gtk-contained.scss 	\
+	$()
+
+if REBUILD_SCSS
+# If we have sassc then we can rebuild the theme CSS as soon as the SCSS
+# files have been changed
+
+scss_verbose = $(scss_verbose_@AM_V@)
+scss_verbose_ = $(scss_verbose_@AM_DEFAULT_V@)
+scss_verbose_0 = @echo "  SCSS     $@";
+
+SASSC_OPTS = -a -M -t compact
+
+theme/Adwaita/gtk-contained.css: $(top_srcdir)/gtk/theme/Adwaita/gtk-contained.scss $(adwaita_theme_scss)
+	$(scss_verbose) $(MKDIR_P) $(dir $@) && $(SASSC) $(SASSC_OPTS) $< $@ || rm -f $@
+
+theme/Adwaita/gtk-contained-dark.css: $(top_srcdir)/gtk/theme/Adwaita/gtk-contained-dark.scss $(adwaita_theme_scss)
+	$(scss_verbose) $(MKDIR_P) $(dir $@) && $(SASSC) $(SASSC_OPTS) $< $@ || rm -f $@
+
+theme/HighContrast/gtk-contained.css: $(top_srcdir)/gtk/theme/HighContrast/gtk-contained.scss $(highcontrast_theme_scss)
+	$(scss_verbose) $(MKDIR_P) $(dir $@) && $(SASSC) $(SASSC_OPTS) $< $@ || rm -f $@
+
+theme/HighContrast/gtk-contained-inverse.css: $(top_srcdir)/gtk/theme/HighContrast/gtk-contained-inverse.scss $(highcontrast_theme_scss)
+	$(scss_verbose) $(MKDIR_P) $(dir $@) && $(SASSC) $(SASSC_OPTS) $< $@ || rm -f $@
+
+endif # REBUILD_SCSS
+
+theme_sources = 				\
+	theme/win32/gtk.css	 		\
+	theme/win32/gtk-win32-base.css 		\
+	$(adwaita_theme_scss)			\
+	theme/Adwaita/assets.txt 		\
+	theme/Adwaita/assets.svg 		\
 	theme/Adwaita/README 			\
 	theme/Adwaita/gtk-contained.css 	\
 	theme/Adwaita/gtk-contained-dark.css 	\
 	theme/Adwaita/gtk.css 			\
 	theme/Adwaita/gtk-dark.css 		\
-	theme/HighContrast/_colors.scss 	\
-	theme/HighContrast/_common.scss 	\
-	theme/HighContrast/_drawing.scss 	\
-	theme/HighContrast/Gemfile 		\
+	$(highcontrast_theme_scss)		\
+	theme/HighContrast/gtk-contained.css 	\
+	theme/HighContrast/gtk-contained-inverse.css \
 	theme/HighContrast/gtk.css 		\
-	theme/HighContrast/gtk.scss 		\
-	theme/HighContrast/parse-sass.sh 	\
+	theme/HighContrast/gtk-inverse.css 	\
 	theme/Raleigh/gtk-default.css
 
 resource_files = $(shell $(GLIB_COMPILE_RESOURCES) --sourcedir=$(srcdir) --generate-dependencies $(builddir)/gtk.gresource.xml)
@@ -1264,7 +1449,6 @@ libgtk_3_la_LIBADD = $(libadd)
 libgtk_3_la_DEPENDENCIES = $(deps)
 
 if USE_WIN32
-win32_theme = yes
 libgtk_3_la_LIBADD += -lole32 -lgdi32 -lcomdlg32 -lwinspool -lcomctl32
 libgtk_3_la_LDFLAGS += -Wl,-luuid $(gtk_win32_res_ldflag)
 libgtk_3_la_DEPENDENCIES += $(gtk_win32_res)
@@ -1286,37 +1470,81 @@ install-mac-key-theme:
 uninstall-mac-key-theme:
 endif
 
-dist-hook: ../build/win32/vs9/gtk.vcproj ../build/win32/vs10/gtk.vcxproj ../build/win32/vs10/gtk.vcxproj.filters
+# ------------------- MSVC Build Items ----------------
+MSVCPROJS = gtk-3
 
-../build/win32/vs9/gtk.vcproj: ../build/win32/vs9/gtk.vcprojin
-	for F in `echo $(gtk_base_c_sources) $(gtk_os_win32_c_sources) $(gtk_use_win32_c_sources) $(gtk_dbus_built_sources) | tr '/' '\\'`; do \
-		case $$F in \
-		*.c) echo '   <File RelativePath="..\..\..\gtk\'$$F'" />' \
-		     ;; \
-		esac; \
-	done >libgtk.sourcefiles
-	$(CPP) -P - <$(top_srcdir)/build/win32/vs9/gtk.vcprojin >$@
-	rm libgtk.sourcefiles
+gtk_3_FILES = \
+	$(gtk_base_c_sources)		\
+	$(gtk_os_win32_c_sources)	\
+	$(gtk_use_win32_c_sources)	\
+	$(gtk_dbus_built_sources)
 
-../build/win32/vs10/gtk.vcxproj: ../build/win32/vs10/gtk.vcxprojin
-	for F in `echo $(gtk_base_c_sources) $(gtk_os_win32_c_sources) $(gtk_use_win32_c_sources) $(gtk_dbus_built_sources) | tr '/' '\\'`; do \
-		case $$F in \
-		*.c) echo '   <ClCompile Include="..\..\..\gtk\'$$F'" />' \
-		     ;; \
-		esac; \
-	done >libgtk.vs10.sourcefiles
-	$(CPP) -P - <$(top_srcdir)/build/win32/vs10/gtk.vcxprojin >$@
-	rm libgtk.vs10.sourcefiles
+gtk_3_EXCLUDES = dummy
+gtk_3_HEADERS_DIR = $(gtkincludedir)
 
-../build/win32/vs10/gtk.vcxproj.filters: ../build/win32/vs10/gtk.vcxproj.filtersin
-	for F in `echo $(gtk_base_c_sources) $(gtk_os_win32_c_sources) $(gtk_use_win32_c_sources) $(gtk_dbus_built_sources) | tr '/' '\\'`; do \
-		case $$F in \
-		*.c) echo '   <ClCompile Include="..\..\..\gtk\'$$F'"><Filter>Source Files</Filter></ClCompile>' \
-		     ;; \
-		esac; \
-	done >libgtk.vs10.sourcefiles.filters
-	$(CPP) -P - <$(top_srcdir)/build/win32/vs10/gtk.vcxproj.filtersin >$@
-	rm libgtk.vs10.sourcefiles.filters
+gtk_3_HEADERS_INST = \
+	$(gtkinclude_HEADERS)	\
+	$(a11y_h_sources)	\
+	$(deprecated_h_sources)
+
+gtk_3_HEADERS_EXCLUDES = dummy
+
+include $(top_srcdir)/build/Makefile.msvcproj
+
+if HAVE_INTROSPECTION
+# Introspection Items for MSVC
+MSVC_INTROSPECT_GIRS = Gtk-3.0.gir
+
+GTK_MSVC_GIR_CFLAGS =						\
+	$(GTK_BASE_CFLAGS_DEFINES)				\
+	-DGTK_LIBDIR=\\\"/dummy/lib\\\"				\
+	-DGTK_DATADIR=\\\"/dummy/share\\\"			\
+	-DGTK_DATA_PREFIX=\\\"/dummy\\\"			\
+	-DGTK_SYSCONFDIR=\\\"/dummy/etc\\\"			\
+	-DGTK_HOST=\\\"'$$$$(AT_PLAT)'-pc-vs'$$$$(VSVER)'\\\"	\
+	-DGTK_PRINT_BACKENDS=\\\"file\\\"			\
+	-DINCLUDE_IM_am_et			\
+	-DINCLUDE_IM_cedilla			\
+	-DINCLUDE_IM_cyrillic_translit		\
+	-DINCLUDE_IM_ime			\
+	-DINCLUDE_IM_inuktitu			\
+	-DINCLUDE_IM_ipa			\
+	-DINCLUDE_IM_multipress			\
+	-DINCLUDE_IM_thai			\
+	-DINCLUDE_IM_ti_er			\
+	-DINCLUDE_IM_ti_et			\
+	-DINCLUDE_IM_viqr			\
+	-DGTK_TEXT_USE_INTERNAL_UNSUPPORTED_API	\
+	-I../.. -I../../gtk -I../../gdk
+
+INTROSPECTION_INTERMEDIATE_ITEMS = \
+	$(top_builddir)/build/win32/Gtk-3.0.gir.msvc.introspect		\
+	$(top_builddir)/build/win32/Gtk_3_0_gir_list
+
+Gtk_3_0_gir_MSVC_FILES =		\
+	$(introspected_pub_headers)	\
+	$(gtk_base_c_sources)		\
+	$(gtk_os_win32_c_sources)	\
+	gtktypebuiltins.h		\
+	gtktypebuiltins.c
+
+Gtk_3_0_gir_MSVC_EXPORT_PACKAGES = $(Gtk_3_0_gir_EXPORT_PACKAGES)
+Gtk_3_0_gir_MSVC_INCLUDE_GIRS = Atk-1.0
+Gtk_3_0_gir_MSVC_LIBS = gtk-3.0 gdk-3.0
+Gtk_3_0_gir_MSVC_CFLAGS = $(GTK_MSVC_GIR_CFLAGS)
+Gtk_3_0_gir_MSVC_SCANNERFLAGS = --warn-all --add-include-path=. --include-uninstalled=./Gdk-3.0.gir
+
+include $(top_srcdir)/build/Makefile.msvc-introspection
+
+else
+INTROSPECTION_INTERMEDIATE_ITEMS =
+
+endif
+
+dist-hook: \
+	$(top_builddir)/build/win32/vs9/gtk-3.vcproj	\
+	$(top_builddir)/build/win32/vs9/gtk-3.headers	\
+	$(INTROSPECTION_INTERMEDIATE_ITEMS)
 
 # Install a RC file for the default GTK+ theme, and key themes
 install-data-local: install-ms-lib install-def-file install-mac-key-theme
@@ -1337,9 +1565,11 @@ distclean-local:
 	fi
 
 if HAVE_INTROSPECTION
+introspected_pub_headers = $(filter-out %private.h gtktextdisplay.h gtktextlayout.h gtkx.h, $(gtkinclude_HEADERS) $(a11yinclude_HEADERS) $(deprecatedinclude_HEADERS))
+
 introspection_files = \
-    $(filter-out %private.h gtktextdisplay.h gtktextlayout.h gtkx.h, $(gtkinclude_HEADERS) $(a11yinclude_HEADERS) $(deprecatedinclude_HEADERS)) \
-    $(filter-out %win32.c %quartz.c, $(gtk_base_c_sources)) \
+    $(introspected_pub_headers) \
+    $(filter-out %win32.c, $(gtk_base_c_sources)) \
     gtkprintoperation-unix.c \
     gtktypebuiltins.h \
     gtktypebuiltins.c
@@ -1391,9 +1621,11 @@ bin_PROGRAMS = \
 	gtk-query-immodules-3.0	\
 	gtk-update-icon-cache \
 	gtk-encode-symbolic-svg \
+	gtk-builder-tool \
+	gtk-query-settings \
 	gtk-launch
 
-gtk_query_immodules_3_0_SOURCES = queryimmodules.c
+gtk_query_immodules_3_0_SOURCES = queryimmodules.c gtkutils.c
 gtk_query_immodules_3_0_LDADD = 		\
 	libgtk-3.la				\
 	$(top_builddir)/gdk/libgdk-3.la		\
@@ -1406,6 +1638,18 @@ gtk_update_icon_cache_LDADD = $(GDK_PIXBUF_LIBS)
 gtk_encode_symbolic_svg_SOURCES = encodesymbolic.c
 gtk_encode_symbolic_svg_LDADD =			\
 	$(GDK_PIXBUF_LIBS)			\
+	$(top_builddir)/gdk/libgdk-3.la		\
+	$(GTK_DEP_LIBS)
+
+gtk_builder_tool_SOURCES = gtk-builder-tool.c
+gtk_builder_tool_LDADD =			\
+	libgtk-3.la				\
+	$(top_builddir)/gdk/libgdk-3.la		\
+	$(GTK_DEP_LIBS)
+
+gtk_query_settings_SOURCES = gtk-query-settings.c
+gtk_query_settings_LDADD= 			\
+	libgtk-3.la				\
 	$(top_builddir)/gdk/libgdk-3.la		\
 	$(GTK_DEP_LIBS)
 
@@ -1465,19 +1709,24 @@ files:
 gsettings_SCHEMAS = \
 	org.gtk.Settings.FileChooser.gschema.xml \
 	org.gtk.Settings.ColorChooser.gschema.xml \
+	org.gtk.Settings.EmojiChooser.gschema.xml \
 	org.gtk.Settings.Debug.gschema.xml
 
 @GSETTINGS_RULES@
 
 EXTRA_DIST +=                   \
 	$(resource_files)	\
+	$(gesture_sources)	\
 	$(theme_sources)	\
 	$(gsettings_SCHEMAS)	\
+	emoji/convert-emoji.c	\
+	emoji/emoji.json	\
 	a11y/Makefile.inc	\
 	deprecated/Makefile.inc	\
 	inspector/Makefile.inc	\
 	libgtk3.manifest.in	\
-	gtk-win32.rc.in		\
+	gtk-win32.rc.body.in	\
+	gtk-win32.rc.body	\
 	gtkwin32embed.h		\
 	gtkwin32embedwidget.h	\
 	gtkwin32embedwidget.c	\

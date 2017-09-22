@@ -42,6 +42,12 @@ struct _GdkDeviceManagerWin32
   GdkDevice *system_pointer;
   GdkDevice *system_keyboard;
   GList *wintab_devices;
+
+  /* Bumped up every time a wintab device enters the proximity
+   * of our context (WT_PROXIMITY). Bumped down when we either
+   * receive a WT_PACKET, or a WT_CSRCHANGE.
+   */
+  gint dev_entered_proximity;
 };
 
 struct _GdkDeviceManagerWin32Class
@@ -52,9 +58,10 @@ struct _GdkDeviceManagerWin32Class
 GType gdk_device_manager_win32_get_type (void) G_GNUC_CONST;
 
 void     _gdk_input_set_tablet_active (void);
-gboolean _gdk_input_other_event       (GdkEvent  *event,
-                                       MSG       *msg,
-                                       GdkWindow *window);
+gboolean gdk_input_other_event        (GdkDisplay *display,
+                                       GdkEvent   *event,
+                                       MSG        *msg,
+                                       GdkWindow  *window);
 
 G_END_DECLS
 

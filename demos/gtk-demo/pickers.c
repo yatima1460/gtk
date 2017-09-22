@@ -20,8 +20,7 @@ do_pickers (GtkWidget *do_widget)
     gtk_window_set_title (GTK_WINDOW (window), "Pickers");
 
     g_signal_connect (window, "destroy",
-                      G_CALLBACK (gtk_widget_destroyed),
-                      &window);
+                      G_CALLBACK (gtk_widget_destroyed), &window);
 
     gtk_container_set_border_width (GTK_CONTAINER (window), 10);
 
@@ -54,6 +53,7 @@ do_pickers (GtkWidget *do_widget)
     gtk_widget_set_hexpand (label, TRUE);
     picker = gtk_file_chooser_button_new ("Pick a File",
                                           GTK_FILE_CHOOSER_ACTION_OPEN);
+    gtk_file_chooser_set_local_only (GTK_FILE_CHOOSER (picker), FALSE);
     gtk_grid_attach (GTK_GRID (table), label, 0, 2, 1, 1);
     gtk_grid_attach (GTK_GRID (table), picker, 1, 2, 1, 1);
 
@@ -76,14 +76,9 @@ do_pickers (GtkWidget *do_widget)
   }
 
   if (!gtk_widget_get_visible (window))
-    {
-      gtk_widget_show_all (window);
-    }
+    gtk_widget_show_all (window);
   else
-    {
-      gtk_widget_destroy (window);
-      window = NULL;
-    }
+    gtk_widget_destroy (window);
 
   return window;
 }

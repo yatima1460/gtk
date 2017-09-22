@@ -7,12 +7,22 @@
 
 #include <gtk/gtk.h>
 
-static GtkWidget *window = NULL;
 static GtkGesture *rotate = NULL;
 static GtkGesture *zoom = NULL;
 static gdouble swipe_x = 0;
 static gdouble swipe_y = 0;
 static gboolean long_pressed = FALSE;
+
+static gboolean
+touchpad_swipe_gesture_begin (GtkGesture       *gesture,
+                              GdkEventSequence *sequence,
+                              GtkWidget        *widget)
+{
+  /* Disallow touchscreen events here */
+  if (sequence != NULL)
+    gtk_gesture_set_state (gesture, GTK_EVENT_SEQUENCE_DENIED);
+  return sequence == NULL;
+}
 
 static void
 swipe_gesture_swept (GtkGestureSwipe *gesture,
@@ -87,9 +97,10 @@ drawing_area_draw (GtkWidget *widget,
       cairo_matrix_t matrix;
       gdouble angle, scale;
 
-      cairo_matrix_init_translate (&matrix,
-                                   allocation.width / 2,
-                                   allocation.height / 2);
+      cairo_get_matrix (cr, &matrix);
+      cairo_matrix_translate (&matrix,
+                              allocation.width / 2,
+                              allocation.height / 2);
 
       cairo_save (cr);
 
@@ -132,6 +143,7 @@ drawing_area_draw (GtkWidget *widget,
 GtkWidget *
 do_gestures (GtkWidget *do_widget)
 {
+  static GtkWidget *window = NULL;
   GtkWidget *drawing_area;
   GtkGesture *gesture;
 
@@ -139,7 +151,7 @@ do_gestures (GtkWidget *do_widget)
     {
       window = gtk_window_new (GTK_WINDOW_TOPLEVEL);
       gtk_window_set_default_size (GTK_WINDOW (window), 400, 400);
-      gtk_window_set_title (GTK_WINDOW (window), "Gestures demo");
+      gtk_window_set_title (GTK_WINDOW (window), "Gestures");
       g_signal_connect (window, "destroy",
                         G_CALLBACK (gtk_widget_destroyed), &window);
 
@@ -154,6 +166,19 @@ do_gestures (GtkWidget *do_widget)
 
       /* Swipe */
       gesture = gtk_gesture_swipe_new (drawing_area);
+      g_signal_connect (gesture, "swipe",
+                        G_CALLBACK (swipe_gesture_swept), drawing_area);
+      gtk_event_controller_set_propagation_phase (GTK_EVENT_CONTROLLER (gesture),
+                                                  GTK_PHASE_BUBBLE);
+      g_object_weak_ref (G_OBJECT (drawing_area), (GWeakNotify) g_object_unref, gesture);
+
+      /* 3fg swipe for touchpads */
+      gesture = g_object_new (GTK_TYPE_GESTURE_SWIPE,
+                              "widget", drawing_area,
+                              "n-points", 3,
+                              NULL);
+      g_signal_connect (gesture, "begin",
+                        G_CALLBACK (touchpad_swipe_gesture_begin), drawing_area);
       g_signal_connect (gesture, "swipe",
                         G_CALLBACK (swipe_gesture_swept), drawing_area);
       gtk_event_controller_set_propagation_phase (GTK_EVENT_CONTROLLER (gesture),
@@ -190,10 +215,7 @@ do_gestures (GtkWidget *do_widget)
   if (!gtk_widget_get_visible (window))
     gtk_widget_show_all (window);
   else
-    {
-      gtk_widget_destroy (window);
-      window = NULL;
-    }
+    gtk_widget_destroy (window);
 
   return window;
 }

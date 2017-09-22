@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <locale.h>
 
 #include <glib.h>
 #include <gio/gio.h>
@@ -301,7 +302,7 @@ client_handle_request (BroadwayClient *client,
       broadway_server_set_show_keyboard (server, request->set_show_keyboard.show_keyboard);
       break;
     default:
-      g_warning ("Unknown request of type %d\n", request->base.type);
+      g_warning ("Unknown request of type %d", request->base.type);
     }
 
 
@@ -415,7 +416,6 @@ main (int argc, char *argv[])
   GInetAddress *inet;
   GSocketAddress *address;
   GSocketService *listener;
-  char *path, *basename;
   char *http_address = NULL;
   char *unixsocket_address = NULL;
   int http_port = 0;
@@ -433,6 +433,8 @@ main (int argc, char *argv[])
     { "key", 'k', 0, G_OPTION_ARG_STRING, &ssl_key, "SSL key path", "PATH" },
     { NULL }
   };
+
+  setlocale (LC_ALL, "");
 
   context = g_option_context_new ("[:DISPLAY] - broadway display daemon");
   g_option_context_add_main_entries (context, entries, GETTEXT_PACKAGE);
@@ -475,6 +477,8 @@ main (int argc, char *argv[])
 #ifdef G_OS_UNIX
   else if (display[0] == ':' && g_ascii_isdigit(display[1]))
     {
+      char *path, *basename;
+
       port = strtol (display + strlen (":"), NULL, 10);
       basename = g_strdup_printf ("broadway%d.socket", port + 1);
       path = g_build_filename (g_get_user_runtime_dir (), basename, NULL);

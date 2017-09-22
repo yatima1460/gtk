@@ -33,6 +33,7 @@
 #include "gtkinvisible.h"
 #include "gtkmarshalers.h"
 #include "gtktextbuffer.h"
+#include "gtktextbufferprivate.h"
 #include "gtktextbufferrichtext.h"
 #include "gtktextbtree.h"
 #include "gtktextiterprivate.h"
@@ -117,7 +118,8 @@ enum {
   PROP_HAS_SELECTION,
   PROP_CURSOR_POSITION,
   PROP_COPY_TARGET_LIST,
-  PROP_PASTE_TARGET_LIST
+  PROP_PASTE_TARGET_LIST,
+  LAST_PROP
 };
 
 static void gtk_text_buffer_finalize   (GObject            *object);
@@ -170,6 +172,7 @@ static void gtk_text_buffer_notify       (GObject         *object,
                                           GParamSpec      *pspec);
 
 static guint signals[LAST_SIGNAL] = { 0 };
+static GParamSpec *text_buffer_props[LAST_PROP];
 
 G_DEFINE_TYPE_WITH_PRIVATE (GtkTextBuffer, gtk_text_buffer, G_TYPE_OBJECT)
 
@@ -193,16 +196,15 @@ gtk_text_buffer_class_init (GtkTextBufferClass *klass)
   klass->mark_set = gtk_text_buffer_real_mark_set;
 
   /* Construct */
-  g_object_class_install_property (object_class,
-                                   PROP_TAG_TABLE,
-                                   g_param_spec_object ("tag-table",
-                                                        P_("Tag Table"),
-                                                        P_("Text Tag Table"),
-                                                        GTK_TYPE_TEXT_TAG_TABLE,
-                                                        GTK_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
+  text_buffer_props[PROP_TAG_TABLE] =
+      g_param_spec_object ("tag-table",
+                           P_("Tag Table"),
+                           P_("Text Tag Table"),
+                           GTK_TYPE_TEXT_TAG_TABLE,
+                           GTK_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY);
 
-  /* Normal properties*/
-  
+  /* Normal properties */
+
   /**
    * GtkTextBuffer:text:
    *
@@ -211,13 +213,12 @@ gtk_text_buffer_class_init (GtkTextBufferClass *klass)
    *
    * Since: 2.8
    */
-  g_object_class_install_property (object_class,
-                                   PROP_TEXT,
-                                   g_param_spec_string ("text",
-                                                        P_("Text"),
-                                                        P_("Current text of the buffer"),
-							"",
-                                                        GTK_PARAM_READWRITE));
+  text_buffer_props[PROP_TEXT] =
+      g_param_spec_string ("text",
+                           P_("Text"),
+                           P_("Current text of the buffer"),
+                           "",
+                           GTK_PARAM_READWRITE);
 
   /**
    * GtkTextBuffer:has-selection:
@@ -226,30 +227,29 @@ gtk_text_buffer_class_init (GtkTextBufferClass *klass)
    *
    * Since: 2.10
    */
-  g_object_class_install_property (object_class,
-                                   PROP_HAS_SELECTION,
-                                   g_param_spec_boolean ("has-selection",
-                                                         P_("Has selection"),
-                                                         P_("Whether the buffer has some text currently selected"),
-                                                         FALSE,
-                                                         GTK_PARAM_READABLE));
+  text_buffer_props[PROP_HAS_SELECTION] =
+      g_param_spec_boolean ("has-selection",
+                            P_("Has selection"),
+                            P_("Whether the buffer has some text currently selected"),
+                            FALSE,
+                            GTK_PARAM_READABLE);
 
   /**
    * GtkTextBuffer:cursor-position:
    *
-   * The position of the insert mark (as offset from the beginning 
-   * of the buffer). It is useful for getting notified when the 
+   * The position of the insert mark (as offset from the beginning
+   * of the buffer). It is useful for getting notified when the
    * cursor moves.
    *
    * Since: 2.10
    */
-  g_object_class_install_property (object_class,
-                                   PROP_CURSOR_POSITION,
-                                   g_param_spec_int ("cursor-position",
-                                                     P_("Cursor position"),
-                                                     P_("The position of the insert mark (as offset from the beginning of the buffer)"),
-						     0, G_MAXINT, 0,
-                                                     GTK_PARAM_READABLE));
+  text_buffer_props[PROP_CURSOR_POSITION] =
+      g_param_spec_int ("cursor-position",
+                        P_("Cursor position"),
+                        P_("The position of the insert mark (as offset from the beginning of the buffer)"),
+			0, G_MAXINT,
+                        0,
+                        GTK_PARAM_READABLE);
 
   /**
    * GtkTextBuffer:copy-target-list:
@@ -259,13 +259,12 @@ gtk_text_buffer_class_init (GtkTextBufferClass *klass)
    *
    * Since: 2.10
    */
-  g_object_class_install_property (object_class,
-                                   PROP_COPY_TARGET_LIST,
-                                   g_param_spec_boxed ("copy-target-list",
-                                                       P_("Copy target list"),
-                                                       P_("The list of targets this buffer supports for clipboard copying and DND source"),
-                                                       GTK_TYPE_TARGET_LIST,
-                                                       GTK_PARAM_READABLE));
+  text_buffer_props[PROP_COPY_TARGET_LIST] =
+      g_param_spec_boxed ("copy-target-list",
+                          P_("Copy target list"),
+                          P_("The list of targets this buffer supports for clipboard copying and DND source"),
+                          GTK_TYPE_TARGET_LIST,
+                          GTK_PARAM_READABLE);
 
   /**
    * GtkTextBuffer:paste-target-list:
@@ -275,13 +274,14 @@ gtk_text_buffer_class_init (GtkTextBufferClass *klass)
    *
    * Since: 2.10
    */
-  g_object_class_install_property (object_class,
-                                   PROP_PASTE_TARGET_LIST,
-                                   g_param_spec_boxed ("paste-target-list",
-                                                       P_("Paste target list"),
-                                                       P_("The list of targets this buffer supports for clipboard pasting and DND destination"),
-                                                       GTK_TYPE_TARGET_LIST,
-                                                       GTK_PARAM_READABLE));
+  text_buffer_props[PROP_PASTE_TARGET_LIST] =
+      g_param_spec_boxed ("paste-target-list",
+                          P_("Paste target list"),
+                          P_("The list of targets this buffer supports for clipboard pasting and DND destination"),
+                          GTK_TYPE_TARGET_LIST,
+                          GTK_PARAM_READABLE);
+
+  g_object_class_install_properties (object_class, LAST_PROP, text_buffer_props);
 
   /**
    * GtkTextBuffer::insert-text:
@@ -344,6 +344,9 @@ gtk_text_buffer_class_init (GtkTextBufferClass *klass)
                   2,
                   GTK_TYPE_TEXT_ITER | G_SIGNAL_TYPE_STATIC_SCOPE,
                   GDK_TYPE_PIXBUF);
+  g_signal_set_va_marshaller (signals[INSERT_PIXBUF],
+                              G_TYPE_FROM_CLASS (klass),
+                              _gtk_marshal_VOID__BOXED_OBJECTv);
 
 
   /**
@@ -374,6 +377,9 @@ gtk_text_buffer_class_init (GtkTextBufferClass *klass)
                   2,
                   GTK_TYPE_TEXT_ITER | G_SIGNAL_TYPE_STATIC_SCOPE,
                   GTK_TYPE_TEXT_CHILD_ANCHOR);
+  g_signal_set_va_marshaller (signals[INSERT_CHILD_ANCHOR],
+                              G_TYPE_FROM_CLASS (klass),
+                              _gtk_marshal_VOID__BOXED_OBJECTv);
   
   /**
    * GtkTextBuffer::delete-range:
@@ -404,6 +410,9 @@ gtk_text_buffer_class_init (GtkTextBufferClass *klass)
                   2,
                   GTK_TYPE_TEXT_ITER | G_SIGNAL_TYPE_STATIC_SCOPE,
                   GTK_TYPE_TEXT_ITER | G_SIGNAL_TYPE_STATIC_SCOPE);
+  g_signal_set_va_marshaller (signals[DELETE_RANGE],
+                              G_TYPE_FROM_CLASS (klass),
+                              _gtk_marshal_VOID__BOXED_BOXEDv);
 
   /**
    * GtkTextBuffer::changed:
@@ -418,7 +427,7 @@ gtk_text_buffer_class_init (GtkTextBufferClass *klass)
                   G_SIGNAL_RUN_LAST,                   
                   G_STRUCT_OFFSET (GtkTextBufferClass, changed),
                   NULL, NULL,
-                  _gtk_marshal_VOID__VOID,
+                  NULL,
                   G_TYPE_NONE,
                   0);
 
@@ -438,7 +447,7 @@ gtk_text_buffer_class_init (GtkTextBufferClass *klass)
                   G_SIGNAL_RUN_LAST,
                   G_STRUCT_OFFSET (GtkTextBufferClass, modified_changed),
                   NULL, NULL,
-                  _gtk_marshal_VOID__VOID,
+                  NULL,
                   G_TYPE_NONE,
                   0);
 
@@ -458,7 +467,7 @@ gtk_text_buffer_class_init (GtkTextBufferClass *klass)
   signals[MARK_SET] =
     g_signal_new (I_("mark-set"),
                   G_OBJECT_CLASS_TYPE (object_class),
-                  G_SIGNAL_RUN_LAST,                   
+                  G_SIGNAL_RUN_LAST,
                   G_STRUCT_OFFSET (GtkTextBufferClass, mark_set),
                   NULL, NULL,
                   _gtk_marshal_VOID__BOXED_OBJECT,
@@ -466,6 +475,9 @@ gtk_text_buffer_class_init (GtkTextBufferClass *klass)
                   2,
                   GTK_TYPE_TEXT_ITER,
                   GTK_TYPE_TEXT_MARK);
+  g_signal_set_va_marshaller (signals[MARK_SET],
+                              G_TYPE_FROM_CLASS (klass),
+                              _gtk_marshal_VOID__BOXED_OBJECTv);
 
   /**
    * GtkTextBuffer::mark-deleted:
@@ -484,7 +496,7 @@ gtk_text_buffer_class_init (GtkTextBufferClass *klass)
                   G_SIGNAL_RUN_LAST,                   
                   G_STRUCT_OFFSET (GtkTextBufferClass, mark_deleted),
                   NULL, NULL,
-                  _gtk_marshal_VOID__OBJECT,
+                  NULL,
                   G_TYPE_NONE,
                   1,
                   GTK_TYPE_TEXT_MARK);
@@ -520,6 +532,9 @@ gtk_text_buffer_class_init (GtkTextBufferClass *klass)
                   GTK_TYPE_TEXT_TAG,
                   GTK_TYPE_TEXT_ITER,
                   GTK_TYPE_TEXT_ITER);
+  g_signal_set_va_marshaller (signals[APPLY_TAG],
+                              G_TYPE_FROM_CLASS (klass),
+                              _gtk_marshal_VOID__OBJECT_BOXED_BOXEDv);
 
 
    /**
@@ -551,6 +566,9 @@ gtk_text_buffer_class_init (GtkTextBufferClass *klass)
                   GTK_TYPE_TEXT_TAG,
                   GTK_TYPE_TEXT_ITER,
                   GTK_TYPE_TEXT_ITER);
+  g_signal_set_va_marshaller (signals[REMOVE_TAG],
+                              G_TYPE_FROM_CLASS (klass),
+                              _gtk_marshal_VOID__OBJECT_BOXED_BOXEDv);
 
    /**
    * GtkTextBuffer::begin-user-action:
@@ -573,7 +591,7 @@ gtk_text_buffer_class_init (GtkTextBufferClass *klass)
                   G_SIGNAL_RUN_LAST,                   
                   G_STRUCT_OFFSET (GtkTextBufferClass, begin_user_action),
                   NULL, NULL,
-                  _gtk_marshal_VOID__VOID,
+                  NULL,
                   G_TYPE_NONE,
                   0);
 
@@ -599,7 +617,7 @@ gtk_text_buffer_class_init (GtkTextBufferClass *klass)
                   G_SIGNAL_RUN_LAST,                   
                   G_STRUCT_OFFSET (GtkTextBufferClass, end_user_action),
                   NULL, NULL,
-                  _gtk_marshal_VOID__VOID,
+                  NULL,
                   G_TYPE_NONE,
                   0);
 
@@ -620,7 +638,7 @@ gtk_text_buffer_class_init (GtkTextBufferClass *klass)
                   G_SIGNAL_RUN_LAST,
                   G_STRUCT_OFFSET (GtkTextBufferClass, paste_done),
                   NULL, NULL,
-                  _gtk_marshal_VOID__OBJECT,
+                  NULL,
                   G_TYPE_NONE,
                   1,
                   GTK_TYPE_CLIPBOARD);
@@ -895,7 +913,7 @@ gtk_text_buffer_real_insert_text (GtkTextBuffer *buffer,
   _gtk_text_btree_insert (iter, text, len);
 
   g_signal_emit (buffer, signals[CHANGED], 0);
-  g_object_notify (G_OBJECT (buffer), "cursor-position");
+  g_object_notify_by_pspec (G_OBJECT (buffer), text_buffer_props[PROP_CURSOR_POSITION]);
 }
 
 static void
@@ -1329,8 +1347,8 @@ insert_range_not_inside_self (GtkTextBuffer     *buffer,
                                      tmp_list->data,
                                      &start_iter,
                                      iter);
-          
-          tmp_list = g_slist_next (tmp_list);
+
+          tmp_list = tmp_list->next;
         }
       g_slist_free (tags);
 
@@ -1616,11 +1634,11 @@ gtk_text_buffer_real_delete_range (GtkTextBuffer *buffer,
   if (has_selection != buffer->priv->has_selection)
     {
       buffer->priv->has_selection = has_selection;
-      g_object_notify (G_OBJECT (buffer), "has-selection");
+      g_object_notify_by_pspec (G_OBJECT (buffer), text_buffer_props[PROP_HAS_SELECTION]);
     }
 
   g_signal_emit (buffer, signals[CHANGED], 0);
-  g_object_notify (G_OBJECT (buffer), "cursor-position");
+  g_object_notify_by_pspec (G_OBJECT (buffer), text_buffer_props[PROP_CURSOR_POSITION]);
 }
 
 static void
@@ -1830,7 +1848,7 @@ gtk_text_buffer_delete_interactive (GtkTextBuffer *buffer,
  * and character indexes into the buffer. Contrast with
  * gtk_text_buffer_get_slice().
  *
- * Returns: an allocated UTF-8 string
+ * Returns: (transfer full): an allocated UTF-8 string
  **/
 gchar*
 gtk_text_buffer_get_text (GtkTextBuffer     *buffer,
@@ -1868,7 +1886,7 @@ gtk_text_buffer_get_text (GtkTextBuffer     *buffer,
  * text as well, so it is not a reliable indicator that a pixbuf or
  * widget is in the buffer.
  *
- * Returns: an allocated UTF-8 string
+ * Returns: (transfer full): an allocated UTF-8 string
  **/
 gchar*
 gtk_text_buffer_get_slice (GtkTextBuffer     *buffer,
@@ -2251,7 +2269,7 @@ gtk_text_buffer_delete_mark (GtkTextBuffer *buffer,
  * Returns the mark named @name in buffer @buffer, or %NULL if no such
  * mark exists in the buffer.
  *
- * Returns: (transfer none): a #GtkTextMark, or %NULL
+ * Returns: (nullable) (transfer none): a #GtkTextMark, or %NULL
  **/
 GtkTextMark*
 gtk_text_buffer_get_mark (GtkTextBuffer *buffer,
@@ -2541,7 +2559,7 @@ gtk_text_buffer_real_changed (GtkTextBuffer *buffer)
 {
   gtk_text_buffer_set_modified (buffer, TRUE);
 
-  g_object_notify (G_OBJECT (buffer), "text");
+  g_object_notify_by_pspec (G_OBJECT (buffer), text_buffer_props[PROP_TEXT]);
 }
 
 static void
@@ -2566,12 +2584,12 @@ gtk_text_buffer_real_mark_set (GtkTextBuffer     *buffer,
       if (has_selection != buffer->priv->has_selection)
         {
           buffer->priv->has_selection = has_selection;
-          g_object_notify (G_OBJECT (buffer), "has-selection");
+          g_object_notify_by_pspec (G_OBJECT (buffer), text_buffer_props[PROP_HAS_SELECTION]);
         }
     }
     
     if (mark == insert)
-      g_object_notify (G_OBJECT (buffer), "cursor-position");
+      g_object_notify_by_pspec (G_OBJECT (buffer), text_buffer_props[PROP_CURSOR_POSITION]);
 }
 
 static void
@@ -2685,7 +2703,7 @@ gtk_text_buffer_apply_tag_by_name (GtkTextBuffer     *buffer,
 
   if (tag == NULL)
     {
-      g_warning ("Unknown tag `%s'", name);
+      g_warning ("Unknown tag '%s'", name);
       return;
     }
 
@@ -2722,7 +2740,7 @@ gtk_text_buffer_remove_tag_by_name (GtkTextBuffer     *buffer,
 
   if (tag == NULL)
     {
-      g_warning ("Unknown tag `%s'", name);
+      g_warning ("Unknown tag '%s'", name);
       return;
     }
 
@@ -2798,7 +2816,7 @@ gtk_text_buffer_remove_all_tags (GtkTextBuffer     *buffer,
         {
           tags = g_slist_prepend (tags, tmp_list2->data);
 
-          tmp_list2 = g_slist_next (tmp_list2);
+          tmp_list2 = tmp_list2->next;
         }
 
       g_slist_free (toggled);
@@ -2848,9 +2866,7 @@ gtk_text_buffer_remove_all_tags (GtkTextBuffer     *buffer,
       tmp_list = tmp_list->next;
     }
 
-  g_slist_foreach (tags, (GFunc) g_object_unref, NULL);
-  
-  g_slist_free (tags);
+  g_slist_free_full (tags, g_object_unref);
 }
 
 
@@ -2865,10 +2881,14 @@ gtk_text_buffer_remove_all_tags (GtkTextBuffer     *buffer,
  * @line_number: line number counting from 0
  * @char_offset: char offset from start of line
  *
- * Obtains an iterator pointing to @char_offset within the given
- * line. The @char_offset must exist, offsets off the end of the line
- * are not allowed. Note characters, not bytes;
- * UTF-8 may encode one character as multiple bytes.
+ * Obtains an iterator pointing to @char_offset within the given line. Note
+ * characters, not bytes; UTF-8 may encode one character as multiple bytes.
+ *
+ * Before the 3.20 version, it was not allowed to pass an invalid location.
+ *
+ * Since the 3.20 version, if @line_number is greater than the number of lines
+ * in the @buffer, the end iterator is returned. And if @char_offset is off the
+ * end of the line, the iterator at the end of the line is returned.
  **/
 void
 gtk_text_buffer_get_iter_at_line_offset (GtkTextBuffer *buffer,
@@ -2876,11 +2896,27 @@ gtk_text_buffer_get_iter_at_line_offset (GtkTextBuffer *buffer,
                                          gint           line_number,
                                          gint           char_offset)
 {
+  GtkTextIter end_line_iter;
+
   g_return_if_fail (iter != NULL);
   g_return_if_fail (GTK_IS_TEXT_BUFFER (buffer));
 
-  _gtk_text_btree_get_iter_at_line_char (get_btree (buffer),
-                                         iter, line_number, char_offset);
+  if (line_number >= gtk_text_buffer_get_line_count (buffer))
+    {
+      gtk_text_buffer_get_end_iter (buffer, iter);
+      return;
+    }
+
+  _gtk_text_btree_get_iter_at_line_char (get_btree (buffer), iter, line_number, 0);
+
+  end_line_iter = *iter;
+  if (!gtk_text_iter_ends_line (&end_line_iter))
+    gtk_text_iter_forward_to_line_end (&end_line_iter);
+
+  if (char_offset <= gtk_text_iter_get_line_offset (&end_line_iter))
+    gtk_text_iter_set_line_offset (iter, char_offset);
+  else
+    *iter = end_line_iter;
 }
 
 /**
@@ -2891,9 +2927,14 @@ gtk_text_buffer_get_iter_at_line_offset (GtkTextBuffer *buffer,
  * @byte_index: byte index from start of line
  *
  * Obtains an iterator pointing to @byte_index within the given line.
- * @byte_index must be the start of a UTF-8 character, and must not be
- * beyond the end of the line.  Note bytes, not
+ * @byte_index must be the start of a UTF-8 character. Note bytes, not
  * characters; UTF-8 may encode one character as multiple bytes.
+ *
+ * Before the 3.20 version, it was not allowed to pass an invalid location.
+ *
+ * Since the 3.20 version, if @line_number is greater than the number of lines
+ * in the @buffer, the end iterator is returned. And if @byte_index is off the
+ * end of the line, the iterator at the end of the line is returned.
  **/
 void
 gtk_text_buffer_get_iter_at_line_index  (GtkTextBuffer *buffer,
@@ -2901,11 +2942,27 @@ gtk_text_buffer_get_iter_at_line_index  (GtkTextBuffer *buffer,
                                          gint           line_number,
                                          gint           byte_index)
 {
+  GtkTextIter end_line_iter;
+
   g_return_if_fail (iter != NULL);
   g_return_if_fail (GTK_IS_TEXT_BUFFER (buffer));
 
-  _gtk_text_btree_get_iter_at_line_byte (get_btree (buffer),
-                                         iter, line_number, byte_index);
+  if (line_number >= gtk_text_buffer_get_line_count (buffer))
+    {
+      gtk_text_buffer_get_end_iter (buffer, iter);
+      return;
+    }
+
+  gtk_text_buffer_get_iter_at_line (buffer, iter, line_number);
+
+  end_line_iter = *iter;
+  if (!gtk_text_iter_ends_line (&end_line_iter))
+    gtk_text_iter_forward_to_line_end (&end_line_iter);
+
+  if (byte_index <= gtk_text_iter_get_line_index (&end_line_iter))
+    gtk_text_iter_set_line_index (iter, byte_index);
+  else
+    *iter = end_line_iter;
 }
 
 /**
@@ -3800,7 +3857,7 @@ gtk_text_buffer_paste_clipboard (GtkTextBuffer *buffer,
   /* When pasting with the cursor inside the selection area, you
    * replace the selection with the new text, otherwise, you
    * simply insert the new text at the point where the click
-   * occured, unselecting any selected text. The replace_selection
+   * occurred, unselecting any selected text. The replace_selection
    * flag toggles this behavior.
    */
   data->replace_selection = FALSE;
@@ -4836,6 +4893,10 @@ get_tag_for_attributes (PangoAttrIterator *iter)
   attr = pango_attr_iterator_get (iter, PANGO_ATTR_LETTER_SPACING);
   if (attr)
     g_object_set (tag, "letter-spacing", ((PangoAttrInt*)attr)->value, NULL);
+
+  attr = pango_attr_iterator_get (iter, PANGO_ATTR_FONT_FEATURES);
+  if (attr)
+    g_object_set (tag, "font-features", ((PangoAttrString*)attr)->value, NULL);
 
   return tag;
 }

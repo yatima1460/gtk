@@ -21,14 +21,16 @@
 
 #include "config.h"
 
-#include <string.h>
+#include "gtkfilesystem.h"
 
+#include <string.h>
 #include <glib/gi18n-lib.h>
 
 #include "gtkfilechooser.h"
-#include "gtkfilesystem.h"
-#include "gtkicontheme.h"
+#include "gtkcssiconthemevalueprivate.h"
+#include "gtkintl.h"
 #include "gtkprivate.h"
+#include "gtkstylecontextprivate.h"
 
 /* #define DEBUG_MODE */
 #ifdef DEBUG_MODE
@@ -120,8 +122,7 @@ gtk_file_system_dispose (GObject *object)
 
   if (priv->volumes)
     {
-      g_slist_foreach (priv->volumes, (GFunc) g_object_unref, NULL);
-      g_slist_free (priv->volumes);
+      g_slist_free_full (priv->volumes, g_object_unref);
       priv->volumes = NULL;
     }
 
@@ -143,7 +144,7 @@ _gtk_file_system_class_init (GtkFileSystemClass *class)
   object_class->dispose = gtk_file_system_dispose;
 
   fs_signals[VOLUMES_CHANGED] =
-    g_signal_new ("volumes-changed",
+    g_signal_new (I_("volumes-changed"),
 		  G_TYPE_FROM_CLASS (object_class),
 		  G_SIGNAL_RUN_LAST,
 		  G_STRUCT_OFFSET (GtkFileSystemClass, volumes_changed),
@@ -199,8 +200,7 @@ get_volumes_list (GtkFileSystem *file_system)
 
   if (priv->volumes)
     {
-      g_slist_foreach (priv->volumes, (GFunc) g_object_unref, NULL);
-      g_slist_free (priv->volumes);
+      g_slist_free_full (priv->volumes, g_object_unref);
       priv->volumes = NULL;
     }
 
@@ -708,14 +708,15 @@ get_surface_from_gicon (GIcon      *icon,
 			gint        icon_size,
 			GError    **error)
 {
-  GdkScreen *screen;
+  GtkStyleContext *context;
   GtkIconTheme *icon_theme;
   GtkIconInfo *icon_info;
   GdkPixbuf *pixbuf;
   cairo_surface_t *surface;
 
-  screen = gtk_widget_get_screen (GTK_WIDGET (widget));
-  icon_theme = gtk_icon_theme_get_for_screen (screen);
+  context = gtk_widget_get_style_context (widget);
+  icon_theme = gtk_css_icon_theme_value_get_icon_theme
+    (_gtk_style_context_peek_property (context, GTK_CSS_PROPERTY_ICON_THEME));
 
   icon_info = gtk_icon_theme_lookup_by_gicon_for_scale (icon_theme,
                                                         icon,
@@ -727,7 +728,7 @@ get_surface_from_gicon (GIcon      *icon,
     return NULL;
 
   pixbuf = gtk_icon_info_load_symbolic_for_context (icon_info,
-                                                    gtk_widget_get_style_context (widget),
+                                                    context,
                                                     NULL,
                                                     error);
 
@@ -772,32 +773,19 @@ _gtk_file_system_volume_render_icon (GtkFileSystemVolume  *volume,
   return surface;
 }
 
-cairo_surface_t *
-_gtk_file_system_volume_render_symbolic_icon (GtkFileSystemVolume  *volume,
-				              GtkWidget            *widget,
-				              gint                  icon_size,
-				              GError              **error)
+GIcon *
+_gtk_file_system_volume_get_symbolic_icon (GtkFileSystemVolume *volume)
 {
-  GIcon *icon = NULL;
-  cairo_surface_t *surface;
-
   if (IS_ROOT_VOLUME (volume))
-    icon = g_themed_icon_new ("drive-harddisk-symbolic");
+    return g_themed_icon_new ("drive-harddisk-symbolic");
   else if (G_IS_DRIVE (volume))
-    icon = g_drive_get_symbolic_icon (G_DRIVE (volume));
+    return g_drive_get_symbolic_icon (G_DRIVE (volume));
   else if (G_IS_VOLUME (volume))
-    icon = g_volume_get_symbolic_icon (G_VOLUME (volume));
+    return g_volume_get_symbolic_icon (G_VOLUME (volume));
   else if (G_IS_MOUNT (volume))
-    icon = g_mount_get_symbolic_icon (G_MOUNT (volume));
-
-  if (!icon)
+    return g_mount_get_symbolic_icon (G_MOUNT (volume));
+  else
     return NULL;
-
-  surface = get_surface_from_gicon (icon, widget, icon_size, error);
-
-  g_object_unref (icon);
-
-  return surface;
 }
 
 GtkFileSystemVolume *
@@ -890,14 +878,6 @@ _gtk_file_info_render_icon (GFileInfo *info,
   return _gtk_file_info_render_icon_internal (info, widget, icon_size, FALSE);
 }
 
-cairo_surface_t *
-_gtk_file_info_render_symbolic_icon (GFileInfo *info,
-			             GtkWidget *widget,
-			             gint       icon_size)
-{
-  return _gtk_file_info_render_icon_internal (info, widget, icon_size, TRUE);
-}
-
 gboolean
 _gtk_file_info_consider_as_directory (GFileInfo *info)
 {
@@ -920,4 +900,23 @@ _gtk_file_has_native_path (GFile *file)
   g_free (local_file_path);
 
   return has_native_path;
+}
+
+gboolean
+_gtk_file_consider_as_remote (GFile *file)
+{
+  GFileInfo *info;
+  gboolean is_remote;
+
+  info = g_file_query_filesystem_info (file, G_FILE_ATTRIBUTE_FILESYSTEM_REMOTE, NULL, NULL);
+  if (info)
+    {
+      is_remote = g_file_info_get_attribute_boolean (info, G_FILE_ATTRIBUTE_FILESYSTEM_REMOTE);
+
+      g_object_unref (info);
+    }
+  else
+    is_remote = FALSE;
+
+  return is_remote;
 }

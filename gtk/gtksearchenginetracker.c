@@ -52,18 +52,22 @@
  */
 #define FTS_MATCHING
 
-/*
- * GtkSearchEngineTracker object
- */
-struct _GtkSearchEngineTrackerPrivate
+struct _GtkSearchEngineTracker
 {
+  GtkSearchEngine parent;
   GDBusConnection *connection;
   GCancellable *cancellable;
   GtkQuery *query;
   gboolean query_pending;
+  GPtrArray *indexed_locations;
 };
 
-G_DEFINE_TYPE_WITH_PRIVATE (GtkSearchEngineTracker, _gtk_search_engine_tracker, GTK_TYPE_SEARCH_ENGINE)
+struct _GtkSearchEngineTrackerClass
+{
+  GtkSearchEngineClass parent_class;
+};
+
+G_DEFINE_TYPE (GtkSearchEngineTracker, _gtk_search_engine_tracker, GTK_TYPE_SEARCH_ENGINE)
 
 static void
 finalize (GObject *object)
@@ -74,24 +78,16 @@ finalize (GObject *object)
 
   tracker = GTK_SEARCH_ENGINE_TRACKER (object);
 
-  if (tracker->priv->cancellable)
+  if (tracker->cancellable)
     {
-      g_cancellable_cancel (tracker->priv->cancellable);
-      g_object_unref (tracker->priv->cancellable);
-      tracker->priv->cancellable = NULL;
+      g_cancellable_cancel (tracker->cancellable);
+      g_object_unref (tracker->cancellable);
     }
 
-  if (tracker->priv->query)
-    {
-      g_object_unref (tracker->priv->query);
-      tracker->priv->query = NULL;
-    }
+  g_clear_object (&tracker->query);
+  g_clear_object (&tracker->connection);
 
-  if (tracker->priv->connection)
-    {
-      g_object_unref (tracker->priv->connection);
-      tracker->priv->connection = NULL;
-    }
+  g_ptr_array_unref (tracker->indexed_locations);
 
   G_OBJECT_CLASS (_gtk_search_engine_tracker_parent_class)->finalize (object);
 }
@@ -159,7 +155,7 @@ get_query_results (GtkSearchEngineTracker *engine,
                    GAsyncReadyCallback     callback,
                    gpointer                user_data)
 {
-  g_dbus_connection_call (engine->priv->connection,
+  g_dbus_connection_call (engine->connection,
                           DBUS_SERVICE_RESOURCES,
                           DBUS_PATH_RESOURCES,
                           DBUS_INTERFACE_RESOURCES,
@@ -168,24 +164,9 @@ get_query_results (GtkSearchEngineTracker *engine,
                           NULL,
                           G_DBUS_CALL_FLAGS_NONE,
                           QUERY_TIMEOUT_SECONDS * 1000,
-                          engine->priv->cancellable,
+                          engine->cancellable,
                           callback,
                           user_data);
-}
-
-/* Stolen from libtracker-common */
-static GList *
-string_list_to_gslist (gchar **strv)
-{
-  GList *list;
-  gsize i;
-
-  list = NULL;
-
-  for (i = 0; strv[i]; i++)
-    list = g_list_prepend (list, g_strdup (strv[i]));
-
-  return g_list_reverse (list);
 }
 
 /* Stolen from libtracker-sparql */
@@ -246,15 +227,23 @@ sparql_escape_string (const gchar *literal)
 static void
 sparql_append_string_literal (GString     *sparql,
                               const gchar *str,
-                              gboolean     glob)
+                              gboolean     glob,
+                              gboolean     is_dir_uri,
+                              gboolean     quoted)
 {
   gchar *s;
 
   s = sparql_escape_string (str);
 
   g_string_append_c (sparql, '"');
+  if (quoted)
+    g_string_append (sparql, "\\\"");
   g_string_append (sparql, s);
 
+  if (is_dir_uri)
+    g_string_append_c (sparql, '/');
+  if (quoted)
+    g_string_append (sparql, "\\\"");
   if (glob)
     g_string_append_c (sparql, '*');
   g_string_append_c (sparql, '"');
@@ -269,7 +258,7 @@ sparql_append_string_literal_lower_case (GString     *sparql,
   gchar *s;
 
   s = g_utf8_strdown (str, -1);
-  sparql_append_string_literal (sparql, s, FALSE);
+  sparql_append_string_literal (sparql, s, FALSE, FALSE, FALSE);
   g_free (s);
 }
 
@@ -283,15 +272,15 @@ query_callback (GObject      *object,
   GVariant *reply;
   GVariant *r;
   GVariantIter iter;
-  gchar **result;
   GError *error = NULL;
   gint i, n;
+  GtkSearchHit *hit;
 
   tracker = GTK_SEARCH_ENGINE_TRACKER (user_data);
 
-  tracker->priv->query_pending = FALSE;
+  tracker->query_pending = FALSE;
 
-  reply = g_dbus_connection_call_finish (tracker->priv->connection, res, &error);
+  reply = g_dbus_connection_call_finish (tracker->connection, res, &error);
   if (error)
     {
       _gtk_search_engine_error (GTK_SEARCH_ENGINE (tracker), error->message);
@@ -310,7 +299,8 @@ query_callback (GObject      *object,
   r = g_variant_get_child_value (reply, 0);
   g_variant_iter_init (&iter, r);
   n = g_variant_iter_n_children (&iter);
-  result = g_new0 (gchar *, n + 1);
+  hit = g_new (GtkSearchHit, n);
+  hits = NULL;
   for (i = 0; i < n; i++)
     {
       GVariant *v;
@@ -318,16 +308,16 @@ query_callback (GObject      *object,
 
       v = g_variant_iter_next_value (&iter);
       strv = g_variant_get_strv (v, NULL);
-      result[i] = (gchar*)strv[0];
+      hit[i].file = g_file_new_for_uri (strv[0]);
+      hit[i].info = NULL;
       g_free (strv);
+      hits = g_list_prepend (hits, &hit[i]);
     }
 
-  /* We iterate result by result, not n at a time. */
-  hits = string_list_to_gslist (result);
   _gtk_search_engine_hits_added (GTK_SEARCH_ENGINE (tracker), hits);
   _gtk_search_engine_finished (GTK_SEARCH_ENGINE (tracker));
   g_list_free (hits);
-  g_free (result);
+  g_free (hit);
   g_variant_unref (reply);
   g_variant_unref (r);
 
@@ -338,48 +328,66 @@ static void
 gtk_search_engine_tracker_start (GtkSearchEngine *engine)
 {
   GtkSearchEngineTracker *tracker;
-  gchar *search_text;
-  gchar *location_uri;
+  const gchar *search_text;
+  GFile *location;
   GString *sparql;
+  gboolean recursive;
 
   tracker = GTK_SEARCH_ENGINE_TRACKER (engine);
 
-  if (tracker->priv->query_pending)
+  if (tracker->query_pending)
     {
       g_debug ("Attempt to start a new search while one is pending, doing nothing");
       return;
     }
 
-  if (tracker->priv->query == NULL)
+  if (tracker->query == NULL)
     {
       g_debug ("Attempt to start a new search with no GtkQuery, doing nothing");
       return;
     }
 
-  search_text = _gtk_query_get_text (tracker->priv->query);
-  location_uri = _gtk_query_get_location (tracker->priv->query);
+  search_text = gtk_query_get_text (tracker->query);
+  location = gtk_query_get_location (tracker->query);
+  recursive = _gtk_search_engine_get_recursive (engine);
 
   sparql = g_string_new ("SELECT nie:url(?urn) "
                          "WHERE {"
                          "  ?urn a nfo:FileDataObject ;"
-                         "  tracker:available true ; ");
+                         "  tracker:available true ; "
+                         "  nfo:belongsToContainer ?parent; ");
 
 #ifdef FTS_MATCHING
   /* Using FTS: */
   g_string_append (sparql, "fts:match ");
-  sparql_append_string_literal (sparql, search_text, TRUE);
+  sparql_append_string_literal (sparql, search_text, TRUE, FALSE, TRUE);
 #endif
 
-  g_string_append (sparql, ". FILTER (fn:contains(fn:lower-case(nfo:fileName(?urn)),");
-  sparql_append_string_literal_lower_case (sparql, search_text);
+  g_string_append (sparql, ". FILTER (BOUND(nie:url(?urn)) && ");
 
-  if (location_uri)
+  g_string_append (sparql, "fn:contains(fn:lower-case(nfo:fileName(?urn)),");
+  sparql_append_string_literal_lower_case (sparql, search_text);
+  g_string_append (sparql, ")");
+
+  if (location)
     {
-      g_string_append (sparql, ") && fn:starts-with(nie:url(?urn),");
-      sparql_append_string_literal (sparql, location_uri, FALSE);
+      gchar *location_uri = g_file_get_uri (location);
+      g_string_append (sparql, " && ");
+      if (recursive)
+        {
+          g_string_append (sparql, "fn:starts-with(nie:url(?urn),");
+          sparql_append_string_literal (sparql, location_uri, FALSE, TRUE, FALSE);
+          g_string_append (sparql, ")");
+        }
+      else
+        {
+          g_string_append (sparql, "nie:url(?parent) = ");
+          sparql_append_string_literal (sparql, location_uri, FALSE, FALSE, FALSE);
+        }
+      g_free (location_uri);
     }
 
-  g_string_append (sparql, "))");
+  g_string_append (sparql, ")");
 
 #ifdef FTS_MATCHING
   g_string_append (sparql, " } ORDER BY DESC(fts:rank(?urn)) DESC(nie:url(?urn))");
@@ -387,14 +395,13 @@ gtk_search_engine_tracker_start (GtkSearchEngine *engine)
   g_string_append (sparql, "} ORDER BY DESC(nie:url(?urn)) DESC(nfo:fileName(?urn))");
 #endif /* FTS_MATCHING */
 
-  tracker->priv->query_pending = TRUE;
+  tracker->query_pending = TRUE;
 
   g_debug ("SearchEngineTracker: query: %s", sparql->str);
 
   get_query_results (tracker, sparql->str, query_callback, g_object_ref (tracker));
 
   g_string_free (sparql, TRUE);
-  g_free (search_text);
 }
 
 static void
@@ -404,17 +411,11 @@ gtk_search_engine_tracker_stop (GtkSearchEngine *engine)
 
   tracker = GTK_SEARCH_ENGINE_TRACKER (engine);
 
-  if (tracker->priv->query && tracker->priv->query_pending)
+  if (tracker->query && tracker->query_pending)
     {
-      g_cancellable_cancel (tracker->priv->cancellable);
-      tracker->priv->query_pending = FALSE;
+      g_cancellable_cancel (tracker->cancellable);
+      tracker->query_pending = FALSE;
     }
-}
-
-static gboolean
-gtk_search_engine_tracker_is_indexed (GtkSearchEngine *engine)
-{
-  return TRUE;
 }
 
 static void
@@ -428,10 +429,10 @@ gtk_search_engine_tracker_set_query (GtkSearchEngine *engine,
   if (query)
     g_object_ref (query);
 
-  if (tracker->priv->query)
-    g_object_unref (tracker->priv->query);
+  if (tracker->query)
+    g_object_unref (tracker->query);
 
-  tracker->priv->query = query;
+  tracker->query = query;
 }
 
 static void
@@ -447,15 +448,19 @@ _gtk_search_engine_tracker_class_init (GtkSearchEngineTrackerClass *class)
   engine_class->set_query = gtk_search_engine_tracker_set_query;
   engine_class->start = gtk_search_engine_tracker_start;
   engine_class->stop = gtk_search_engine_tracker_stop;
-  engine_class->is_indexed = gtk_search_engine_tracker_is_indexed;
 }
+
+static void get_indexed_locations (GtkSearchEngineTracker *engine);
 
 static void
 _gtk_search_engine_tracker_init (GtkSearchEngineTracker *engine)
 {
-  engine->priv = _gtk_search_engine_tracker_get_instance_private (engine);
-}
+  engine->cancellable = g_cancellable_new ();
+  engine->query_pending = FALSE;
+  engine->indexed_locations = g_ptr_array_new_with_free_func (g_object_unref);
 
+  get_indexed_locations (engine);
+}
 
 GtkSearchEngine *
 _gtk_search_engine_tracker_new (void)
@@ -473,9 +478,103 @@ _gtk_search_engine_tracker_new (void)
 
   engine = g_object_new (GTK_TYPE_SEARCH_ENGINE_TRACKER, NULL);
 
-  engine->priv->connection = connection;
-  engine->priv->cancellable = g_cancellable_new ();
-  engine->priv->query_pending = FALSE;
+  engine->connection = connection;
 
   return GTK_SEARCH_ENGINE (engine);
+}
+
+#define TRACKER_SCHEMA "org.freedesktop.Tracker.Miner.Files"
+#define TRACKER_KEY_RECURSIVE_DIRECTORIES "index-recursive-directories"
+
+static const gchar *
+get_user_special_dir_if_not_home (GUserDirectory idx)
+{
+  const gchar *path;
+  path = g_get_user_special_dir (idx);
+  if (g_strcmp0 (path, g_get_home_dir ()) == 0)
+    return NULL;
+
+  return path;
+}
+
+static const gchar *
+path_from_tracker_dir (const gchar *value)
+{
+  const gchar *path;
+
+  if (g_strcmp0 (value, "&DESKTOP") == 0)
+    path = get_user_special_dir_if_not_home (G_USER_DIRECTORY_DESKTOP);
+  else if (g_strcmp0 (value, "&DOCUMENTS") == 0)
+    path = get_user_special_dir_if_not_home (G_USER_DIRECTORY_DOCUMENTS);
+  else if (g_strcmp0 (value, "&DOWNLOAD") == 0)
+    path = get_user_special_dir_if_not_home (G_USER_DIRECTORY_DOWNLOAD);
+  else if (g_strcmp0 (value, "&MUSIC") == 0)
+    path = get_user_special_dir_if_not_home (G_USER_DIRECTORY_MUSIC);
+  else if (g_strcmp0 (value, "&PICTURES") == 0)
+    path = get_user_special_dir_if_not_home (G_USER_DIRECTORY_PICTURES);
+  else if (g_strcmp0 (value, "&PUBLIC_SHARE") == 0)
+    path = get_user_special_dir_if_not_home (G_USER_DIRECTORY_PUBLIC_SHARE);
+  else if (g_strcmp0 (value, "&TEMPLATES") == 0)
+    path = get_user_special_dir_if_not_home (G_USER_DIRECTORY_TEMPLATES);
+  else if (g_strcmp0 (value, "&VIDEOS") == 0)
+    path = get_user_special_dir_if_not_home (G_USER_DIRECTORY_VIDEOS);
+  else if (g_strcmp0 (value, "$HOME") == 0)
+    path = g_get_home_dir ();
+  else
+    path = value;
+
+  return path;
+}
+
+static void
+get_indexed_locations (GtkSearchEngineTracker *engine)
+{
+  GSettingsSchemaSource *source;
+  GSettingsSchema *schema;
+  GSettings *settings;
+  gchar **locations;
+  gint i;
+  GFile *location;
+  const gchar *path;
+
+  source = g_settings_schema_source_get_default ();
+  schema = g_settings_schema_source_lookup (source, TRACKER_SCHEMA, FALSE);
+  if (!schema)
+    return;
+
+  settings = g_settings_new_full (schema, NULL, NULL);
+  g_settings_schema_unref (schema);
+
+  locations = g_settings_get_strv (settings, TRACKER_KEY_RECURSIVE_DIRECTORIES);
+
+  for (i = 0; locations[i] != NULL; i++)
+    {
+      path = path_from_tracker_dir (locations[i]);
+      if (path == NULL)
+        continue;
+
+      location = g_file_new_for_path (path);
+      g_ptr_array_add (engine->indexed_locations, location);
+    }
+
+  g_strfreev (locations);
+  g_object_unref (settings);
+}
+
+gboolean
+_gtk_search_engine_tracker_is_indexed (GFile    *location,
+                                       gpointer  data)
+{
+  GtkSearchEngineTracker *engine = data;
+  gint i;
+  GFile *place;
+
+  for (i = 0; i < engine->indexed_locations->len; i++)
+    {
+      place = g_ptr_array_index (engine->indexed_locations, i);
+      if (g_file_equal (location, place) || g_file_has_prefix (location, place))
+        return TRUE;
+    }
+
+  return FALSE;
 }

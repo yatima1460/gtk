@@ -18,7 +18,15 @@
   color: red;
 }
 
+:disabled {
+  color: red;
+}
+
 :inconsistent {
+  color: red;
+}
+
+:indeterminate {
   color: red;
 }
 
@@ -51,5 +59,9 @@
 }
 
 :checked {
+  color: red;
+}
+
+:drop(active) {
   color: red;
 }

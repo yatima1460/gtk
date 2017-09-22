@@ -66,6 +66,10 @@
  *
  * To keep track of the selected application, use the
  * #GtkAppChooserWidget::application-selected and #GtkAppChooserWidget::application-activated signals.
+ *
+ * # CSS nodes
+ *
+ * GtkAppChooserWidget has a single CSS node with name appchooser.
  */
 
 struct _GtkAppChooserWidgetPrivate {
@@ -157,16 +161,16 @@ refresh_and_emit_app_selected (GtkAppChooserWidget *self,
       if (!g_app_info_equal (self->priv->selected_app_info, info))
         {
           should_emit = TRUE;
-          g_object_unref (self->priv->selected_app_info);
-
-          self->priv->selected_app_info = info;
+          g_set_object (&self->priv->selected_app_info, info);
         }
     }
   else
     {
       should_emit = TRUE;
-      self->priv->selected_app_info = info;
+      g_set_object (&self->priv->selected_app_info, info);
     }
+
+  g_object_unref (info);
 
   if (should_emit)
     g_signal_emit (self, signals[SIGNAL_APPLICATION_SELECTED], 0,
@@ -253,8 +257,7 @@ widget_button_press_event_cb (GtkWidget      *widget,
 
       if (n_children > 0)
         /* actually popup the menu */
-        gtk_menu_popup (GTK_MENU (menu), NULL, NULL, NULL, NULL,
-                        event->button, event->time);
+        gtk_menu_popup_at_pointer (GTK_MENU (menu), (GdkEvent *) event);
 
       g_list_free (children);
     }
@@ -813,7 +816,7 @@ gtk_app_chooser_widget_initialize_items (GtkAppChooserWidget *self)
                 NULL);
 
   /* populate the widget */
-  gtk_app_chooser_widget_real_add_items (self);
+  gtk_app_chooser_refresh (GTK_APP_CHOOSER (self));
 }
 
 static void
@@ -1042,12 +1045,12 @@ gtk_app_chooser_widget_class_init (GtkAppChooserWidgetClass *klass)
    * Emitted when an application item is selected from the widget's list.
    */
   signals[SIGNAL_APPLICATION_SELECTED] =
-    g_signal_new ("application-selected",
+    g_signal_new (I_("application-selected"),
                   GTK_TYPE_APP_CHOOSER_WIDGET,
                   G_SIGNAL_RUN_FIRST,
                   G_STRUCT_OFFSET (GtkAppChooserWidgetClass, application_selected),
                   NULL, NULL,
-                  _gtk_marshal_VOID__OBJECT,
+                  NULL,
                   G_TYPE_NONE,
                   1, G_TYPE_APP_INFO);
 
@@ -1063,12 +1066,12 @@ gtk_app_chooser_widget_class_init (GtkAppChooserWidgetClass *klass)
    * Return or Enter.
    */
   signals[SIGNAL_APPLICATION_ACTIVATED] =
-    g_signal_new ("application-activated",
+    g_signal_new (I_("application-activated"),
                   GTK_TYPE_APP_CHOOSER_WIDGET,
                   G_SIGNAL_RUN_FIRST,
                   G_STRUCT_OFFSET (GtkAppChooserWidgetClass, application_activated),
                   NULL, NULL,
-                  _gtk_marshal_VOID__OBJECT,
+                  NULL,
                   G_TYPE_NONE,
                   1, G_TYPE_APP_INFO);
 
@@ -1084,7 +1087,7 @@ gtk_app_chooser_widget_class_init (GtkAppChooserWidgetClass *klass)
    * if at least one item has been added to the menu.
    */
   signals[SIGNAL_POPULATE_POPUP] =
-    g_signal_new ("populate-popup",
+    g_signal_new (I_("populate-popup"),
                   GTK_TYPE_APP_CHOOSER_WIDGET,
                   G_SIGNAL_RUN_FIRST,
                   G_STRUCT_OFFSET (GtkAppChooserWidgetClass, populate_popup),
@@ -1108,6 +1111,8 @@ gtk_app_chooser_widget_class_init (GtkAppChooserWidgetClass *klass)
   gtk_widget_class_bind_template_callback (widget_class, refresh_and_emit_app_selected);
   gtk_widget_class_bind_template_callback (widget_class, program_list_selection_activated);
   gtk_widget_class_bind_template_callback (widget_class, widget_button_press_event_cb);
+
+  gtk_widget_class_set_css_name (widget_class, "appchooser");
 }
 
 static void

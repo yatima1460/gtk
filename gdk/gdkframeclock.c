@@ -416,12 +416,18 @@ _gdk_frame_clock_begin_frame (GdkFrameClock *frame_clock)
   priv->frame_counter++;
   priv->current = (priv->current + 1) % FRAME_HISTORY_MAX_LENGTH;
 
+  /* Try to steal the previous frame timing instead of discarding
+   * and allocating a new one.
+   */
+  if G_LIKELY (priv->n_timings == FRAME_HISTORY_MAX_LENGTH &&
+               _gdk_frame_timings_steal (priv->timings[priv->current],
+                                         priv->frame_counter))
+    return;
+
   if (priv->n_timings < FRAME_HISTORY_MAX_LENGTH)
     priv->n_timings++;
   else
-    {
-      gdk_frame_timings_unref(priv->timings[priv->current]);
-    }
+    gdk_frame_timings_unref (priv->timings[priv->current]);
 
   priv->timings[priv->current] = _gdk_frame_timings_new (priv->frame_counter);
 }
@@ -493,6 +499,8 @@ void
 _gdk_frame_clock_debug_print_timings (GdkFrameClock   *clock,
                                       GdkFrameTimings *timings)
 {
+  GString *str;
+
   gint64 previous_frame_time = 0;
   GdkFrameTimings *previous_timings = gdk_frame_clock_get_timings (clock,
                                                                    timings->frame_counter - 1);
@@ -500,25 +508,29 @@ _gdk_frame_clock_debug_print_timings (GdkFrameClock   *clock,
   if (previous_timings != NULL)
     previous_frame_time = previous_timings->frame_time;
 
-  g_print ("%5" G_GINT64_FORMAT ":", timings->frame_counter);
+  str = g_string_new ("");
+
+  g_string_append_printf (str, "%5" G_GINT64_FORMAT ":", timings->frame_counter);
   if (previous_frame_time != 0)
     {
-      g_print (" interval=%-4.1f", (timings->frame_time - previous_frame_time) / 1000.);
-      g_print (timings->slept_before ?  " (sleep)" : "        ");
+      g_string_append_printf (str, " interval=%-4.1f", (timings->frame_time - previous_frame_time) / 1000.);
+      g_string_append_printf (str, timings->slept_before ?  " (sleep)" : "        ");
     }
   if (timings->layout_start_time != 0)
-    g_print (" layout_start=%-4.1f", (timings->layout_start_time - timings->frame_time) / 1000.);
+    g_string_append_printf (str, " layout_start=%-4.1f", (timings->layout_start_time - timings->frame_time) / 1000.);
   if (timings->paint_start_time != 0)
-    g_print (" paint_start=%-4.1f", (timings->paint_start_time - timings->frame_time) / 1000.);
+    g_string_append_printf (str, " paint_start=%-4.1f", (timings->paint_start_time - timings->frame_time) / 1000.);
   if (timings->frame_end_time != 0)
-    g_print (" frame_end=%-4.1f", (timings->frame_end_time - timings->frame_time) / 1000.);
+    g_string_append_printf (str, " frame_end=%-4.1f", (timings->frame_end_time - timings->frame_time) / 1000.);
   if (timings->presentation_time != 0)
-    g_print (" present=%-4.1f", (timings->presentation_time - timings->frame_time) / 1000.);
+    g_string_append_printf (str, " present=%-4.1f", (timings->presentation_time - timings->frame_time) / 1000.);
   if (timings->predicted_presentation_time != 0)
-    g_print (" predicted=%-4.1f", (timings->predicted_presentation_time - timings->frame_time) / 1000.);
+    g_string_append_printf (str, " predicted=%-4.1f", (timings->predicted_presentation_time - timings->frame_time) / 1000.);
   if (timings->refresh_interval != 0)
-    g_print (" refresh_interval=%-4.1f", timings->refresh_interval / 1000.);
-  g_print ("\n");
+    g_string_append_printf (str, " refresh_interval=%-4.1f", timings->refresh_interval / 1000.);
+
+  g_message ("%s", str->str);
+  g_string_free (str, TRUE);
 }
 #endif /* G_ENABLE_DEBUG */
 
@@ -596,4 +608,46 @@ gdk_frame_clock_get_refresh_info (GdkFrameClock *frame_clock,
 
       frame_counter--;
     }
+}
+
+void
+_gdk_frame_clock_emit_flush_events (GdkFrameClock *frame_clock)
+{
+  g_signal_emit (frame_clock, signals[FLUSH_EVENTS], 0);
+}
+
+void
+_gdk_frame_clock_emit_before_paint (GdkFrameClock *frame_clock)
+{
+  g_signal_emit (frame_clock, signals[BEFORE_PAINT], 0);
+}
+
+void
+_gdk_frame_clock_emit_update (GdkFrameClock *frame_clock)
+{
+  g_signal_emit (frame_clock, signals[UPDATE], 0);
+}
+
+void
+_gdk_frame_clock_emit_layout (GdkFrameClock *frame_clock)
+{
+  g_signal_emit (frame_clock, signals[LAYOUT], 0);
+}
+
+void
+_gdk_frame_clock_emit_paint (GdkFrameClock *frame_clock)
+{
+  g_signal_emit (frame_clock, signals[PAINT], 0);
+}
+
+void
+_gdk_frame_clock_emit_after_paint (GdkFrameClock *frame_clock)
+{
+  g_signal_emit (frame_clock, signals[AFTER_PAINT], 0);
+}
+
+void
+_gdk_frame_clock_emit_resume_events (GdkFrameClock *frame_clock)
+{
+  g_signal_emit (frame_clock, signals[RESUME_EVENTS], 0);
 }

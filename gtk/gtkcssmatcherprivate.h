@@ -36,16 +36,12 @@ struct _GtkCssMatcherClass {
                                                    const GtkCssMatcher    *next);
 
   GtkStateFlags   (* get_state)                   (const GtkCssMatcher   *matcher);
-  gboolean        (* has_type)                    (const GtkCssMatcher   *matcher,
-                                                   GType                  type);
+  gboolean        (* has_name)                    (const GtkCssMatcher   *matcher,
+                                                   /*interned*/const char*name);
   gboolean        (* has_class)                   (const GtkCssMatcher   *matcher,
                                                    GQuark                 class_name);
   gboolean        (* has_id)                      (const GtkCssMatcher   *matcher,
                                                    const char            *id);
-  gboolean        (* has_regions)                 (const GtkCssMatcher   *matcher);
-  gboolean        (* has_region)                  (const GtkCssMatcher   *matcher,
-                                                   const char            *region,
-                                                   GtkRegionFlags         flags);
   gboolean        (* has_position)                (const GtkCssMatcher   *matcher,
                                                    gboolean               forward,
                                                    int                    a,
@@ -111,10 +107,10 @@ _gtk_css_matcher_get_state (const GtkCssMatcher *matcher)
 }
 
 static inline gboolean
-_gtk_css_matcher_has_type (const GtkCssMatcher *matcher,
-                           GType type)
+_gtk_css_matcher_has_name (const GtkCssMatcher     *matcher,
+                           /*interned*/ const char *name)
 {
-  return matcher->klass->has_type (matcher, type);
+  return matcher->klass->has_name (matcher, name);
 }
 
 static inline gboolean
@@ -129,21 +125,6 @@ _gtk_css_matcher_has_id (const GtkCssMatcher *matcher,
                          const char          *id)
 {
   return matcher->klass->has_id (matcher, id);
-}
-
-
-static inline gboolean
-_gtk_css_matcher_has_regions (const GtkCssMatcher *matcher)
-{
-  return matcher->klass->has_regions (matcher);
-}
-
-static inline gboolean
-_gtk_css_matcher_has_region (const GtkCssMatcher *matcher,
-                             const char          *region,
-                             GtkRegionFlags       flags)
-{
-  return matcher->klass->has_region (matcher, region, flags);
 }
 
 static inline guint

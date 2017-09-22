@@ -31,8 +31,19 @@ resources.c: iconbrowser.gresource.xml $(shell $(GLIB_COMPILE_RESOURCES) --sourc
 		--target=$@ --sourcedir=$(srcdir) --generate-source
 
 EXTRA_DIST = \
-	app-menu.ui \
+	menus.ui \
 	iconbrowser.gresource.xml \
-	window.ui
+	window.ui \
+	icon.list
+
+# ------------------- MSVC Build Items ----------------
+MSVCPROJS = gtk3-icon-browser
+
+gtk3_icon_browser_FILES = $(gtk3_icon_browser_SOURCES)
+gtk3_icon_browser_EXCLUDES = dummy
+
+include $(top_srcdir)/build/Makefile.msvcproj
+
+dist-hook: $(top_builddir)/build/win32/vs9/gtk3-icon-browser.vcproj
 
 -include $(top_srcdir)/git.mk

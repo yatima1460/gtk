@@ -180,26 +180,26 @@
   unbind "<shift><ctrl>a";
 }
 
-GtkIconView {
-  gtk-key-bindings: gtk-mac-icon-view;
+iconview {
+  -gtk-key-bindings: gtk-mac-icon-view;
 }
 
-GtkTextView {
-  gtk-key-bindings: gtk-mac-alt-arrows, gtk-mac-alt-delete, gtk-mac-cmd-c, gtk-mac-text-view;
+textview {
+  -gtk-key-bindings: gtk-mac-alt-arrows, gtk-mac-alt-delete, gtk-mac-cmd-c, gtk-mac-text-view;
 }
 
-GtkEntry {
-  gtk-key-bindings: gtk-mac-alt-arrows, gtk-mac-alt-delete, gtk-mac-cmd-c, gtk-mac-entry;
+entry {
+  -gtk-key-bindings: gtk-mac-alt-arrows, gtk-mac-alt-delete, gtk-mac-cmd-c, gtk-mac-entry;
 }
 
-GtkLabel {
-  gtk-key-bindings: gtk-mac-alt-arrows, gtk-mac-label;
+label {
+  -gtk-key-bindings: gtk-mac-alt-arrows, gtk-mac-label;
 }
 
 GtkFileChooserWidget {
-  gtk-key-bindings: gtk-mac-file-chooser;
+  -gtk-key-bindings: gtk-mac-file-chooser;
 }
 
-GtkTreeView {
-  gtk-key-bindings: gtk-mac-tree-view;
+treeview {
+  -gtk-key-bindings: gtk-mac-tree-view;
 }

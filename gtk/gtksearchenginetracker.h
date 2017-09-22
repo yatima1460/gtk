@@ -35,24 +35,13 @@ G_BEGIN_DECLS
 
 typedef struct _GtkSearchEngineTracker GtkSearchEngineTracker;
 typedef struct _GtkSearchEngineTrackerClass GtkSearchEngineTrackerClass;
-typedef struct _GtkSearchEngineTrackerPrivate GtkSearchEngineTrackerPrivate;
-
-struct _GtkSearchEngineTracker 
-{
-  GtkSearchEngine parent;
-
-  GtkSearchEngineTrackerPrivate *priv;
-};
-
-struct _GtkSearchEngineTrackerClass 
-{
-  GtkSearchEngineClass parent_class;
-};
 
 GType            _gtk_search_engine_tracker_get_type (void);
 
 GtkSearchEngine* _gtk_search_engine_tracker_new      (void);
 
+gboolean         _gtk_search_engine_tracker_is_indexed (GFile    *file,
+                                                        gpointer  data);
 G_END_DECLS
 
 #endif /* __GTK_SEARCH_ENGINE_TRACKER_H__ */

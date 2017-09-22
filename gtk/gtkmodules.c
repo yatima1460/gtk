@@ -26,6 +26,7 @@
 #include "gtkprivate.h"
 #include "gtkmodulesprivate.h"
 #include "gtkintl.h"
+#include "gtkutilsprivate.h"
 
 #include <gmodule.h>
 
@@ -77,7 +78,7 @@ get_module_path (void)
 
   g_free (default_dir);
 
-  result = pango_split_file_list (module_path);
+  result = gtk_split_file_list (module_path);
   g_free (module_path);
 
   return result;
@@ -354,7 +355,7 @@ load_module (GSList      *module_list,
 		    }
 		  else
 		    {
-		      GTK_NOTE (MODULES, g_print ("Module already loaded, ignoring: %s\n", name));
+		      GTK_NOTE (MODULES, g_message ("Module already loaded, ignoring: %s", name));
 		      info->names = g_slist_prepend (info->names, g_strdup (name));
 		      info->ref_count++;
 		      /* remove new reference count on module, we already have one */
@@ -394,10 +395,10 @@ gtk_module_info_unref (GtkModuleInfo *info)
 
   info->ref_count--;
 
-  if (info->ref_count == 0) 
+  if (info->ref_count == 0)
     {
-      GTK_NOTE (MODULES, 
-		g_print ("Unloading module: %s\n", g_module_name (info->module)));
+      GTK_NOTE (MODULES,
+		g_message ("Unloading module: %s", g_module_name (info->module)));
 
       gtk_modules = g_slist_remove (gtk_modules, info);
       g_module_close (info->module);
@@ -415,10 +416,10 @@ load_modules (const char *module_str)
   GSList *module_list = NULL;
   gint i;
 
-  GTK_NOTE (MODULES, g_print ("Loading module list: %s\n", module_str));
+  GTK_NOTE (MODULES, g_message ("Loading module list: %s", module_str));
 
-  module_names = pango_split_file_list (module_str);
-  for (i = 0; module_names[i]; i++) 
+  module_names = gtk_split_file_list (module_str);
+  for (i = 0; module_names[i]; i++)
     module_list = load_module (module_list, module_names[i]);
 
   module_list = g_slist_reverse (module_list);
@@ -460,7 +461,7 @@ display_closed_cb (GdkDisplay *display,
   GdkScreen *screen;
   GtkSettings *settings;
 
-  screen = gdk_display_get_screen (display, 0);
+  screen = gdk_display_get_default_screen (display);
   settings = gtk_settings_get_for_screen (screen);
 
   g_object_set_data_full (G_OBJECT (settings),
@@ -490,7 +491,7 @@ display_opened_cb (GdkDisplayManager *display_manager,
     }
   
   g_value_init (&value, G_TYPE_STRING);
-  screen = gdk_display_get_screen (display, 0);
+  screen = gdk_display_get_default_screen (display);
 
   if (gdk_screen_get_setting (screen, "gtk-modules", &value))
     {
@@ -563,7 +564,7 @@ _gtk_modules_settings_changed (GtkSettings *settings,
 {
   GSList *new_modules = NULL;
 
-  GTK_NOTE (MODULES, g_print ("gtk-modules setting changed to: %s\n", modules));
+  GTK_NOTE (MODULES, g_message ("gtk-modules setting changed to: %s", modules));
 
   /* load/ref before unreffing existing */
   if (modules && modules[0])

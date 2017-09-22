@@ -40,6 +40,7 @@
 #include "gtkgestureswipeprivate.h"
 #include "gtkgestureprivate.h"
 #include "gtkmarshalers.h"
+#include "gtkintl.h"
 
 #define CAPTURE_THRESHOLD_MS 150
 
@@ -75,6 +76,26 @@ gtk_gesture_swipe_finalize (GObject *object)
   g_array_free (priv->events, TRUE);
 
   G_OBJECT_CLASS (gtk_gesture_swipe_parent_class)->finalize (object);
+}
+
+static gboolean
+gtk_gesture_swipe_filter_event (GtkEventController *controller,
+                                const GdkEvent     *event)
+{
+  /* Let touchpad swipe events go through, only if they match n-points  */
+  if (event->type == GDK_TOUCHPAD_SWIPE)
+    {
+      guint n_points;
+
+      g_object_get (G_OBJECT (controller), "n-points", &n_points, NULL);
+
+      if (event->touchpad_swipe.n_fingers == n_points)
+        return FALSE;
+      else
+        return TRUE;
+    }
+
+  return GTK_EVENT_CONTROLLER_CLASS (gtk_gesture_swipe_parent_class)->filter_event (controller, event);
 }
 
 static void
@@ -188,9 +209,12 @@ static void
 gtk_gesture_swipe_class_init (GtkGestureSwipeClass *klass)
 {
   GtkGestureClass *gesture_class = GTK_GESTURE_CLASS (klass);
+  GtkEventControllerClass *event_controller_class = GTK_EVENT_CONTROLLER_CLASS (klass);
   GObjectClass *object_class = G_OBJECT_CLASS (klass);
 
   object_class->finalize = gtk_gesture_swipe_finalize;
+
+  event_controller_class->filter_event = gtk_gesture_swipe_filter_event;
 
   gesture_class->update = gtk_gesture_swipe_update;
   gesture_class->end = gtk_gesture_swipe_end;
@@ -207,7 +231,7 @@ gtk_gesture_swipe_class_init (GtkGestureSwipeClass *klass)
    * Since: 3.14
    */
   signals[SWIPE] =
-    g_signal_new ("swipe",
+    g_signal_new (I_("swipe"),
                   G_TYPE_FROM_CLASS (klass),
                   G_SIGNAL_RUN_LAST,
                   G_STRUCT_OFFSET (GtkGestureSwipeClass, swipe),

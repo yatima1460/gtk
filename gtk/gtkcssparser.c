@@ -19,8 +19,7 @@
 
 #include "gtkcssparserprivate.h"
 
-#include "gtkcssnumbervalueprivate.h"
-#include "gtkwin32themeprivate.h"
+#include "gtkcssdimensionvalueprivate.h"
 
 #include <errno.h>
 #include <string.h>
@@ -600,13 +599,20 @@ _gtk_css_parser_try_double (GtkCssParser *parser,
 gboolean
 _gtk_css_parser_has_number (GtkCssParser *parser)
 {
+  char c;
+
+  if (parser->data[0] == '-' || parser->data[0] == '+')
+    c = parser->data[1];
+  else
+    c = parser->data[0];
+
   /* ahem */
-  return strchr ("+-0123456789.", parser->data[0]) != NULL;
+  return g_ascii_isdigit (c) || c == '.';
 }
 
 GtkCssValue *
-_gtk_css_number_value_parse (GtkCssParser           *parser,
-                             GtkCssNumberParseFlags  flags)
+gtk_css_dimension_value_parse (GtkCssParser           *parser,
+                               GtkCssNumberParseFlags  flags)
 {
   static const struct {
     const char *name;
@@ -617,6 +623,7 @@ _gtk_css_number_value_parse (GtkCssParser           *parser,
     { "pt",   GTK_CSS_PT,      GTK_CSS_PARSE_LENGTH },
     { "em",   GTK_CSS_EM,      GTK_CSS_PARSE_LENGTH },
     { "ex",   GTK_CSS_EX,      GTK_CSS_PARSE_LENGTH },
+    { "rem",  GTK_CSS_REM,     GTK_CSS_PARSE_LENGTH },
     { "pc",   GTK_CSS_PC,      GTK_CSS_PARSE_LENGTH },
     { "in",   GTK_CSS_IN,      GTK_CSS_PARSE_LENGTH },
     { "cm",   GTK_CSS_CM,      GTK_CSS_PARSE_LENGTH },
@@ -671,7 +678,7 @@ _gtk_css_number_value_parse (GtkCssParser           *parser,
 
       if (i >= G_N_ELEMENTS (units))
         {
-          _gtk_css_parser_error (parser, "`%s' is not a valid unit.", unit_name);
+          _gtk_css_parser_error (parser, "'%s' is not a valid unit.", unit_name);
           g_free (unit_name);
           return NULL;
         }
@@ -720,7 +727,7 @@ _gtk_css_number_value_parse (GtkCssParser           *parser,
 
   _gtk_css_parser_skip_whitespace (parser);
 
-  return _gtk_css_number_value_new (value, unit);
+  return gtk_css_dimension_value_new (value, unit);
 }
 
 /* XXX: we should introduce GtkCssLenght that deals with

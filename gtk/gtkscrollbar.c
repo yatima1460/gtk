@@ -30,6 +30,7 @@
 
 #include "gtkadjustment.h"
 #include "gtkintl.h"
+#include "gtkorientable.h"
 #include "gtkprivate.h"
 
 
@@ -42,16 +43,42 @@
  * The #GtkScrollbar widget is a horizontal or vertical scrollbar,
  * depending on the value of the #GtkOrientable:orientation property.
  *
- * The position of the thumb in a scrollbar is controlled by the scroll
- * adjustments. See #GtkAdjustment for the fields in an adjustment - for
- * #GtkScrollbar, the #GtkAdjustment:value field represents the position
- * of the scrollbar, which must be between the #GtkAdjustment:lower field
- * and #GtkAdjustment:upper - #GtkAdjustment:page-size. The
- * #GtkAdjustment:page-size field represents the size of the visible
- * scrollable area. The #GtkAdjustment:step-increment and
- * #GtkAdjustment:page-increment fields are properties when the user asks to
- * step down (using the small stepper arrows) or page down (using for
- * example the `Page Down` key).
+ * Its position and movement are controlled by the adjustment that is passed to
+ * or created by gtk_scrollbar_new(). See #GtkAdjustment for more details. The
+ * #GtkAdjustment:value field sets the position of the thumb and must be between
+ * #GtkAdjustment:lower and #GtkAdjustment:upper - #GtkAdjustment:page-size. The
+ * #GtkAdjustment:page-size represents the size of the visible scrollable area.
+ * The fields #GtkAdjustment:step-increment and #GtkAdjustment:page-increment
+ * fields are added to or subtracted from the #GtkAdjustment:value when the user
+ * asks to move by a step (using e.g. the cursor arrow keys or, if present, the
+ * stepper buttons) or by a page (using e.g. the Page Down/Up keys).
+ *
+ * # CSS nodes
+ *
+ * |[<!-- language="plain" -->
+ * scrollbar[.fine-tune]
+ * ╰── contents
+ *     ├── [button.up]
+ *     ├── [button.down]
+ *     ├── trough
+ *     │   ╰── slider
+ *     ├── [button.up]
+ *     ╰── [button.down]
+ * ]|
+ *
+ * GtkScrollbar has a main CSS node with name scrollbar and a subnode for its
+ * contents, with subnodes named trough and slider.
+ *
+ * The main node gets the style class .fine-tune added when the scrollbar is
+ * in 'fine-tuning' mode.
+ *
+ * If steppers are enabled, they are represented by up to four additional
+ * subnodes with name button. These get the style classes .up and .down to
+ * indicate in which direction they are moving.
+ *
+ * Other style classes that may be added to scrollbars inside #GtkScrolledWindow
+ * include the positional classes (.left, .right, .top, .bottom) and style
+ * classes related to overlay scrolling (.overlay-indicator, .dragging, .hovering).
  */
 
 
@@ -66,6 +93,14 @@ gtk_scrollbar_class_init (GtkScrollbarClass *class)
 
   widget_class->style_updated = gtk_scrollbar_style_updated;
 
+  /**
+   * GtkScrollbar:min-slider-length:
+   *
+   * Minimum length of scrollbar slider.
+   *
+   * Deprecated: 3.20: Use min-height/min-width CSS properties on the slider
+   *   element instead. The value of this style property is ignored.
+   */
   gtk_widget_class_install_style_property (widget_class,
 					   g_param_spec_int ("min-slider-length",
 							     P_("Minimum Slider Length"),
@@ -73,7 +108,7 @@ gtk_scrollbar_class_init (GtkScrollbarClass *class)
 							     0,
 							     G_MAXINT,
 							     21,
-							     GTK_PARAM_READABLE));
+							     GTK_PARAM_READABLE|G_PARAM_DEPRECATED));
 
   gtk_widget_class_install_style_property (widget_class,
 					   g_param_spec_boolean ("fixed-slider-length",
@@ -111,19 +146,18 @@ gtk_scrollbar_class_init (GtkScrollbarClass *class)
                                                                  GTK_PARAM_READABLE));
 
   gtk_widget_class_set_accessible_role (widget_class, ATK_ROLE_SCROLL_BAR);
+  gtk_widget_class_set_css_name (widget_class, "scrollbar");
 }
 
 static void
 gtk_scrollbar_update_style (GtkScrollbar *scrollbar)
 {
-  gint slider_length;
   gboolean fixed_size;
   gboolean has_a, has_b, has_c, has_d;
   GtkRange *range = GTK_RANGE (scrollbar);
   GtkWidget *widget = GTK_WIDGET (scrollbar);
 
   gtk_widget_style_get (widget,
-                        "min-slider-length", &slider_length,
                         "fixed-slider-length", &fixed_size,
                         "has-backward-stepper", &has_a,
                         "has-secondary-forward-stepper", &has_b,
@@ -131,20 +165,15 @@ gtk_scrollbar_update_style (GtkScrollbar *scrollbar)
                         "has-forward-stepper", &has_d,
                         NULL);
 
-  gtk_range_set_min_slider_size (range, slider_length);
   gtk_range_set_slider_size_fixed (range, fixed_size);
-  _gtk_range_set_steppers (range,
-                           has_a, has_b, has_c, has_d);
+  _gtk_range_set_steppers (range, has_a, has_b, has_c, has_d);
 }
 
 static void
 gtk_scrollbar_init (GtkScrollbar *scrollbar)
 {
-  GtkStyleContext *context;
-
-  context = gtk_widget_get_style_context (GTK_WIDGET (scrollbar));
-  gtk_style_context_add_class (context, GTK_STYLE_CLASS_SCROLLBAR);
   gtk_scrollbar_update_style (scrollbar);
+  gtk_range_set_slider_use_min_size (GTK_RANGE (scrollbar), TRUE);
 }
 
 static void

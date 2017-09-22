@@ -38,10 +38,15 @@
  * The URI bound to a GtkLinkButton can be set specifically using
  * gtk_link_button_set_uri(), and retrieved using gtk_link_button_get_uri().
  *
- * By default, GtkLinkButton calls gtk_show_uri() when the button is
+ * By default, GtkLinkButton calls gtk_show_uri_on_window() when the button is
  * clicked. This behaviour can be overridden by connecting to the
  * #GtkLinkButton::activate-link signal and returning %TRUE from the
  * signal handler.
+ *
+ * # CSS nodes
+ *
+ * GtkLinkButton has a single CSS node with name button. To differentiate
+ * it from a plain #GtkButton, it gets the .link style class.
  */
 
 #include "config.h"
@@ -97,19 +102,12 @@ static void     gtk_link_button_set_property (GObject          *object,
 					      guint             prop_id,
 					      const GValue     *value,
 					      GParamSpec       *pspec);
-static void     gtk_link_button_add          (GtkContainer     *container,
-					      GtkWidget        *widget);
 static gboolean gtk_link_button_button_press (GtkWidget        *widget,
 					      GdkEventButton   *event);
 static void     gtk_link_button_clicked      (GtkButton        *button);
 static gboolean gtk_link_button_popup_menu   (GtkWidget        *widget);
+static void     gtk_link_button_realize      (GtkWidget        *widget);
 static void     gtk_link_button_unrealize    (GtkWidget        *widget);
-static gboolean gtk_link_button_enter_cb     (GtkWidget        *widget,
-					      GdkEventCrossing *event,
-					      gpointer          user_data);
-static gboolean gtk_link_button_leave_cb     (GtkWidget        *widget,
-					      GdkEventCrossing *event,
-					      gpointer          user_data);
 static void gtk_link_button_drag_data_get_cb (GtkWidget        *widget,
 					      GdkDragContext   *context,
 					      GtkSelectionData *selection,
@@ -138,18 +136,16 @@ gtk_link_button_class_init (GtkLinkButtonClass *klass)
 {
   GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
   GtkWidgetClass *widget_class = GTK_WIDGET_CLASS (klass);
-  GtkContainerClass *container_class = GTK_CONTAINER_CLASS (klass);
   GtkButtonClass *button_class = GTK_BUTTON_CLASS (klass);
-  
+
   gobject_class->set_property = gtk_link_button_set_property;
   gobject_class->get_property = gtk_link_button_get_property;
   gobject_class->finalize = gtk_link_button_finalize;
-  
+
   widget_class->button_press_event = gtk_link_button_button_press;
   widget_class->popup_menu = gtk_link_button_popup_menu;
+  widget_class->realize = gtk_link_button_realize;
   widget_class->unrealize = gtk_link_button_unrealize;
-  
-  container_class->add = gtk_link_button_add;
 
   button_class->clicked = gtk_link_button_clicked;
 
@@ -193,7 +189,7 @@ gtk_link_button_class_init (GtkLinkButtonClass *klass)
    * The ::activate-link signal is emitted each time the #GtkLinkButton
    * has been clicked.
    *
-   * The default handler will call gtk_show_uri() with the URI stored inside
+   * The default handler will call gtk_show_uri_on_window() with the URI stored inside
    * the #GtkLinkButton:uri property.
    *
    * To override the default behavior, you can connect to the ::activate-link
@@ -210,20 +206,19 @@ gtk_link_button_class_init (GtkLinkButtonClass *klass)
                   G_TYPE_BOOLEAN, 0);
 
   gtk_widget_class_set_accessible_type (widget_class, GTK_TYPE_LINK_BUTTON_ACCESSIBLE);
+  gtk_widget_class_set_css_name (widget_class, "button");
 }
 
 static void
 gtk_link_button_init (GtkLinkButton *link_button)
 {
+  GtkStyleContext *context;
+
   link_button->priv = gtk_link_button_get_instance_private (link_button);
 
   gtk_button_set_relief (GTK_BUTTON (link_button), GTK_RELIEF_NONE);
   gtk_widget_set_state_flags (GTK_WIDGET (link_button), GTK_STATE_FLAG_LINK, FALSE);
 
-  g_signal_connect (link_button, "enter-notify-event",
-  		    G_CALLBACK (gtk_link_button_enter_cb), NULL);
-  g_signal_connect (link_button, "leave-notify-event",
-  		    G_CALLBACK (gtk_link_button_leave_cb), NULL);
   g_signal_connect (link_button, "drag-data-get",
   		    G_CALLBACK (gtk_link_button_drag_data_get_cb), NULL);
 
@@ -236,6 +231,9 @@ gtk_link_button_init (GtkLinkButton *link_button)
   		       GDK_BUTTON1_MASK,
   		       link_drop_types, G_N_ELEMENTS (link_drop_types),
   		       GDK_ACTION_COPY);
+
+  context = gtk_widget_get_style_context (GTK_WIDGET (link_button));
+  gtk_style_context_add_class (context, "link");
 }
 
 static void
@@ -293,36 +291,6 @@ gtk_link_button_set_property (GObject      *object,
 }
 
 static void
-set_link_underline (GtkLinkButton *link_button)
-{
-  GtkWidget *label;
-  
-  label = gtk_bin_get_child (GTK_BIN (link_button));
-  if (GTK_IS_LABEL (label))
-    {
-      PangoAttrList *attributes;
-      PangoAttribute *uline;
-
-      uline = pango_attr_underline_new (PANGO_UNDERLINE_SINGLE);
-      uline->start_index = 0;
-      uline->end_index = G_MAXUINT;
-      attributes = pango_attr_list_new ();
-      pango_attr_list_insert (attributes, uline); 
-      gtk_label_set_attributes (GTK_LABEL (label), attributes);
-      pango_attr_list_unref (attributes);
-    }
-}
-
-static void
-gtk_link_button_add (GtkContainer *container,
-		     GtkWidget    *widget)
-{
-  GTK_CONTAINER_CLASS (gtk_link_button_parent_class)->add (container, widget);
-
-  set_link_underline (GTK_LINK_BUTTON (container));
-}
-
-static void
 set_hand_cursor (GtkWidget *widget,
 		 gboolean   show_hand)
 {
@@ -333,13 +301,21 @@ set_hand_cursor (GtkWidget *widget,
 
   cursor = NULL;
   if (show_hand)
-    cursor = gdk_cursor_new_for_display (display, GDK_HAND2);
+    cursor = gdk_cursor_new_from_name (display, "pointer");
 
-  gdk_window_set_cursor (gtk_widget_get_window (widget), cursor);
+  gdk_window_set_cursor (gtk_button_get_event_window (GTK_BUTTON (widget)), cursor);
   gdk_display_flush (display);
 
   if (cursor)
     g_object_unref (cursor);
+}
+
+static void
+gtk_link_button_realize (GtkWidget *widget)
+{
+  GTK_WIDGET_CLASS (gtk_link_button_parent_class)->realize (widget);
+
+  set_hand_cursor (widget, TRUE);
 }
 
 static void
@@ -360,42 +336,6 @@ popup_menu_detach (GtkWidget *attach_widget,
 }
 
 static void
-popup_position_func (GtkMenu  *menu,
-		     gint     *x,
-		     gint     *y,
-		     gboolean *push_in,
-		     gpointer  user_data)
-{
-  GtkLinkButton *link_button = GTK_LINK_BUTTON (user_data);
-  GtkLinkButtonPrivate *priv = link_button->priv;
-  GtkAllocation allocation;
-  GtkWidget *widget = GTK_WIDGET (link_button);
-  GdkScreen *screen = gtk_widget_get_screen (widget);
-  GtkRequisition req;
-  gint monitor_num;
-  GdkRectangle monitor;
-  
-  g_return_if_fail (gtk_widget_get_realized (widget));
-
-  gdk_window_get_origin (gtk_widget_get_window (widget), x, y);
-
-  gtk_widget_get_preferred_size (priv->popup_menu, &req, NULL);
-
-  gtk_widget_get_allocation (widget, &allocation);
-  *x += allocation.width / 2;
-  *y += allocation.height;
-
-  monitor_num = gdk_screen_get_monitor_at_point (screen, *x, *y);
-  gtk_menu_set_monitor (menu, monitor_num);
-  gdk_screen_get_monitor_workarea (screen, monitor_num, &monitor);
-
-  *x = CLAMP (*x, monitor.x, monitor.x + MAX (0, monitor.width - req.width));
-  *y = CLAMP (*y, monitor.y, monitor.y + MAX (0, monitor.height - req.height));
-
-  *push_in = FALSE;
-}
-
-static void
 copy_activate_cb (GtkWidget     *widget,
 		  GtkLinkButton *link_button)
 {
@@ -408,22 +348,9 @@ copy_activate_cb (GtkWidget     *widget,
 
 static void
 gtk_link_button_do_popup (GtkLinkButton  *link_button,
-			  GdkEventButton *event)
+                          const GdkEvent *event)
 {
   GtkLinkButtonPrivate *priv = link_button->priv;
-  gint button;
-  guint time;
-  
-  if (event)
-    {
-      button = event->button;
-      time = event->time;
-    }
-  else
-    {
-      button = 0;
-      time = gtk_get_current_event_time ();
-    }
 
   if (gtk_widget_get_realized (GTK_WIDGET (link_button)))
     {
@@ -446,17 +373,18 @@ gtk_link_button_do_popup (GtkLinkButton  *link_button,
       gtk_widget_show (menu_item);
       gtk_menu_shell_append (GTK_MENU_SHELL (priv->popup_menu), menu_item);
 
-      if (button)
-        gtk_menu_popup (GTK_MENU (priv->popup_menu), NULL, NULL,
-		        NULL, NULL,
-			button, time);
+      if (event && gdk_event_triggers_context_menu (event))
+        gtk_menu_popup_at_pointer (GTK_MENU (priv->popup_menu), event);
       else
         {
-          gtk_menu_popup (GTK_MENU (priv->popup_menu), NULL, NULL,
-			  popup_position_func, link_button,
-			  button, time);
-	  gtk_menu_shell_select_first (GTK_MENU_SHELL (priv->popup_menu), FALSE);
-	}
+          gtk_menu_popup_at_widget (GTK_MENU (priv->popup_menu),
+                                    GTK_WIDGET (link_button),
+                                    GDK_GRAVITY_SOUTH,
+                                    GDK_GRAVITY_NORTH_WEST,
+                                    event);
+
+          gtk_menu_shell_select_first (GTK_MENU_SHELL (priv->popup_menu), FALSE);
+        }
     }
 }
 
@@ -472,7 +400,7 @@ gtk_link_button_button_press (GtkWidget      *widget,
   if (gdk_event_triggers_context_menu ((GdkEvent *) event) &&
       GTK_LINK_BUTTON (widget)->priv->uri != NULL)
     {
-      gtk_link_button_do_popup (GTK_LINK_BUTTON (widget), event);
+      gtk_link_button_do_popup (GTK_LINK_BUTTON (widget), (GdkEvent *) event);
 
       return TRUE;
     }
@@ -486,16 +414,13 @@ gtk_link_button_button_press (GtkWidget      *widget,
 static gboolean
 gtk_link_button_activate_link (GtkLinkButton *link_button)
 {
-  GdkScreen *screen;
+  GtkWidget *toplevel;
   GError *error;
 
-  if (gtk_widget_has_screen (GTK_WIDGET (link_button)))
-    screen = gtk_widget_get_screen (GTK_WIDGET (link_button));
-  else
-    screen = NULL;
+  toplevel = gtk_widget_get_toplevel (GTK_WIDGET (link_button));
 
   error = NULL;
-  gtk_show_uri (screen, link_button->priv->uri, GDK_CURRENT_TIME, &error);
+  gtk_show_uri_on_window (GTK_WINDOW (toplevel), link_button->priv->uri, GDK_CURRENT_TIME, &error);
   if (error)
     {
       g_warning ("Unable to show '%s': %s",
@@ -525,26 +450,6 @@ gtk_link_button_popup_menu (GtkWidget *widget)
   gtk_link_button_do_popup (GTK_LINK_BUTTON (widget), NULL);
 
   return TRUE; 
-}
-
-static gboolean
-gtk_link_button_enter_cb (GtkWidget        *widget,
-			  GdkEventCrossing *crossing,
-			  gpointer          user_data)
-{
-  set_hand_cursor (widget, TRUE);
-  
-  return FALSE;
-}
-
-static gboolean
-gtk_link_button_leave_cb (GtkWidget        *widget,
-			  GdkEventCrossing *crossing,
-			  gpointer          user_data)
-{
-  set_hand_cursor (widget, FALSE);
-  
-  return FALSE;
 }
 
 static void
@@ -597,8 +502,8 @@ gtk_link_button_new (const gchar *uri)
       utf8_uri = g_locale_to_utf8 (uri, -1, NULL, NULL, &conv_err);
       if (conv_err)
         {
-          g_warning ("Attempting to convert URI `%s' to UTF-8, but failed "
-                     "with error: %s\n",
+          g_warning ("Attempting to convert URI '%s' to UTF-8, but failed "
+                     "with error: %s",
                      uri,
                      conv_err->message);
           g_error_free (conv_err);
@@ -657,17 +562,23 @@ gtk_link_button_query_tooltip_cb (GtkWidget    *widget,
 {
   GtkLinkButton *link_button = GTK_LINK_BUTTON (widget);
   const gchar *label, *uri;
+  gchar *text, *markup;
 
   label = gtk_button_get_label (GTK_BUTTON (link_button));
   uri = link_button->priv->uri;
+  text = gtk_widget_get_tooltip_text (widget);
+  markup = gtk_widget_get_tooltip_markup (widget);
 
-  if (!gtk_widget_get_tooltip_text (widget)
-    && !gtk_widget_get_tooltip_markup (widget)
-    && label && *label != '\0' && uri && strcmp (label, uri) != 0)
+  if (text == NULL &&
+      markup == NULL &&
+      label && *label != '\0' && uri && strcmp (label, uri) != 0)
     {
       gtk_tooltip_set_text (tooltip, uri);
       return TRUE;
     }
+
+  g_free (text);
+  g_free (markup);
 
   return FALSE;
 }

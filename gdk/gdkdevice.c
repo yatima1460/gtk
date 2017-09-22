@@ -20,6 +20,7 @@
 #include <math.h>
 
 #include "gdkdeviceprivate.h"
+#include "gdkdevicetool.h"
 #include "gdkdisplayprivate.h"
 #include "gdkinternals.h"
 #include "gdkintl.h"
@@ -57,12 +58,14 @@ struct _GdkAxisInfo
 
 enum {
   CHANGED,
+  TOOL_CHANGED,
   LAST_SIGNAL
 };
 
 static guint signals [LAST_SIGNAL] = { 0 };
 
 
+static void gdk_device_finalize     (GObject      *object);
 static void gdk_device_dispose      (GObject      *object);
 static void gdk_device_set_property (GObject      *object,
                                      guint         prop_id,
@@ -88,15 +91,22 @@ enum {
   PROP_HAS_CURSOR,
   PROP_N_AXES,
   PROP_VENDOR_ID,
-  PROP_PRODUCT_ID
+  PROP_PRODUCT_ID,
+  PROP_SEAT,
+  PROP_NUM_TOUCHES,
+  PROP_AXES,
+  PROP_TOOL,
+  LAST_PROP
 };
 
+static GParamSpec *device_props[LAST_PROP] = { NULL, };
 
 static void
 gdk_device_class_init (GdkDeviceClass *klass)
 {
   GObjectClass *object_class = G_OBJECT_CLASS (klass);
 
+  object_class->finalize = gdk_device_finalize;
   object_class->dispose = gdk_device_dispose;
   object_class->set_property = gdk_device_set_property;
   object_class->get_property = gdk_device_get_property;
@@ -108,14 +118,14 @@ gdk_device_class_init (GdkDeviceClass *klass)
    *
    * Since: 3.0
    */
-  g_object_class_install_property (object_class,
-                                   PROP_DISPLAY,
-                                   g_param_spec_object ("display",
-                                                        P_("Device Display"),
-                                                        P_("Display which the device belongs to"),
-                                                        GDK_TYPE_DISPLAY,
-                                                        G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY |
-                                                        G_PARAM_STATIC_STRINGS));
+  device_props[PROP_DISPLAY] =
+      g_param_spec_object ("display",
+                           P_("Device Display"),
+                           P_("Display which the device belongs to"),
+                           GDK_TYPE_DISPLAY,
+                           G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY |
+                           G_PARAM_STATIC_STRINGS);
+
   /**
    * GdkDevice:device-manager:
    *
@@ -123,14 +133,13 @@ gdk_device_class_init (GdkDeviceClass *klass)
    *
    * Since: 3.0
    */
-  g_object_class_install_property (object_class,
-                                   PROP_DEVICE_MANAGER,
-                                   g_param_spec_object ("device-manager",
-                                                        P_("Device manager"),
-                                                        P_("Device manager which the device belongs to"),
-                                                        GDK_TYPE_DEVICE_MANAGER,
-                                                        G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY |
-                                                        G_PARAM_STATIC_STRINGS));
+  device_props[PROP_DEVICE_MANAGER] =
+      g_param_spec_object ("device-manager",
+                           P_("Device manager"),
+                           P_("Device manager which the device belongs to"),
+                           GDK_TYPE_DEVICE_MANAGER,
+                           G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY |
+                           G_PARAM_STATIC_STRINGS);
   /**
    * GdkDevice:name:
    *
@@ -138,14 +147,13 @@ gdk_device_class_init (GdkDeviceClass *klass)
    *
    * Since: 3.0
    */
-  g_object_class_install_property (object_class,
-                                   PROP_NAME,
-                                   g_param_spec_string ("name",
-                                                        P_("Device name"),
-                                                        P_("Device name"),
-                                                        NULL,
-                                                        G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY |
-                                                        G_PARAM_STATIC_STRINGS));
+  device_props[PROP_NAME] =
+      g_param_spec_string ("name",
+                           P_("Device name"),
+                           P_("Device name"),
+                           NULL,
+                           G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY |
+                           G_PARAM_STATIC_STRINGS);
   /**
    * GdkDevice:type:
    *
@@ -153,15 +161,15 @@ gdk_device_class_init (GdkDeviceClass *klass)
    *
    * Since: 3.0
    */
-  g_object_class_install_property (object_class,
-                                   PROP_TYPE,
-                                   g_param_spec_enum ("type",
-                                                      P_("Device type"),
-                                                      P_("Device role in the device manager"),
-                                                      GDK_TYPE_DEVICE_TYPE,
-                                                      GDK_DEVICE_TYPE_MASTER,
-                                                      G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY |
-                                                      G_PARAM_STATIC_STRINGS));
+  device_props[PROP_TYPE] =
+      g_param_spec_enum ("type",
+                         P_("Device type"),
+                         P_("Device role in the device manager"),
+                         GDK_TYPE_DEVICE_TYPE,
+                         GDK_DEVICE_TYPE_MASTER,
+                         G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY |
+                         G_PARAM_STATIC_STRINGS);
+
   /**
    * GdkDevice:associated-device:
    *
@@ -170,13 +178,13 @@ gdk_device_class_init (GdkDeviceClass *klass)
    *
    * Since: 3.0
    */
-  g_object_class_install_property (object_class,
-                                   PROP_ASSOCIATED_DEVICE,
-                                   g_param_spec_object ("associated-device",
-                                                        P_("Associated device"),
-                                                        P_("Associated pointer or keyboard with this device"),
-                                                        GDK_TYPE_DEVICE,
-                                                        G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+  device_props[PROP_ASSOCIATED_DEVICE] =
+      g_param_spec_object ("associated-device",
+                           P_("Associated device"),
+                           P_("Associated pointer or keyboard with this device"),
+                           GDK_TYPE_DEVICE,
+                           G_PARAM_READABLE | G_PARAM_STATIC_STRINGS);
+
   /**
    * GdkDevice:input-source:
    *
@@ -184,30 +192,30 @@ gdk_device_class_init (GdkDeviceClass *klass)
    *
    * Since: 3.0
    */
-  g_object_class_install_property (object_class,
-                                   PROP_INPUT_SOURCE,
-                                   g_param_spec_enum ("input-source",
-                                                      P_("Input source"),
-                                                      P_("Source type for the device"),
-                                                      GDK_TYPE_INPUT_SOURCE,
-                                                      GDK_SOURCE_MOUSE,
-                                                      G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY |
-                                                      G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY));
-  /**
+  device_props[PROP_INPUT_SOURCE] =
+      g_param_spec_enum ("input-source",
+                         P_("Input source"),
+                         P_("Source type for the device"),
+                         GDK_TYPE_INPUT_SOURCE,
+                         GDK_SOURCE_MOUSE,
+                         G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY |
+                         G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
+
+  /*
    * GdkDevice:input-mode:
    *
    * Input mode for the device.
    *
    * Since: 3.0
    */
-  g_object_class_install_property (object_class,
-                                   PROP_INPUT_MODE,
-                                   g_param_spec_enum ("input-mode",
-                                                      P_("Input mode for the device"),
-                                                      P_("Input mode for the device"),
-                                                      GDK_TYPE_INPUT_MODE,
-                                                      GDK_MODE_DISABLED,
-                                                      G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY));
+  device_props[PROP_INPUT_MODE] =
+      g_param_spec_enum ("input-mode",
+                         P_("Input mode for the device"),
+                         P_("Input mode for the device"),
+                         GDK_TYPE_INPUT_MODE,
+                         GDK_MODE_DISABLED,
+                         G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY);
+
   /**
    * GdkDevice:has-cursor:
    *
@@ -216,14 +224,14 @@ gdk_device_class_init (GdkDeviceClass *klass)
    *
    * Since: 3.0
    */
-  g_object_class_install_property (object_class,
-                                   PROP_HAS_CURSOR,
-                                   g_param_spec_boolean ("has-cursor",
-                                                         P_("Whether the device has a cursor"),
-                                                         P_("Whether there is a visible cursor following device motion"),
-                                                         FALSE,
-                                                         G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY |
-                                                         G_PARAM_STATIC_STRINGS));
+  device_props[PROP_HAS_CURSOR] =
+      g_param_spec_boolean ("has-cursor",
+                            P_("Whether the device has a cursor"),
+                            P_("Whether there is a visible cursor following device motion"),
+                            FALSE,
+                            G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY |
+                            G_PARAM_STATIC_STRINGS);
+
   /**
    * GdkDevice:n-axes:
    *
@@ -231,13 +239,14 @@ gdk_device_class_init (GdkDeviceClass *klass)
    *
    * Since: 3.0
    */
-  g_object_class_install_property (object_class,
-                                   PROP_N_AXES,
-                                   g_param_spec_uint ("n-axes",
-                                                      P_("Number of axes in the device"),
-                                                      P_("Number of axes in the device"),
-                                                      0, G_MAXUINT, 0,
-                                                      G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+  device_props[PROP_N_AXES] =
+      g_param_spec_uint ("n-axes",
+                         P_("Number of axes in the device"),
+                         P_("Number of axes in the device"),
+                         0, G_MAXUINT,
+                         0,
+                         G_PARAM_READABLE | G_PARAM_STATIC_STRINGS);
+
   /**
    * GdkDevice:vendor-id:
    *
@@ -245,14 +254,14 @@ gdk_device_class_init (GdkDeviceClass *klass)
    *
    * Since: 3.16
    */
-  g_object_class_install_property (object_class,
-                                   PROP_VENDOR_ID,
-                                   g_param_spec_string ("vendor-id",
-                                                        P_("Vendor ID"),
-                                                        P_("Vendor ID"),
-                                                        NULL,
-                                                        G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY |
-                                                        G_PARAM_STATIC_STRINGS));
+  device_props[PROP_VENDOR_ID] =
+      g_param_spec_string ("vendor-id",
+                           P_("Vendor ID"),
+                           P_("Vendor ID"),
+                           NULL,
+                           G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY |
+                           G_PARAM_STATIC_STRINGS);
+
   /**
    * GdkDevice:product-id:
    *
@@ -260,14 +269,68 @@ gdk_device_class_init (GdkDeviceClass *klass)
    *
    * Since: 3.16
    */
-  g_object_class_install_property (object_class,
-                                   PROP_PRODUCT_ID,
-                                   g_param_spec_string ("product-id",
-                                                        P_("Product ID"),
-                                                        P_("Product ID"),
-                                                        NULL,
-                                                        G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY |
-                                                        G_PARAM_STATIC_STRINGS));
+  device_props[PROP_PRODUCT_ID] =
+      g_param_spec_string ("product-id",
+                           P_("Product ID"),
+                           P_("Product ID"),
+                           NULL,
+                           G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY |
+                           G_PARAM_STATIC_STRINGS);
+
+  /**
+   * GdkDevice:seat:
+   *
+   * #GdkSeat of this device.
+   *
+   * Since: 3.20
+   */
+  device_props[PROP_SEAT] =
+      g_param_spec_object ("seat",
+                           P_("Seat"),
+                           P_("Seat"),
+                           GDK_TYPE_SEAT,
+                           G_PARAM_READWRITE |
+                           G_PARAM_STATIC_STRINGS);
+
+  /**
+   * GdkDevice:num-touches:
+   *
+   * The maximal number of concurrent touches on a touch device.
+   * Will be 0 if the device is not a touch device or if the number
+   * of touches is unknown.
+   *
+   * Since: 3.20
+   */
+  device_props[PROP_NUM_TOUCHES] =
+      g_param_spec_uint ("num-touches",
+                         P_("Number of concurrent touches"),
+                         P_("Number of concurrent touches"),
+                         0, G_MAXUINT,
+                         0,
+                         G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY |
+                         G_PARAM_STATIC_STRINGS);
+  /**
+   * GdkDevice:axes:
+   *
+   * The axes currently available for this device.
+   *
+   * Since: 3.22
+   */
+  device_props[PROP_AXES] =
+    g_param_spec_flags ("axes",
+                        P_("Axes"),
+                        P_("Axes"),
+                        GDK_TYPE_AXIS_FLAGS, 0,
+                        G_PARAM_READABLE | G_PARAM_STATIC_STRINGS);
+
+  device_props[PROP_TOOL] =
+    g_param_spec_object ("tool",
+                         P_("Tool"),
+                         P_("The tool that is currently used with this device"),
+                         GDK_TYPE_DEVICE_TOOL,
+                         G_PARAM_READABLE | G_PARAM_STATIC_STRINGS);
+
+  g_object_class_install_properties (object_class, LAST_PROP, device_props);
 
   /**
    * GdkDevice::changed:
@@ -288,6 +351,24 @@ gdk_device_class_init (GdkDeviceClass *klass)
                   0, NULL, NULL,
                   g_cclosure_marshal_VOID__VOID,
                   G_TYPE_NONE, 0);
+
+  /**
+   * GdkDevice::tool-changed:
+   * @device: the #GdkDevice that changed.
+   * @tool: The new current tool
+   *
+   * The ::tool-changed signal is emitted on pen/eraser
+   * #GdkDevices whenever tools enter or leave proximity.
+   *
+   * Since: 3.22
+   */
+  signals[TOOL_CHANGED] =
+    g_signal_new (g_intern_static_string ("tool-changed"),
+                  G_TYPE_FROM_CLASS (object_class),
+                  G_SIGNAL_RUN_LAST,
+                  0, NULL, NULL,
+                  g_cclosure_marshal_VOID__OBJECT,
+                  G_TYPE_NONE, 1, GDK_TYPE_DEVICE_TOOL);
 }
 
 static void
@@ -297,21 +378,9 @@ gdk_device_init (GdkDevice *device)
 }
 
 static void
-gdk_device_dispose (GObject *object)
+gdk_device_finalize (GObject *object)
 {
   GdkDevice *device = GDK_DEVICE (object);
-
-  if (device->type == GDK_DEVICE_TYPE_SLAVE)
-    _gdk_device_remove_slave (device->associated, device);
-
-  if (device->associated)
-    {
-      if (device->type == GDK_DEVICE_TYPE_MASTER)
-        _gdk_device_set_associated_device (device->associated, NULL);
-
-      g_object_unref (device->associated);
-      device->associated = NULL;
-    }
 
   if (device->axes)
     {
@@ -319,14 +388,35 @@ gdk_device_dispose (GObject *object)
       device->axes = NULL;
     }
 
-  g_free (device->name);
-  g_free (device->keys);
-
-  device->name = NULL;
-  device->keys = NULL;
-
+  g_clear_pointer (&device->name, g_free);
+  g_clear_pointer (&device->keys, g_free);
   g_clear_pointer (&device->vendor_id, g_free);
   g_clear_pointer (&device->product_id, g_free);
+
+  G_OBJECT_CLASS (gdk_device_parent_class)->finalize (object);
+}
+
+static void
+gdk_device_dispose (GObject *object)
+{
+  GdkDevice *device = GDK_DEVICE (object);
+  GdkDevice *associated = device->associated;
+
+  if (associated && device->type == GDK_DEVICE_TYPE_SLAVE)
+    _gdk_device_remove_slave (associated, device);
+
+  if (associated)
+    {
+      device->associated = NULL;
+
+      if (device->type == GDK_DEVICE_TYPE_MASTER &&
+          associated->associated == device)
+        _gdk_device_set_associated_device (associated, NULL);
+
+      g_object_unref (associated);
+    }
+
+  g_clear_object (&device->last_tool);
 
   G_OBJECT_CLASS (gdk_device_parent_class)->dispose (object);
 }
@@ -369,6 +459,12 @@ gdk_device_set_property (GObject      *object,
       break;
     case PROP_PRODUCT_ID:
       device->product_id = g_value_dup_string (value);
+      break;
+    case PROP_SEAT:
+      device->seat = g_value_get_object (value);
+      break;
+    case PROP_NUM_TOUCHES:
+      device->num_touches = g_value_get_uint (value);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -418,6 +514,18 @@ gdk_device_get_property (GObject    *object,
       break;
     case PROP_PRODUCT_ID:
       g_value_set_string (value, device->product_id);
+      break;
+    case PROP_SEAT:
+      g_value_set_object (value, device->seat);
+      break;
+    case PROP_NUM_TOUCHES:
+      g_value_set_uint (value, device->num_touches);
+      break;
+    case PROP_AXES:
+      g_value_set_flags (value, device->axis_flags);
+      break;
+    case PROP_TOOL:
+      g_value_set_object (value, device->last_tool);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -814,7 +922,7 @@ gdk_device_set_mode (GdkDevice    *device,
     return FALSE;
 
   device->mode = mode;
-  g_object_notify (G_OBJECT (device), "input-mode");
+  g_object_notify_by_pspec (G_OBJECT (device), device_props[PROP_INPUT_MODE]);
 
   return TRUE;
 }
@@ -1017,7 +1125,7 @@ _gdk_device_set_device_type (GdkDevice     *device,
     {
       device->type = type;
 
-      g_object_notify (G_OBJECT (device), "type");
+      g_object_notify_by_pspec (G_OBJECT (device), device_props[PROP_TYPE]);
     }
 }
 
@@ -1327,6 +1435,8 @@ get_native_grab_event_mask (GdkEventMask grab_mask)
  * Returns: %GDK_GRAB_SUCCESS if the grab was successful.
  *
  * Since: 3.0
+ *
+ * Deprecated: 3.20. Use gdk_seat_grab() instead.
  **/
 GdkGrabStatus
 gdk_device_grab (GdkDevice        *device,
@@ -1400,6 +1510,8 @@ gdk_device_grab (GdkDevice        *device,
  * Release any grab on @device.
  *
  * Since: 3.0
+ *
+ * Deprecated: 3.20. Use gdk_seat_ungrab() instead.
  */
 void
 gdk_device_ungrab (GdkDevice  *device,
@@ -1453,7 +1565,10 @@ _gdk_device_reset_axes (GdkDevice *device)
   for (i = device->axes->len - 1; i >= 0; i--)
     g_array_remove_index (device->axes, i);
 
-  g_object_notify (G_OBJECT (device), "n-axes");
+  device->axis_flags = 0;
+
+  g_object_notify_by_pspec (G_OBJECT (device), device_props[PROP_N_AXES]);
+  g_object_notify_by_pspec (G_OBJECT (device), device_props[PROP_AXES]);
 }
 
 guint
@@ -1494,7 +1609,10 @@ _gdk_device_add_axis (GdkDevice   *device,
   device->axes = g_array_append_val (device->axes, axis_info);
   pos = device->axes->len - 1;
 
-  g_object_notify (G_OBJECT (device), "n-axes");
+  device->axis_flags |= (1 << use);
+
+  g_object_notify_by_pspec (G_OBJECT (device), device_props[PROP_N_AXES]);
+  g_object_notify_by_pspec (G_OBJECT (device), device_props[PROP_AXES]);
 
   return pos;
 }
@@ -1590,6 +1708,7 @@ _gdk_device_translate_window_coord (GdkDevice *device,
   device_width = axis_info_x->max_value - axis_info_x->min_value;
   device_height = axis_info_y->max_value - axis_info_y->min_value;
 
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
   if (device_width > 0)
     x_min = axis_info_x->min_value;
   else
@@ -1605,6 +1724,7 @@ _gdk_device_translate_window_coord (GdkDevice *device,
       device_height = gdk_screen_get_height (gdk_window_get_screen (window));
       y_min = 0;
     }
+G_GNUC_END_IGNORE_DEPRECATIONS
 
   window_width = gdk_window_get_width (window);
   window_height = gdk_window_get_height (window);
@@ -1687,6 +1807,7 @@ _gdk_device_translate_screen_coord (GdkDevice *device,
 
   axis_width = axis_info.max_value - axis_info.min_value;
 
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
   if (axis_info.use == GDK_AXIS_X)
     {
       if (axis_width > 0)
@@ -1705,6 +1826,7 @@ _gdk_device_translate_screen_coord (GdkDevice *device,
 
       offset = - window_root_y - window->abs_y;
     }
+G_GNUC_END_IGNORE_DEPRECATIONS
 
   if (axis_value)
     *axis_value = offset + scale * (value - axis_info.min_value);
@@ -1868,4 +1990,73 @@ gdk_device_get_product_id (GdkDevice *device)
   g_return_val_if_fail (gdk_device_get_device_type (device) != GDK_DEVICE_TYPE_MASTER, NULL);
 
   return device->product_id;
+}
+
+void
+gdk_device_set_seat (GdkDevice *device,
+                     GdkSeat   *seat)
+{
+  g_return_if_fail (GDK_IS_DEVICE (device));
+  g_return_if_fail (!seat || GDK_IS_SEAT (seat));
+
+  if (device->seat == seat)
+    return;
+
+  device->seat = seat;
+  g_object_notify (G_OBJECT (device), "seat");
+}
+
+/**
+ * gdk_device_get_seat:
+ * @device: A #GdkDevice
+ *
+ * Returns the #GdkSeat the device belongs to.
+ *
+ * Returns: (transfer none): A #GdkSeat. This memory is owned by GTK+ and
+ *          must not be freed.
+ *
+ * Since: 3.20
+ **/
+GdkSeat *
+gdk_device_get_seat (GdkDevice *device)
+{
+  g_return_val_if_fail (GDK_IS_DEVICE (device), NULL);
+
+  return device->seat;
+}
+
+/**
+ * gdk_device_get_axes:
+ * @device: a #GdkDevice
+ *
+ * Returns the axes currently available on the device.
+ *
+ * Since: 3.22
+ **/
+GdkAxisFlags
+gdk_device_get_axes (GdkDevice *device)
+{
+  g_return_val_if_fail (GDK_IS_DEVICE (device), 0);
+
+  return device->axis_flags;
+}
+
+void
+gdk_device_update_tool (GdkDevice     *device,
+                        GdkDeviceTool *tool)
+{
+  g_return_if_fail (GDK_IS_DEVICE (device));
+  g_return_if_fail (gdk_device_get_device_type (device) != GDK_DEVICE_TYPE_MASTER);
+
+  if (g_set_object (&device->last_tool, tool))
+    {
+      g_object_notify (G_OBJECT (device), "tool");
+      g_signal_emit (device, signals[TOOL_CHANGED], 0, tool);
+    }
+}
+
+GdkInputMode
+gdk_device_get_input_mode (GdkDevice *device)
+{
+  return device->mode;
 }

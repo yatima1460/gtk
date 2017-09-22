@@ -19,6 +19,8 @@
 #define __GTK_CSS_NODE_PRIVATE_H__
 
 #include "gtkcssnodedeclarationprivate.h"
+#include "gtkcssnodestylecacheprivate.h"
+#include "gtkcssstylechangeprivate.h"
 #include "gtkbitmaskprivate.h"
 #include "gtkcsstypesprivate.h"
 
@@ -31,8 +33,7 @@ G_BEGIN_DECLS
 #define GTK_IS_CSS_NODE_CLASS(obj)  (G_TYPE_CHECK_CLASS_TYPE (obj, GTK_TYPE_CSS_NODE))
 #define GTK_CSS_NODE_GET_CLASS(obj) (G_TYPE_INSTANCE_GET_CLASS ((obj), GTK_TYPE_CSS_NODE, GtkCssNodeClass))
 
-typedef struct _GtkCssNode           GtkCssNode;
-typedef struct _GtkCssNodeClass      GtkCssNodeClass;
+typedef struct _GtkCssNodeClass         GtkCssNodeClass;
 
 struct _GtkCssNode
 {
@@ -46,12 +47,12 @@ struct _GtkCssNode
 
   GtkCssNodeDeclaration *decl;
   GtkCssStyle           *style;
+  GtkCssNodeStyleCache  *cache;                 /* cache for children to look up styles */
 
   GtkCssChange           pending_changes;       /* changes that accumulated since the style was last computed */
 
   guint                  visible :1;            /* node will be skipped when validating or computing styles */
   guint                  invalid :1;            /* node or a child needs to be validated (even if just for animation) */
-  guint                  children_changed :1;   /* the children changed since last validation */
   guint                  needs_propagation :1;  /* children have state changes that need to be propagated to their siblings */
   /* Two invariants hold for this variable:
    * style_is_invalid == TRUE  =>  next_sibling->style_is_invalid == TRUE
@@ -72,8 +73,7 @@ struct _GtkCssNodeClass
                                                          GtkCssNode            *child,
                                                          GtkCssNode            *previous);
   void                  (* style_changed)               (GtkCssNode            *cssnode,
-                                                         GtkCssStyle           *old_style,
-                                                         GtkCssStyle           *new_style);
+                                                         GtkCssStyleChange     *style_change);
 
   gboolean              (* init_matcher)                (GtkCssNode            *cssnode,
                                                          GtkCssMatcher         *matcher);
@@ -95,12 +95,18 @@ struct _GtkCssNodeClass
 
 GType                   gtk_css_node_get_type           (void) G_GNUC_CONST;
 
+GtkCssNode *            gtk_css_node_new                (void);
+
 void                    gtk_css_node_set_parent         (GtkCssNode            *cssnode,
                                                          GtkCssNode            *parent);
-void                    gtk_css_node_set_after          (GtkCssNode            *cssnode,
+void                    gtk_css_node_insert_after       (GtkCssNode            *parent,
+                                                         GtkCssNode            *cssnode,
                                                          GtkCssNode            *previous_sibling);
-void                    gtk_css_node_set_before         (GtkCssNode            *cssnode,
+void                    gtk_css_node_insert_before      (GtkCssNode            *parent,
+                                                         GtkCssNode            *cssnode,
                                                          GtkCssNode            *next_sibling);
+void                    gtk_css_node_reverse_children   (GtkCssNode            *cssnode);
+
 GtkCssNode *            gtk_css_node_get_parent         (GtkCssNode            *cssnode);
 GtkCssNode *            gtk_css_node_get_first_child    (GtkCssNode            *cssnode);
 GtkCssNode *            gtk_css_node_get_last_child     (GtkCssNode            *cssnode);
@@ -111,12 +117,15 @@ void                    gtk_css_node_set_visible        (GtkCssNode            *
                                                          gboolean               visible);
 gboolean                gtk_css_node_get_visible        (GtkCssNode            *cssnode);
 
+void                    gtk_css_node_set_name           (GtkCssNode            *cssnode,
+                                                         /*interned*/const char*name);
+/*interned*/const char *gtk_css_node_get_name           (GtkCssNode            *cssnode);
 void                    gtk_css_node_set_widget_type    (GtkCssNode            *cssnode,
                                                          GType                  widget_type);
 GType                   gtk_css_node_get_widget_type    (GtkCssNode            *cssnode);
 void                    gtk_css_node_set_id             (GtkCssNode            *cssnode,
-                                                         const char            *id);
-const char *            gtk_css_node_get_id             (GtkCssNode            *cssnode);
+                                                         /*interned*/const char*id);
+/*interned*/const char *gtk_css_node_get_id             (GtkCssNode            *cssnode);
 void                    gtk_css_node_set_state          (GtkCssNode            *cssnode,
                                                          GtkStateFlags          state_flags);
 GtkStateFlags           gtk_css_node_get_state          (GtkCssNode            *cssnode);
@@ -132,7 +141,8 @@ void                    gtk_css_node_remove_class       (GtkCssNode            *
                                                          GQuark                 style_class);
 gboolean                gtk_css_node_has_class          (GtkCssNode            *cssnode,
                                                          GQuark                 style_class);
-GList *                 gtk_css_node_list_classes       (GtkCssNode            *cssnode);
+const GQuark *          gtk_css_node_list_classes       (GtkCssNode            *cssnode,
+                                                         guint                 *n_classes);
 void                    gtk_css_node_add_region         (GtkCssNode            *cssnode,
                                                          GQuark                 region,
                                                          GtkRegionFlags         flags);
@@ -162,6 +172,11 @@ gboolean                gtk_css_node_init_matcher       (GtkCssNode            *
 GtkWidgetPath *         gtk_css_node_create_widget_path (GtkCssNode            *cssnode);
 const GtkWidgetPath *   gtk_css_node_get_widget_path    (GtkCssNode            *cssnode);
 GtkStyleProviderPrivate *gtk_css_node_get_style_provider(GtkCssNode            *cssnode);
+
+void                    gtk_css_node_print              (GtkCssNode                *cssnode,
+                                                         GtkStyleContextPrintFlags  flags,
+                                                         GString                   *string,
+                                                         guint                      indent);
 
 G_END_DECLS
 

@@ -180,6 +180,7 @@ G_DEFINE_TYPE_WITH_CODE (GdkX11Display, gdk_x11_display, GDK_TYPE_DISPLAY,
 static void
 gdk_x11_display_init (GdkX11Display *display)
 {
+  display->monitors = g_ptr_array_new_with_free_func (g_object_unref);
 }
 
 static void
@@ -590,7 +591,7 @@ gdk_x11_display_translate_event (GdkEventTranslator *translator,
 
     case VisibilityNotify:
 #ifdef G_ENABLE_DEBUG
-      if (_gdk_debug_flags & GDK_DEBUG_EVENTS)
+      if (GDK_DEBUG_CHECK (EVENTS))
 	switch (xevent->xvisibility.state)
 	  {
 	  case VisibilityFullyObscured:
@@ -1108,6 +1109,47 @@ find_frame_timings (GdkFrameClock *clock,
   return NULL;
 }
 
+/* _NET_WM_FRAME_DRAWN and _NET_WM_FRAME_TIMINGS messages represent time
+ * as a "high resolution server time" - this is the server time interpolated
+ * to microsecond resolution. The advantage of this time representation
+ * is that if  X server is running on the same computer as a client, and
+ * the Xserver uses 'clock_gettime(CLOCK_MONOTONIC, ...)' for the server
+ * time, the client can detect this, and all such clients will share a
+ * a time representation with high accuracy. If there is not a common
+ * time source, then the time synchronization will be less accurate.
+ */
+gint64
+server_time_to_monotonic_time (GdkX11Display *display_x11,
+                               gint64         server_time)
+{
+  if (display_x11->server_time_query_time == 0 ||
+      (!display_x11->server_time_is_monotonic_time &&
+       server_time > display_x11->server_time_query_time + 10*1000*1000)) /* 10 seconds */
+    {
+      gint64 current_server_time = gdk_x11_get_server_time (display_x11->leader_gdk_window);
+      gint64 current_server_time_usec = (gint64)current_server_time * 1000;
+      gint64 current_monotonic_time = g_get_monotonic_time ();
+      display_x11->server_time_query_time = current_monotonic_time;
+
+      /* If the server time is within a second of the monotonic time,
+       * we assume that they are identical. This seems like a big margin,
+       * but we want to be as robust as possible even if the system
+       * is under load and our processing of the server response is
+       * delayed.
+       */
+      if (current_server_time_usec > current_monotonic_time - 1000*1000 &&
+          current_server_time_usec < current_monotonic_time + 1000*1000)
+        display_x11->server_time_is_monotonic_time = TRUE;
+
+      display_x11->server_time_offset = current_server_time_usec - current_monotonic_time;
+    }
+
+  if (display_x11->server_time_is_monotonic_time)
+    return server_time;
+  else
+    return server_time - display_x11->server_time_offset;
+}
+
 GdkFilterReturn
 _gdk_wm_protocols_filter (GdkXEvent *xev,
 			  GdkEvent  *event,
@@ -1140,7 +1182,7 @@ _gdk_wm_protocols_filter (GdkXEvent *xev,
           guint32 d3 = xevent->xclient.data.l[3];
 
           guint64 serial = ((guint64)d1 << 32) | d0;
-          gint64 frame_drawn_time = ((guint64)d3 << 32) | d2;
+          gint64 frame_drawn_time = server_time_to_monotonic_time (GDK_X11_DISPLAY (display), ((guint64)d3 << 32) | d2);
           gint64 refresh_interval, presentation_time;
 
           GdkFrameClock *clock = gdk_window_get_frame_clock (win);
@@ -1195,7 +1237,7 @@ _gdk_wm_protocols_filter (GdkXEvent *xev,
 
               timings->complete = TRUE;
 #ifdef G_ENABLE_DEBUG
-              if ((_gdk_debug_flags & GDK_DEBUG_FRAMES) != 0)
+              if (GDK_DEBUG_CHECK (FRAMES))
                 _gdk_frame_clock_debug_print_timings (clock, timings);
 #endif /* G_ENABLE_DEBUG */
             }
@@ -1289,61 +1331,11 @@ gdk_event_init (GdkDisplay *display)
   gdk_x11_event_source_add_translator ((GdkEventSource *) display_x11->event_source,
                                        GDK_EVENT_TRANSLATOR (display));
 
+  G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
   device_manager = gdk_display_get_device_manager (display);
   gdk_x11_event_source_add_translator ((GdkEventSource *) display_x11->event_source,
                                         GDK_EVENT_TRANSLATOR (device_manager));
-}
-
-static void
-gdk_x11_display_init_input (GdkDisplay *display)
-{
-  GdkX11Display *display_x11;
-  GdkDeviceManager *device_manager;
-  GdkDevice *device;
-  GList *list, *l;
-
-  display_x11 = GDK_X11_DISPLAY (display);
-  device_manager = gdk_display_get_device_manager (display);
-
-  /* For backwards compatibility, just add
-   * floating devices that are not keyboards.
-   */
-  list = gdk_device_manager_list_devices (device_manager, GDK_DEVICE_TYPE_FLOATING);
-
-  for (l = list; l; l = l->next)
-    {
-      device = l->data;
-
-      if (gdk_device_get_source (device) == GDK_SOURCE_KEYBOARD)
-        continue;
-
-      display_x11->input_devices = g_list_prepend (display_x11->input_devices,
-                                                   g_object_ref (l->data));
-    }
-
-  g_list_free (list);
-
-  /* Now set "core" pointer to the first
-   * master device that is a pointer.
-   */
-  list = gdk_device_manager_list_devices (device_manager, GDK_DEVICE_TYPE_MASTER);
-
-  for (l = list; l; l = l->next)
-    {
-      device = l->data;
-
-      if (gdk_device_get_source (device) != GDK_SOURCE_MOUSE)
-        continue;
-
-      display->core_pointer = device;
-      break;
-    }
-
-  /* Add the core pointer to the devices list */
-  display_x11->input_devices = g_list_prepend (display_x11->input_devices,
-                                               g_object_ref (display->core_pointer));
-
-  g_list_free (list);
+  G_GNUC_END_IGNORE_DEPRECATIONS;
 }
 
 static void
@@ -1397,6 +1389,7 @@ _gdk_x11_display_open (const gchar *display_name)
   /* RandR must be initialized before we initialize the screens */
   display_x11->have_randr12 = FALSE;
   display_x11->have_randr13 = FALSE;
+  display_x11->have_randr15 = FALSE;
 #ifdef HAVE_RANDR
   if (XRRQueryExtension (display_x11->xdisplay,
 			 &display_x11->xrandr_event_base, &ignore))
@@ -1409,6 +1402,10 @@ _gdk_x11_display_open (const gchar *display_name)
 	  display_x11->have_randr12 = TRUE;
 	  if (minor >= 3 || major > 1)
 	      display_x11->have_randr13 = TRUE;
+#ifdef HAVE_RANDR15
+	  if (minor >= 5 || major > 1)
+	      display_x11->have_randr15 = TRUE;
+#endif
       }
 
        gdk_x11_register_standard_event_type (display, display_x11->xrandr_event_base, RRNumberEvents);
@@ -1428,7 +1425,7 @@ _gdk_x11_display_open (const gchar *display_name)
   gdk_event_init (display);
 
   attr.window_type = GDK_WINDOW_TOPLEVEL;
-  attr.wclass = GDK_INPUT_OUTPUT;
+  attr.wclass = GDK_INPUT_ONLY;
   attr.x = 10;
   attr.y = 10;
   attr.width = 10;
@@ -1606,8 +1603,6 @@ _gdk_x11_display_open (const gchar *display_name)
       display_x11->use_sync = TRUE;
   }
 #endif
-
-  gdk_x11_display_init_input (display);
 
   _gdk_x11_screen_setup (display_x11->screen);
 
@@ -1866,8 +1861,6 @@ gdk_x11_display_dispose (GObject *object)
 {
   GdkX11Display *display_x11 = GDK_X11_DISPLAY (object);
 
-  g_list_foreach (display_x11->input_devices, (GFunc) g_object_run_dispose, NULL);
-
   _gdk_screen_close (display_x11->screen);
 
   if (display_x11->event_source)
@@ -1902,17 +1895,16 @@ gdk_x11_display_finalize (GObject *object)
   XDestroyWindow (display_x11->xdisplay, display_x11->leader_window);
 
   /* List of event window extraction functions */
-  g_slist_foreach (display_x11->event_types, (GFunc)g_free, NULL);
-  g_slist_free (display_x11->event_types);
-
-  /* input GdkDevice list */
-  g_list_free_full (display_x11->input_devices, g_object_unref);
+  g_slist_free_full (display_x11->event_types, g_free);
 
   /* input GdkWindow list */
   g_list_free_full (display_x11->input_windows, g_free);
 
   /* Free all GdkScreens */
   g_object_unref (display_x11->screen);
+  g_list_free_full (display_x11->screens, g_object_unref);
+
+  g_ptr_array_free (display_x11->monitors, TRUE);
 
   g_free (display_x11->startup_notification_id);
 
@@ -1989,12 +1981,36 @@ GdkScreen *
 _gdk_x11_display_screen_for_xrootwin (GdkDisplay *display,
 				      Window      xrootwin)
 {
-  GdkScreen *screen = gdk_display_get_default_screen (display);
+  GdkScreen *screen;
+  XWindowAttributes attrs;
+  gboolean result;
+  GdkX11Display *display_x11;
+  GList *l;
+
+  screen = gdk_display_get_default_screen (display);
 
   if (GDK_SCREEN_XROOTWIN (screen) == xrootwin)
     return screen;
 
-  return NULL;
+  display_x11 = GDK_X11_DISPLAY (display);
+
+  for (l = display_x11->screens; l; l = l->next)
+    {
+      screen = l->data;
+      if (GDK_SCREEN_XROOTWIN (screen) == xrootwin)
+        return screen;
+    }
+
+  gdk_x11_display_error_trap_push (display);
+  result = XGetWindowAttributes (display_x11->xdisplay, xrootwin, &attrs);
+  if (gdk_x11_display_error_trap_pop (display) || !result)
+    return NULL;
+
+  screen = _gdk_x11_screen_new (display, XScreenNumberOfScreen (attrs.screen));
+
+  display_x11->screens = g_list_prepend (display_x11->screens, screen);
+
+  return screen;
 }
 
 /**
@@ -2198,9 +2214,15 @@ static void
 gdk_x11_display_notify_startup_complete (GdkDisplay  *display,
                                          const gchar *startup_id)
 {
+  gchar *free_this = NULL;
+
   if (startup_id == NULL)
     {
-      startup_id = GDK_X11_DISPLAY (display)->startup_notification_id;
+      GdkX11Display *display_x11 = GDK_X11_DISPLAY (display);
+
+      startup_id = free_this = display_x11->startup_notification_id;
+      display_x11->startup_notification_id = NULL;
+
       if (startup_id == NULL)
         return;
     }
@@ -2208,6 +2230,8 @@ gdk_x11_display_notify_startup_complete (GdkDisplay  *display,
   gdk_x11_display_broadcast_startup_message (display, "remove",
                                              "ID", startup_id,
                                              NULL);
+
+  g_free (free_this);
 }
 
 static gboolean
@@ -2383,33 +2407,44 @@ gdk_x11_display_set_startup_notification_id (GdkDisplay  *display,
   g_free (display_x11->startup_notification_id);
   display_x11->startup_notification_id = g_strdup (startup_id);
 
-  /* Find the launch time from the startup_id, if it's there.  Newer spec
-   * states that the startup_id is of the form <unique>_TIME<timestamp>
-   */
-  time_str = g_strrstr (startup_id, "_TIME");
-  if (time_str != NULL)
+  if (startup_id != NULL)
     {
-      gulong retval;
-      gchar *end;
-      errno = 0;
+      /* Find the launch time from the startup_id, if it's there.  Newer spec
+       * states that the startup_id is of the form <unique>_TIME<timestamp>
+       */
+      time_str = g_strrstr (startup_id, "_TIME");
+      if (time_str != NULL)
+        {
+          gulong retval;
+          gchar *end;
+          errno = 0;
 
-      /* Skip past the "_TIME" part */
-      time_str += 5;
+          /* Skip past the "_TIME" part */
+          time_str += 5;
 
-      retval = strtoul (time_str, &end, 0);
-      if (end != time_str && errno == 0)
-        display_x11->user_time = retval;
+          retval = strtoul (time_str, &end, 0);
+          if (end != time_str && errno == 0)
+            display_x11->user_time = retval;
+        }
+      else
+        display_x11->user_time = 0;
+
+      /* Set the startup id on the leader window so it
+       * applies to all windows we create on this display
+       */
+      XChangeProperty (display_x11->xdisplay,
+                       display_x11->leader_window,
+                       gdk_x11_get_xatom_by_name_for_display (display, "_NET_STARTUP_ID"),
+                       gdk_x11_get_xatom_by_name_for_display (display, "UTF8_STRING"), 8,
+                       PropModeReplace,
+                       (guchar *)startup_id, strlen (startup_id));
     }
-
-  /* Set the startup id on the leader window so it
-   * applies to all windows we create on this display
-   */
-  XChangeProperty (display_x11->xdisplay,
-                   display_x11->leader_window,
-                   gdk_x11_get_xatom_by_name_for_display (display, "_NET_STARTUP_ID"),
-                   gdk_x11_get_xatom_by_name_for_display (display, "UTF8_STRING"), 8,
-                   PropModeReplace,
-                   (guchar *)startup_id, strlen (startup_id));
+  else
+    {
+      XDeleteProperty (display_x11->xdisplay, display_x11->leader_window,
+                       gdk_x11_get_xatom_by_name_for_display (display, "_NET_STARTUP_ID"));
+      display_x11->user_time = 0;
+    }
 }
 
 static gboolean
@@ -2420,14 +2455,6 @@ gdk_x11_display_supports_composite (GdkDisplay *display)
   return x11_display->have_xcomposite &&
 	 x11_display->have_xdamage &&
 	 x11_display->have_xfixes;
-}
-
-static GList *
-gdk_x11_display_list_devices (GdkDisplay *display)
-{
-  g_return_val_if_fail (GDK_IS_DISPLAY (display), NULL);
-
-  return GDK_X11_DISPLAY (display)->input_devices;
 }
 
 /**
@@ -2551,7 +2578,7 @@ _gdk_x11_display_error_event (GdkDisplay  *display,
 #ifdef G_ENABLE_DEBUG
       g_error ("%s", msg);
 #else /* !G_ENABLE_DEBUG */
-      g_warning ("%s\n", msg);
+      g_warning ("%s", msg);
 
       _exit (1);
 #endif /* G_ENABLE_DEBUG */
@@ -2849,6 +2876,72 @@ gdk_x11_display_get_keymap (GdkDisplay *display)
   return display_x11->keymap;
 }
 
+static GdkSeat *
+gdk_x11_display_get_default_seat (GdkDisplay *display)
+{
+  GList *seats, *l;
+  int device_id;
+  gboolean result = FALSE;
+
+  seats = gdk_display_list_seats (display);
+
+  gdk_x11_display_error_trap_push (display);
+  result = XIGetClientPointer (GDK_DISPLAY_XDISPLAY (display),
+                               None, &device_id);
+  gdk_x11_display_error_trap_pop_ignored (display);
+
+  for (l = seats; l; l = l->next)
+    {
+      GdkDevice *pointer;
+
+      pointer = gdk_seat_get_pointer (l->data);
+
+      if (gdk_x11_device_get_id (pointer) == device_id || !result)
+        {
+          GdkSeat *seat = l->data;
+          g_list_free (seats);
+
+          return seat;
+        }
+    }
+
+  g_list_free (seats);
+
+  return NULL;
+}
+
+static int
+gdk_x11_display_get_n_monitors (GdkDisplay *display)
+{
+  GdkX11Display *x11_display = GDK_X11_DISPLAY (display);
+
+  return x11_display->monitors->len;
+}
+
+
+static GdkMonitor *
+gdk_x11_display_get_monitor (GdkDisplay *display,
+                             int         monitor_num)
+{
+  GdkX11Display *x11_display = GDK_X11_DISPLAY (display);
+
+  if (0 <= monitor_num || monitor_num < x11_display->monitors->len)
+    return (GdkMonitor *)x11_display->monitors->pdata[monitor_num];
+
+  return NULL;
+}
+
+static GdkMonitor *
+gdk_x11_display_get_primary_monitor (GdkDisplay *display)
+{
+  GdkX11Display *x11_display = GDK_X11_DISPLAY (display);
+
+  if (0 <= x11_display->primary_monitor && x11_display->primary_monitor < x11_display->monitors->len)
+    return x11_display->monitors->pdata[x11_display->primary_monitor];
+
+  return NULL;
+}
+
 static void
 gdk_x11_display_class_init (GdkX11DisplayClass * class)
 {
@@ -2876,7 +2969,6 @@ gdk_x11_display_class_init (GdkX11DisplayClass * class)
   display_class->supports_shapes = gdk_x11_display_supports_shapes;
   display_class->supports_input_shapes = gdk_x11_display_supports_input_shapes;
   display_class->supports_composite = gdk_x11_display_supports_composite;
-  display_class->list_devices = gdk_x11_display_list_devices;
   display_class->get_app_launch_context = _gdk_x11_display_get_app_launch_context;
   display_class->get_cursor_for_type = _gdk_x11_display_get_cursor_for_type;
   display_class->get_cursor_for_name = _gdk_x11_display_get_cursor_for_name;
@@ -2903,6 +2995,12 @@ gdk_x11_display_class_init (GdkX11DisplayClass * class)
   display_class->utf8_to_string_target = _gdk_x11_display_utf8_to_string_target;
 
   display_class->make_gl_context_current = gdk_x11_display_make_gl_context_current;
+
+  display_class->get_default_seat = gdk_x11_display_get_default_seat;
+
+  display_class->get_n_monitors = gdk_x11_display_get_n_monitors;
+  display_class->get_monitor = gdk_x11_display_get_monitor;
+  display_class->get_primary_monitor = gdk_x11_display_get_primary_monitor;
 
   _gdk_x11_windowing_init ();
 }

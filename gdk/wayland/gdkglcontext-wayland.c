@@ -114,12 +114,16 @@ gdk_wayland_gl_context_realize (GdkGLContext *context,
   EGLContext ctx;
   EGLint context_attribs[N_EGL_ATTRS];
   int major, minor, flags;
-  gboolean debug_bit, forward_bit;
+  gboolean debug_bit, forward_bit, legacy_bit, use_es;
   int i = 0;
 
   gdk_gl_context_get_required_version (context, &major, &minor);
   debug_bit = gdk_gl_context_get_debug_enabled (context);
   forward_bit = gdk_gl_context_get_forward_compatible (context);
+  legacy_bit = (_gdk_gl_flags & GDK_GL_LEGACY) != 0 ||
+               (share != NULL && gdk_gl_context_is_legacy (share));
+  use_es = (_gdk_gl_flags & GDK_GL_GLES) != 0 ||
+           (share != NULL && gdk_gl_context_get_use_es (share));
 
   flags = 0;
 
@@ -128,15 +132,32 @@ gdk_wayland_gl_context_realize (GdkGLContext *context,
   if (forward_bit)
     flags |= EGL_CONTEXT_OPENGL_FORWARD_COMPATIBLE_BIT_KHR;
 
-  /* We want a core profile */
-  context_attribs[i++] = EGL_CONTEXT_OPENGL_PROFILE_MASK_KHR;
-  context_attribs[i++] = EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT_KHR;
+  if (!use_es)
+    {
+      eglBindAPI (EGL_OPENGL_API);
 
-  /* Specify the version */
-  context_attribs[i++] = EGL_CONTEXT_MAJOR_VERSION_KHR;
-  context_attribs[i++] = major;
-  context_attribs[i++] = EGL_CONTEXT_MINOR_VERSION_KHR;
-  context_attribs[i++] = minor;
+      /* We want a core profile, unless in legacy mode */
+      context_attribs[i++] = EGL_CONTEXT_OPENGL_PROFILE_MASK_KHR;
+      context_attribs[i++] = legacy_bit
+                           ? EGL_CONTEXT_OPENGL_COMPATIBILITY_PROFILE_BIT_KHR
+                           : EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT_KHR;
+
+      /* Specify the version */
+      context_attribs[i++] = EGL_CONTEXT_MAJOR_VERSION_KHR;
+      context_attribs[i++] = legacy_bit ? 3 : major;
+      context_attribs[i++] = EGL_CONTEXT_MINOR_VERSION_KHR;
+      context_attribs[i++] = legacy_bit ? 0 : minor;
+    }
+  else
+    {
+      eglBindAPI (EGL_OPENGL_ES_API);
+
+      context_attribs[i++] = EGL_CONTEXT_CLIENT_VERSION;
+      if (major == 3)
+        context_attribs[i++] = 3;
+      else
+        context_attribs[i++] = 2;
+    }
 
   /* Specify the flags */
   context_attribs[i++] = EGL_CONTEXT_FLAGS_KHR;
@@ -145,11 +166,41 @@ gdk_wayland_gl_context_realize (GdkGLContext *context,
   context_attribs[i++] = EGL_NONE;
   g_assert (i < N_EGL_ATTRS);
 
+  GDK_NOTE (OPENGL, g_message ("Creating EGL context version %d.%d (debug:%s, forward:%s, legacy:%s, es:%s)",
+                               major, minor,
+                               debug_bit ? "yes" : "no",
+                               forward_bit ? "yes" : "no",
+                               legacy_bit ? "yes" : "no",
+                               use_es ? "yes" : "no"));
+
   ctx = eglCreateContext (display_wayland->egl_display,
                           context_wayland->egl_config,
                           share != NULL ? GDK_WAYLAND_GL_CONTEXT (share)->egl_context
                                         : EGL_NO_CONTEXT,
                           context_attribs);
+
+  /* If context creation failed without the legacy bit, let's try again with it */
+  if (ctx == NULL && !legacy_bit)
+    {
+      /* Ensure that re-ordering does not break the offsets */
+      g_assert (context_attribs[0] == EGL_CONTEXT_OPENGL_PROFILE_MASK_KHR);
+      context_attribs[1] = EGL_CONTEXT_OPENGL_COMPATIBILITY_PROFILE_BIT_KHR;
+      context_attribs[3] = 3;
+      context_attribs[5] = 0;
+
+      eglBindAPI (EGL_OPENGL_API);
+
+      legacy_bit = TRUE;
+      use_es = FALSE;
+
+      GDK_NOTE (OPENGL, g_message ("eglCreateContext failed, switching to legacy"));
+      ctx = eglCreateContext (display_wayland->egl_display,
+                              context_wayland->egl_config,
+                              share != NULL ? GDK_WAYLAND_GL_CONTEXT (share)->egl_context
+                                            : EGL_NO_CONTEXT,
+                              context_attribs);
+    }
+
   if (ctx == NULL)
     {
       g_set_error_literal (error, GDK_GL_ERROR,
@@ -158,9 +209,12 @@ gdk_wayland_gl_context_realize (GdkGLContext *context,
       return FALSE;
     }
 
-  GDK_NOTE (OPENGL, g_print ("Created EGL context[%p]\n", ctx));
+  GDK_NOTE (OPENGL, g_message ("Created EGL context[%p]", ctx));
 
   context_wayland->egl_context = ctx;
+
+  gdk_gl_context_set_is_legacy (context, legacy_bit);
+  gdk_gl_context_set_use_es (context, use_es);
 
   return TRUE;
 }
@@ -181,7 +235,6 @@ gdk_wayland_gl_context_end_frame (GdkGLContext   *context,
   egl_surface = gdk_wayland_window_get_egl_surface (window->impl_window,
                                                     context_wayland->egl_config);
 
-  /* TODO: Use eglSwapBuffersWithDamageEXT if available */
   if (display_wayland->have_egl_swap_buffers_with_damage)
     {
       int i, j, n_rects = cairo_region_num_rectangles (damage);
@@ -221,17 +274,52 @@ gdk_wayland_gl_context_init (GdkWaylandGLContext *self)
 {
 }
 
+static EGLDisplay
+gdk_wayland_get_display (GdkWaylandDisplay *display_wayland)
+{
+  EGLDisplay dpy = NULL;
+
+  if (epoxy_has_egl_extension (NULL, "EGL_KHR_platform_base"))
+    {
+      PFNEGLGETPLATFORMDISPLAYPROC getPlatformDisplay =
+	(void *) eglGetProcAddress ("eglGetPlatformDisplay");
+
+      if (getPlatformDisplay)
+	dpy = getPlatformDisplay (EGL_PLATFORM_WAYLAND_EXT,
+				  display_wayland->wl_display,
+				  NULL);
+      if (dpy)
+	return dpy;
+    }
+
+  if (epoxy_has_egl_extension (NULL, "EGL_EXT_platform_base"))
+    {
+      PFNEGLGETPLATFORMDISPLAYEXTPROC getPlatformDisplay =
+	(void *) eglGetProcAddress ("eglGetPlatformDisplayEXT");
+
+      if (getPlatformDisplay)
+	dpy = getPlatformDisplay (EGL_PLATFORM_WAYLAND_EXT,
+				  display_wayland->wl_display,
+				  NULL);
+      if (dpy)
+	return dpy;
+    }
+
+  return eglGetDisplay ((EGLNativeDisplayType) display_wayland->wl_display);
+}
+
 gboolean
 gdk_wayland_display_init_gl (GdkDisplay *display)
 {
   GdkWaylandDisplay *display_wayland = GDK_WAYLAND_DISPLAY (display);
   EGLint major, minor;
-  EGLDisplay *dpy;
+  EGLDisplay dpy;
 
   if (display_wayland->have_egl)
     return TRUE;
 
-  dpy = eglGetDisplay ((EGLNativeDisplayType)display_wayland->wl_display);
+  dpy = gdk_wayland_get_display (display_wayland);
+
   if (dpy == NULL)
     return FALSE;
 
@@ -260,19 +348,18 @@ gdk_wayland_display_init_gl (GdkDisplay *display)
     epoxy_has_egl_extension (dpy, "EGL_KHR_surfaceless_context");
 
   GDK_NOTE (OPENGL,
-            g_print ("EGL API version %d.%d found\n"
-                     " - Vendor: %s\n"
-                     " - Version: %s\n"
-                     " - Client APIs: %s\n"
-                     " - Extensions:\n"
-                     "\t%s\n"
-                     ,
-                     display_wayland->egl_major_version,
-                     display_wayland->egl_minor_version,
-                     eglQueryString (dpy, EGL_VENDOR),
-                     eglQueryString(dpy, EGL_VERSION),
-                     eglQueryString(dpy, EGL_CLIENT_APIS),
-                     eglQueryString(dpy, EGL_EXTENSIONS)));
+            g_message ("EGL API version %d.%d found\n"
+                       " - Vendor: %s\n"
+                       " - Version: %s\n"
+                       " - Client APIs: %s\n"
+                       " - Extensions:\n"
+                       "\t%s",
+                       display_wayland->egl_major_version,
+                       display_wayland->egl_minor_version,
+                       eglQueryString (dpy, EGL_VENDOR),
+                       eglQueryString (dpy, EGL_VERSION),
+                       eglQueryString (dpy, EGL_CLIENT_APIS),
+                       eglQueryString (dpy, EGL_EXTENSIONS)));
 
   return TRUE;
 }
@@ -282,6 +369,7 @@ gdk_wayland_display_init_gl (GdkDisplay *display)
 static gboolean
 find_eglconfig_for_window (GdkWindow  *window,
                            EGLConfig  *egl_config_out,
+                           EGLint     *min_swap_interval_out,
                            GError    **error)
 {
   GdkDisplay *display = gdk_window_get_display (window);
@@ -289,7 +377,7 @@ find_eglconfig_for_window (GdkWindow  *window,
   GdkVisual *visual = gdk_window_get_visual (window);
   EGLint attrs[MAX_EGL_ATTRS];
   EGLint count;
-  EGLConfig *configs;
+  EGLConfig *configs, chosen_config;
   gboolean use_rgba;
 
   int i = 0;
@@ -342,9 +430,20 @@ find_eglconfig_for_window (GdkWindow  *window,
     }
 
   /* Pick first valid configuration i guess? */
+  chosen_config = configs[0];
+
+  if (!eglGetConfigAttrib (display_wayland->egl_display, chosen_config,
+                           EGL_MIN_SWAP_INTERVAL, min_swap_interval_out))
+    {
+      g_set_error_literal (error, GDK_GL_ERROR,
+                           GDK_GL_ERROR_NOT_AVAILABLE,
+                           "Could not retrieve the minimum swap interval");
+      g_free (configs);
+      return FALSE;
+    }
 
   if (egl_config_out != NULL)
-    *egl_config_out = configs[0];
+    *egl_config_out = chosen_config;
 
   g_free (configs);
 
@@ -378,7 +477,9 @@ gdk_wayland_window_create_gl_context (GdkWindow     *window,
       return NULL;
     }
 
-  if (!find_eglconfig_for_window (window, &config, error))
+  if (!find_eglconfig_for_window (window, &config,
+                                  &display_wayland->egl_min_swap_interval,
+                                  error))
     return NULL;
 
   context = g_object_new (GDK_TYPE_WAYLAND_GL_CONTEXT,
@@ -409,7 +510,7 @@ gdk_x11_gl_context_dispose (GObject *gobject)
         eglMakeCurrent(display_wayland->egl_display, EGL_NO_SURFACE, EGL_NO_SURFACE,
                        EGL_NO_CONTEXT);
 
-      GDK_NOTE (OPENGL, g_print ("Destroying EGL context\n"));
+      GDK_NOTE (OPENGL, g_message ("Destroying EGL context"));
 
       eglDestroyContext (display_wayland->egl_display,
                          context_wayland->egl_context);
@@ -455,6 +556,11 @@ gdk_wayland_display_make_gl_context_current (GdkDisplay   *display,
       g_warning ("eglMakeCurrent failed");
       return FALSE;
     }
+
+  if (display_wayland->egl_min_swap_interval == 0)
+    eglSwapInterval (display_wayland->egl_display, 0);
+  else
+    g_debug ("Can't disable GL swap interval");
 
   return TRUE;
 }

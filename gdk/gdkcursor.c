@@ -225,25 +225,6 @@ gdk_cursor_get_cursor_type (GdkCursor *cursor)
  * @cursor_type: cursor to create
  *
  * Creates a new cursor from the set of builtin cursors.
- * Some useful ones are:
- * - ![](right_ptr.png) #GDK_RIGHT_PTR (right-facing arrow)
- * - ![](crosshair.png) #GDK_CROSSHAIR (crosshair)
- * - ![](xterm.png) #GDK_XTERM (I-beam)
- * - ![](watch.png) #GDK_WATCH (busy)
- * - ![](fleur.png) #GDK_FLEUR (for moving objects)
- * - ![](hand1.png) #GDK_HAND1 (a right-pointing hand)
- * - ![](hand2.png) #GDK_HAND2 (a left-pointing hand)
- * - ![](left_side.png) #GDK_LEFT_SIDE (resize left side)
- * - ![](right_side.png) #GDK_RIGHT_SIDE (resize right side)
- * - ![](top_left_corner.png) #GDK_TOP_LEFT_CORNER (resize northwest corner)
- * - ![](top_right_corner.png) #GDK_TOP_RIGHT_CORNER (resize northeast corner)
- * - ![](bottom_left_corner.png) #GDK_BOTTOM_LEFT_CORNER (resize southwest corner)
- * - ![](bottom_right_corner.png) #GDK_BOTTOM_RIGHT_CORNER (resize southeast corner)
- * - ![](top_side.png) #GDK_TOP_SIDE (resize top side)
- * - ![](bottom_side.png) #GDK_BOTTOM_SIDE (resize bottom side)
- * - ![](sb_h_double_arrow.png) #GDK_SB_H_DOUBLE_ARROW (move vertical splitter)
- * - ![](sb_v_double_arrow.png) #GDK_SB_V_DOUBLE_ARROW (move horizontal splitter)
- * - #GDK_BLANK_CURSOR (Blank cursor). Since 2.16
  *
  * Returns: a new #GdkCursor
  *
@@ -265,6 +246,45 @@ gdk_cursor_new_for_display (GdkDisplay    *display,
  *
  * Creates a new cursor by looking up @name in the current cursor
  * theme.
+ *
+ * A recommended set of cursor names that will work across different
+ * platforms can be found in the CSS specification:
+ * - "none"
+ * - ![](default_cursor.png) "default"
+ * - ![](help_cursor.png) "help"
+ * - ![](pointer_cursor.png) "pointer"
+ * - ![](context_menu_cursor.png) "context-menu"
+ * - ![](progress_cursor.png) "progress"
+ * - ![](wait_cursor.png) "wait"
+ * - ![](cell_cursor.png) "cell"
+ * - ![](crosshair_cursor.png) "crosshair"
+ * - ![](text_cursor.png) "text"
+ * - ![](vertical_text_cursor.png) "vertical-text"
+ * - ![](alias_cursor.png) "alias"
+ * - ![](copy_cursor.png) "copy"
+ * - ![](no_drop_cursor.png) "no-drop"
+ * - ![](move_cursor.png) "move"
+ * - ![](not_allowed_cursor.png) "not-allowed"
+ * - ![](grab_cursor.png) "grab"
+ * - ![](grabbing_cursor.png) "grabbing"
+ * - ![](all_scroll_cursor.png) "all-scroll"
+ * - ![](col_resize_cursor.png) "col-resize"
+ * - ![](row_resize_cursor.png) "row-resize"
+ * - ![](n_resize_cursor.png) "n-resize"
+ * - ![](e_resize_cursor.png) "e-resize"
+ * - ![](s_resize_cursor.png) "s-resize"
+ * - ![](w_resize_cursor.png) "w-resize"
+ * - ![](ne_resize_cursor.png) "ne-resize"
+ * - ![](nw_resize_cursor.png) "nw-resize"
+ * - ![](sw_resize_cursor.png) "sw-resize"
+ * - ![](se_resize_cursor.png) "se-resize"
+ * - ![](ew_resize_cursor.png) "ew-resize"
+ * - ![](ns_resize_cursor.png) "ns-resize"
+ * - ![](nesw_resize_cursor.png) "nesw-resize"
+ * - ![](nwse_resize_cursor.png) "nwse-resize"
+ * - ![](zoom_in_cursor.png) "zoom-in"
+ * - ![](zoom_out_cursor.png) "zoom-out"
+ *
  *
  * Returns: (nullable): a new #GdkCursor, or %NULL if there is no
  *   cursor with the given name

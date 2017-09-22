@@ -36,17 +36,19 @@
 
 G_BEGIN_DECLS
 
-#define SETTINGS_KEY_LOCATION_MODE       "location-mode"
-#define SETTINGS_KEY_VIEW_MODE           "view-mode"
-#define SETTINGS_KEY_SHOW_HIDDEN         "show-hidden"
-#define SETTINGS_KEY_SHOW_SIZE_COLUMN    "show-size-column"
-#define SETTINGS_KEY_SORT_COLUMN         "sort-column"
-#define SETTINGS_KEY_SORT_ORDER          "sort-order"
-#define SETTINGS_KEY_WINDOW_POSITION     "window-position"
-#define SETTINGS_KEY_WINDOW_SIZE         "window-size"
-#define SETTINGS_KEY_SIDEBAR_WIDTH       "sidebar-width"
-#define SETTINGS_KEY_STARTUP_MODE        "startup-mode"
+#define SETTINGS_KEY_LOCATION_MODE          "location-mode"
+#define SETTINGS_KEY_VIEW_MODE              "view-mode"
+#define SETTINGS_KEY_SHOW_HIDDEN            "show-hidden"
+#define SETTINGS_KEY_SHOW_SIZE_COLUMN       "show-size-column"
+#define SETTINGS_KEY_SORT_COLUMN            "sort-column"
+#define SETTINGS_KEY_SORT_ORDER             "sort-order"
+#define SETTINGS_KEY_WINDOW_POSITION        "window-position"
+#define SETTINGS_KEY_WINDOW_SIZE            "window-size"
+#define SETTINGS_KEY_SIDEBAR_WIDTH          "sidebar-width"
+#define SETTINGS_KEY_STARTUP_MODE           "startup-mode"
 #define SETTINGS_KEY_SORT_DIRECTORIES_FIRST "sort-directories-first"
+#define SETTINGS_KEY_CLOCK_FORMAT           "clock-format"
+#define SETTINGS_KEY_DATE_FORMAT            "date-format"
 
 #define GTK_FILE_CHOOSER_GET_IFACE(inst)  (G_TYPE_INSTANCE_GET_INTERFACE ((inst), GTK_TYPE_FILE_CHOOSER, GtkFileChooserIface))
 
@@ -87,7 +89,7 @@ struct _GtkFileChooserIface
 					    GFile             *file,
 					    GError           **error);
   GSList *       (*list_shortcut_folders)  (GtkFileChooser    *chooser);
-  
+
   /* Signals
    */
   void (*current_folder_changed) (GtkFileChooser *chooser);
@@ -95,6 +97,20 @@ struct _GtkFileChooserIface
   void (*update_preview)         (GtkFileChooser *chooser);
   void (*file_activated)         (GtkFileChooser *chooser);
   GtkFileChooserConfirmation (*confirm_overwrite) (GtkFileChooser *chooser);
+
+  /* 3.22 additions */
+  void           (*add_choice)    (GtkFileChooser *chooser,
+                                   const char      *id,
+                                   const char      *label,
+                                   const char     **options,
+                                   const char     **option_labels);
+  void           (*remove_choice) (GtkFileChooser  *chooser,
+                                   const char      *id);
+  void           (*set_choice)    (GtkFileChooser  *chooser,
+                                   const char      *id,
+                                   const char      *option);
+  const char *   (*get_choice)    (GtkFileChooser  *chooser,
+                                   const char      *id);
 };
 
 GtkFileSystem *_gtk_file_chooser_get_file_system         (GtkFileChooser    *chooser);

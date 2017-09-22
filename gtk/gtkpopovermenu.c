@@ -18,6 +18,7 @@
 #include "config.h"
 #include "gtkpopovermenu.h"
 #include "gtkstack.h"
+#include "gtkstylecontext.h"
 #include "gtkintl.h"
 
 
@@ -27,7 +28,7 @@
  * @Title: GtkPopoverMenu
  *
  * GtkPopoverMenu is a subclass of #GtkPopover that treats its
- * childen like menus and allows switching between them. It is
+ * children like menus and allows switching between them. It is
  * meant to be used primarily together with #GtkModelButton, but
  * any widget can be used, such as #GtkSpinButton or #GtkScale.
  * In this respect, GtkPopoverMenu is more flexible than popovers
@@ -94,7 +95,10 @@
  *   </child>
  * </object>
  * ]|
-*
+ *
+ * Just like normal popovers created using gtk_popover_new_from_model,
+ * #GtkPopoverMenu instances have a single css node called "popover"
+ * and get the .menu style class.
  */
 
 struct _GtkPopoverMenu
@@ -125,14 +129,19 @@ static void
 gtk_popover_menu_init (GtkPopoverMenu *popover)
 {
   GtkWidget *stack;
+  GtkStyleContext *style_context;
 
   stack = gtk_stack_new ();
   gtk_stack_set_vhomogeneous (GTK_STACK (stack), FALSE);
   gtk_stack_set_transition_type (GTK_STACK (stack), GTK_STACK_TRANSITION_TYPE_SLIDE_LEFT_RIGHT);
+  gtk_stack_set_interpolate_size (GTK_STACK (stack), TRUE);
   gtk_widget_show (stack);
   gtk_container_add (GTK_CONTAINER (popover), stack);
   g_signal_connect (stack, "notify::visible-child-name",
                     G_CALLBACK (visible_submenu_changed), popover);
+
+  style_context = gtk_widget_get_style_context (GTK_WIDGET (popover));
+  gtk_style_context_add_class (style_context, GTK_STYLE_CLASS_MENU);
 }
 
 static void

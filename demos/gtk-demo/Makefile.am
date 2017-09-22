@@ -3,8 +3,8 @@ include $(top_srcdir)/Makefile.decl
 
 ## These should be in the order you want them to appear in the
 ## demo app, which means alphabetized by demo title, not filename
-demos =						\
-	application.c				\
+demos_base =					\
+	application_demo.c			\
 	assistant.c				\
 	builder.c				\
 	button_box.c				\
@@ -14,9 +14,11 @@ demos =						\
 	combobox.c				\
 	css_accordion.c                         \
 	css_basics.c				\
+	css_blendmodes.c			\
 	css_multiplebgs.c			\
 	css_pixbufs.c				\
 	css_shadows.c				\
+	cursors.c				\
 	dialog.c				\
 	drawingarea.c				\
 	editable_cells.c			\
@@ -24,6 +26,9 @@ demos =						\
 	entry_completion.c			\
 	event_axes.c				\
 	expander.c  				\
+        filtermodel.c				\
+	fishbowl.c				\
+	foreigndrawing.c			\
 	gestures.c				\
 	glarea.c				\
 	headerbar.c				\
@@ -36,10 +41,13 @@ demos =						\
 	listbox.c				\
 	flowbox.c				\
 	list_store.c				\
+	markup.c				\
 	menus.c					\
+	modelbutton.c				\
 	offscreen_window.c			\
 	offscreen_window2.c			\
 	overlay.c				\
+	overlay2.c				\
 	panes.c					\
 	pickers.c				\
 	pixbufs.c				\
@@ -47,18 +55,35 @@ demos =						\
 	printing.c				\
 	revealer.c				\
 	rotated_text.c				\
+	scale.c					\
 	search_entry.c				\
 	search_entry2.c				\
+	shortcuts.c				\
 	sidebar.c				\
 	sizegroup.c				\
+	spinbutton.c				\
 	spinner.c				\
 	stack.c					\
+	tabs.c					\
+	textmask.c				\
 	textview.c				\
 	textscroll.c				\
 	theming_style_classes.c			\
 	toolpalette.c				\
 	transparent.c				\
 	tree_store.c
+
+demos_opt =
+
+if BUILD_FONT_DEMO
+demos_opt += font_features.c
+endif
+
+if OS_UNIX
+demos_opt += pagesetup.c
+endif
+
+demos = $(demos_base) $(demos_opt)
 
 AM_CPPFLAGS = \
 	-I$(top_srcdir) 			\
@@ -78,6 +103,11 @@ LDADDS = \
 	$(GDK_DEP_LIBS)				\
 	-lm
 
+if BUILD_FONT_DEMO
+AM_CPPFLAGS += $(FONTDEMO_CFLAGS)
+LDADDS += $(FONTDEMO_LIBS)
+endif
+
 bin_PROGRAMS = gtk3-demo gtk3-demo-application
 
 desktopdir = $(datadir)/applications
@@ -89,8 +119,9 @@ EXTRA_DIST += 				\
 	data/source.svg			\
 	data/symbolic-source.svg	\
 	demo.gresource.xml		\
-	$(RESOURCES)			\
-	org.gtk.Demo.gschema.xml
+	$(resource_files)		\
+	org.gtk.Demo.gschema.xml	\
+	demos.h.win32
 
 gsettings_SCHEMAS = \
 	org.gtk.Demo.gschema.xml
@@ -100,61 +131,32 @@ gsettings_SCHEMAS = \
 demos.h: $(demos) geninclude.pl
 	 $(AM_V_GEN) (here=`pwd` ; cd $(srcdir) && $(PERL) $$here/geninclude.pl $(demos)) > demos.h
 
+demos.h.win32: $(demos_base) geninclude.pl
+	 $(AM_V_GEN) (here=`pwd` ; cd $(srcdir) && $(PERL) $$here/geninclude.pl $(demos_base)) > demos.h.win32
+
+nodist_gtk3_demo_SOURCES = demos.h
+
 gtk3_demo_SOURCES = 		\
 	$(demos)		\
+	gtkfishbowl.c		\
+	gtkfishbowl.h		\
 	demo_resources.c	\
-	main.c			\
-	demos.h
+	main.c
 
 gtk3_demo_DEPENDENCIES = $(DEPS)
 gtk3_demo_LDADD = $(LDADDS)
 gtk3_demo_LDFLAGS = -export-dynamic
 
 gtk3_demo_application_SOURCES = \
-	application-standalone.c \
+	application.c 		\
 	demo_resources.c
 
 gtk3_demo_application_LDADD = $(LDADDS)
 
-demo_resources.c: demo.gresource.xml $(RESOURCES)
-	$(AM_V_GEN) $(GLIB_COMPILE_RESOURCES) --target=$@ --sourcedir=$(srcdir) --generate-source $(srcdir)/demo.gresource.xml
+resource_files = $(shell $(GLIB_COMPILE_RESOURCES) --sourcedir=$(srcdir) --generate-dependencies $(srcdir)/demo.gresource.xml)
 
-RESOURCES =				\
-	$(demos)			\
-	main.ui				\
-	application.ui			\
-	demo.ui				\
-	menus.ui			\
-	stack.ui			\
-	revealer.ui			\
-	theming.ui			\
-	listbox.ui			\
-	popover.ui			\
-	alphatest.png			\
-	apple-red.png			\
-	brick.png			\
-	brick2.png			\
-	background.jpg			\
-	floppybuddy.gif			\
-	glarea-fragment.glsl		\
-	glarea-vertex.glsl		\
-	gnome-applets.png		\
-	gnome-calendar.png		\
-	gnome-foot.png			\
-	gnome-fs-directory.png		\
-	gnome-fs-regular.png		\
-	gnome-gimp.png			\
-	gnome-gmush.png			\
-	gnome-gsame.png			\
-	gnu-keys.png			\
-	messages.txt			\
-	css_accordion.css		\
-	css_basics.css			\
-	css_multiplebgs.css		\
-	css_pixbufs.css			\
-	css_shadows.css			\
-	cssview.css			\
-	reset.css
+demo_resources.c: demo.gresource.xml $(resource_files)
+	$(AM_V_GEN) $(GLIB_COMPILE_RESOURCES) --target=$@ --sourcedir=$(srcdir) --generate-source $(srcdir)/demo.gresource.xml
 
 iconthemedir = $(datadir)/icons/hicolor
 
@@ -173,7 +175,7 @@ dist_appsicon32_DATA = data/32x32/gtk3-demo.png data/32x32/gtk3-demo-symbolic.sy
 dist_appsicon48_DATA = data/48x48/gtk3-demo.png data/48x48/gtk3-demo-symbolic.symbolic.png
 dist_appsicon256_DATA = data/256x256/gtk3-demo.png data/256x256/gtk3-demo-symbolic.symbolic.png
 
-update_icon_cache = gtk-update-icon-cache --ignore-theme-index --force
+update_icon_cache = $(top_builddir)/gtk/gtk-update-icon-cache$(EXEEXT) --ignore-theme-index --force
 
 install-data-hook: install-update-icon-cache
 uninstall-hook: uninstall-update-icon-cache
@@ -186,6 +188,21 @@ uninstall-update-icon-cache:
 	$(AM_V_at)$(POST_UNINSTALL)
 	test -n "$(DESTDIR)" || $(update_icon_cache) "$(iconthemedir)"
 
-DISTCLEANFILES = demos.h
+# ------------------- MSVC Build Items ----------------
+MSVCPROJS = gtk3-demo gtk3-demo-application
+
+gtk3_demo_FILES = $(gtk3_demo_SOURCES)
+gtk3_demo_EXCLUDES = font_features.c|pagesetup.c
+
+gtk3_demo_application_FILES = $(gtk3_demo_application_SOURCES)
+gtk3_demo_application_EXCLUDES = dummy
+
+include $(top_srcdir)/build/Makefile.msvcproj
+
+dist-hook: \
+	$(top_builddir)/build/win32/vs9/gtk3-demo.vcproj	\
+	$(top_builddir)/build/win32/vs9/gtk3-demo-application.vcproj
+
+DISTCLEANFILES = demos.h demos.h.win32
 
 -include $(top_srcdir)/git.mk

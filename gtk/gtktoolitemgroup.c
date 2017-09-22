@@ -28,6 +28,10 @@
 #include "gtktypebuiltins.h"
 #include "gtkprivate.h"
 #include "gtkintl.h"
+#include "gtkcssnodeprivate.h"
+#include "gtkstylecontextprivate.h"
+#include "gtkwidgetprivate.h"
+
 
 #define ANIMATION_TIMEOUT        50
 #define ANIMATION_DURATION      (ANIMATION_TIMEOUT * 4)
@@ -47,6 +51,10 @@
  * A #GtkToolItemGroup is used together with #GtkToolPalette to add
  * #GtkToolItems to a palette like container with different
  * categories and drag and drop support.
+ *
+ * # CSS nodes
+ *
+ * GtkToolItemGroup has a single CSS node named toolitemgroup.
  *
  * Since: 2.20
  */
@@ -77,6 +85,8 @@ struct _GtkToolItemGroupPrivate
 {
   GtkWidget         *header;
   GtkWidget         *label_widget;
+
+  GtkCssNode        *arrow_node;
 
   GList             *children;
 
@@ -272,21 +282,14 @@ gtk_tool_item_group_header_draw_cb (GtkWidget *widget,
   gint x, y, width, height;
   GtkTextDirection direction;
   GtkStyleContext *context;
-  GtkStateFlags state = 0;
 
   orientation = gtk_tool_shell_get_orientation (GTK_TOOL_SHELL (group));
   direction = gtk_widget_get_direction (widget);
   width = gtk_widget_get_allocated_width (widget);
   height = gtk_widget_get_allocated_height (widget);
   context = gtk_widget_get_style_context (widget);
-  state = gtk_widget_get_state_flags (widget);
 
-  if (!priv->collapsed)
-    state |= GTK_STATE_FLAG_CHECKED;
-
-  gtk_style_context_save (context);
-  gtk_style_context_set_state (context, state);
-  gtk_style_context_add_class (context, GTK_STYLE_CLASS_EXPANDER);
+  gtk_style_context_save_to_node (context, priv->arrow_node);
 
   if (GTK_ORIENTATION_VERTICAL == orientation)
     {
@@ -378,10 +381,26 @@ G_GNUC_END_IGNORE_DEPRECATIONS
 }
 
 static void
+update_arrow_state (GtkToolItemGroup *group)
+{
+  GtkToolItemGroupPrivate *priv = group->priv;
+  GtkStateFlags state;
+
+  state = gtk_widget_get_state_flags (GTK_WIDGET (group));
+
+  if (priv->collapsed)
+    state &= ~GTK_STATE_FLAG_CHECKED;
+  else
+    state |= GTK_STATE_FLAG_CHECKED;
+  gtk_css_node_set_state (priv->arrow_node, state);
+}
+
+static void
 gtk_tool_item_group_init (GtkToolItemGroup *group)
 {
   GtkWidget *alignment;
   GtkToolItemGroupPrivate* priv;
+  GtkCssNode *widget_node;
 
   gtk_widget_set_redraw_on_allocate (GTK_WIDGET (group), FALSE);
 
@@ -390,6 +409,7 @@ gtk_tool_item_group_init (GtkToolItemGroup *group)
   priv->children = NULL;
   priv->header_spacing = DEFAULT_HEADER_SPACING;
   priv->expander_size = DEFAULT_EXPANDER_SIZE;
+  priv->collapsed = DEFAULT_COLLAPSED;
 
   priv->label_widget = gtk_label_new (NULL);
   gtk_widget_set_halign (priv->label_widget, GTK_ALIGN_START);
@@ -402,7 +422,7 @@ G_GNUC_END_IGNORE_DEPRECATIONS
 
   priv->header = gtk_button_new ();
   g_object_ref_sink (priv->header);
-  gtk_button_set_focus_on_click (GTK_BUTTON (priv->header), FALSE);
+  gtk_widget_set_focus_on_click (priv->header, FALSE);
   gtk_container_add (GTK_CONTAINER (priv->header), alignment);
   gtk_widget_set_parent (priv->header, GTK_WIDGET (group));
 
@@ -415,6 +435,15 @@ G_GNUC_END_IGNORE_DEPRECATIONS
   g_signal_connect (priv->header, "clicked",
                     G_CALLBACK (gtk_tool_item_group_header_clicked_cb),
                     group);
+
+  widget_node = gtk_widget_get_css_node (GTK_WIDGET (group));
+  priv->arrow_node = gtk_css_node_new ();
+  gtk_css_node_set_name (priv->arrow_node, I_("arrow"));
+  gtk_css_node_set_parent (priv->arrow_node, widget_node);
+  gtk_css_node_set_state (priv->arrow_node, gtk_css_node_get_state (widget_node));
+  g_object_unref (priv->arrow_node);
+
+  update_arrow_state (group);
 }
 
 static void
@@ -495,11 +524,7 @@ gtk_tool_item_group_finalize (GObject *object)
 {
   GtkToolItemGroup *group = GTK_TOOL_ITEM_GROUP (object);
 
-  if (group->priv->children)
-    {
-      g_list_free (group->priv->children);
-      group->priv->children = NULL;
-    }
+  g_list_free (group->priv->children);
 
   G_OBJECT_CLASS (gtk_tool_item_group_parent_class)->finalize (object);
 }
@@ -527,6 +552,9 @@ gtk_tool_item_group_dispose (GObject *object)
     }
 
   g_clear_object (&priv->settings);
+  if (priv->header)
+    gtk_widget_destroy (priv->header);
+  g_clear_object (&priv->header);
 
   G_OBJECT_CLASS (gtk_tool_item_group_parent_class)->dispose (object);
 }
@@ -1215,13 +1243,10 @@ gtk_tool_item_group_realize (GtkWidget *widget)
   GdkWindowAttr attributes;
   gint attributes_mask;
   guint border_width;
-  GtkStyleContext *context;
 
   gtk_widget_set_realized (widget, TRUE);
 
   border_width = gtk_container_get_border_width (GTK_CONTAINER (widget));
-  context = gtk_widget_get_style_context (widget);
-
   gtk_widget_get_allocation (widget, &allocation);
 
   attributes.window_type = GDK_WINDOW_CHILD;
@@ -1232,7 +1257,7 @@ gtk_tool_item_group_realize (GtkWidget *widget)
   attributes.wclass = GDK_INPUT_OUTPUT;
   attributes.visual = gtk_widget_get_visual (widget);
   attributes.event_mask = gtk_widget_get_events (widget)
-                         | GDK_VISIBILITY_NOTIFY_MASK | GDK_EXPOSURE_MASK
+                         | GDK_VISIBILITY_NOTIFY_MASK
                          | GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK
                          | GDK_BUTTON_MOTION_MASK;
   attributes_mask = GDK_WA_X | GDK_WA_Y | GDK_WA_VISUAL;
@@ -1242,8 +1267,6 @@ gtk_tool_item_group_realize (GtkWidget *widget)
   gtk_widget_set_window (widget, window);
 
   gtk_widget_register_window (widget, window);
-
-  gtk_style_context_set_background (context, window);
 
   gtk_container_forall (GTK_CONTAINER (widget),
                         (GtkCallback) gtk_widget_set_parent_window,
@@ -1263,11 +1286,30 @@ gtk_tool_item_group_unrealize (GtkWidget *widget)
   GTK_WIDGET_CLASS (gtk_tool_item_group_parent_class)->unrealize (widget);
 }
 
+static gboolean
+gtk_tool_item_group_draw (GtkWidget *widget,
+                          cairo_t   *cr)
+{
+  gtk_render_background (gtk_widget_get_style_context (widget), cr,
+                         0, 0,
+                         gtk_widget_get_allocated_width (widget),
+                         gtk_widget_get_allocated_height (widget));
+
+  return GTK_WIDGET_CLASS (gtk_tool_item_group_parent_class)->draw (widget, cr);
+}
+
 static void
 gtk_tool_item_group_style_updated (GtkWidget *widget)
 {
   gtk_tool_item_group_header_adjust_style (GTK_TOOL_ITEM_GROUP (widget));
   GTK_WIDGET_CLASS (gtk_tool_item_group_parent_class)->style_updated (widget);
+}
+
+static void
+gtk_tool_item_group_state_flags_changed (GtkWidget     *widget,
+                                         GtkStateFlags  previous_flags)
+{
+  update_arrow_state (GTK_TOOL_ITEM_GROUP (widget));
 }
 
 static void
@@ -1584,6 +1626,8 @@ gtk_tool_item_group_class_init (GtkToolItemGroupClass *cls)
   wclass->unrealize            = gtk_tool_item_group_unrealize;
   wclass->style_updated        = gtk_tool_item_group_style_updated;
   wclass->screen_changed       = gtk_tool_item_group_screen_changed;
+  wclass->draw                 = gtk_tool_item_group_draw;
+  wclass->state_flags_changed  = gtk_tool_item_group_state_flags_changed;
 
   cclass->add                = gtk_tool_item_group_add;
   cclass->remove             = gtk_tool_item_group_remove;
@@ -1677,6 +1721,8 @@ gtk_tool_item_group_class_init (GtkToolItemGroupClass *cls)
                                                                 G_MAXINT,
                                                                 0,
                                                                 GTK_PARAM_READWRITE));
+
+  gtk_widget_class_set_css_name (wclass, "toolitemgroup");
 }
 
 /**
@@ -1929,6 +1975,7 @@ gtk_tool_item_group_set_collapsed (GtkToolItemGroup *group,
         gtk_tool_item_group_force_expose (group);
 
       priv->collapsed = collapsed;
+      update_arrow_state (group);
       g_object_notify (G_OBJECT (group), "collapsed");
     }
 }
@@ -2096,8 +2143,7 @@ gtk_tool_item_group_insert (GtkToolItemGroup *group,
 
   child_widget = gtk_bin_get_child (GTK_BIN (item));
 
-  if (GTK_IS_BUTTON (child_widget))
-    gtk_button_set_focus_on_click (GTK_BUTTON (child_widget), TRUE);
+  gtk_widget_set_focus_on_click (child_widget, TRUE);
 
   gtk_widget_set_parent (GTK_WIDGET (item), GTK_WIDGET (group));
 }

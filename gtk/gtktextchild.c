@@ -182,7 +182,7 @@ child_segment_delete_func (GtkTextLineSegment *seg,
 
       gtk_widget_destroy (child);
       
-      tmp_list = g_slist_next (tmp_list);
+      tmp_list = tmp_list->next;
     }
 
   /* On removal from the widget's parents (GtkTextView),
@@ -345,7 +345,6 @@ static void
 gtk_text_child_anchor_finalize (GObject *obj)
 {
   GtkTextChildAnchor *anchor;
-  GSList *tmp_list;
   GtkTextLineSegment *seg;
   
   anchor = GTK_TEXT_CHILD_ANCHOR (obj);
@@ -361,15 +360,8 @@ gtk_text_child_anchor_finalize (GObject *obj)
                      "and the refcount is 0.");
           return;
         }
-      
-      tmp_list = seg->body.child.widgets;
-      while (tmp_list)
-        {
-          g_object_unref (tmp_list->data);
-          tmp_list = g_slist_next (tmp_list);
-        }
-  
-      g_slist_free (seg->body.child.widgets);
+
+      g_slist_free_full (seg->body.child.widgets, g_object_unref);
 
       g_slice_free1 (WIDGET_SEG_SIZE, seg);
     }
@@ -405,7 +397,7 @@ gtk_text_child_anchor_get_widgets (GtkTextChildAnchor *anchor)
     {
       list = g_list_prepend (list, iter->data);
 
-      iter = g_slist_next (iter);
+      iter = iter->next;
     }
 
   /* Order is not relevant, so we don't need to reverse the list

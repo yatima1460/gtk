@@ -56,6 +56,10 @@
  * The following example shows you how to create a more complex search
  * entry.
  *
+ * # CSS nodes
+ *
+ * GtkSearchBar has a single CSS node with name searchbar.
+ *
  * ## Creating a search bar
  *
  * [A simple example](https://git.gnome.org/browse/gtk+/tree/examples/search-bar.c)
@@ -417,17 +421,18 @@ gtk_search_bar_class_init (GtkSearchBarClass *klass)
   g_object_class_install_properties (object_class, LAST_PROPERTY, widget_props);
 
   gtk_widget_class_set_template_from_resource (widget_class, "/org/gtk/libgtk/ui/gtksearchbar.ui");
-  gtk_widget_class_bind_template_child_internal_private (widget_class, GtkSearchBar, tool_box);
-  gtk_widget_class_bind_template_child_internal_private (widget_class, GtkSearchBar, revealer);
-  gtk_widget_class_bind_template_child_internal_private (widget_class, GtkSearchBar, box_center);
-  gtk_widget_class_bind_template_child_internal_private (widget_class, GtkSearchBar, close_button);
+  gtk_widget_class_bind_template_child_private (widget_class, GtkSearchBar, tool_box);
+  gtk_widget_class_bind_template_child_private (widget_class, GtkSearchBar, revealer);
+  gtk_widget_class_bind_template_child_private (widget_class, GtkSearchBar, box_center);
+  gtk_widget_class_bind_template_child_private (widget_class, GtkSearchBar, close_button);
+
+  gtk_widget_class_set_css_name (widget_class, "searchbar");
 }
 
 static void
 gtk_search_bar_init (GtkSearchBar *bar)
 {
   GtkSearchBarPrivate *priv = gtk_search_bar_get_instance_private (bar);
-  GtkStyleContext *context;
 
   gtk_widget_init_template (GTK_WIDGET (bar));
 
@@ -444,11 +449,6 @@ gtk_search_bar_init (GtkSearchBar *bar)
   gtk_widget_set_no_show_all (priv->close_button, TRUE);
   g_signal_connect (priv->close_button, "clicked",
                     G_CALLBACK (close_button_clicked_cb), bar);
-
-  context = gtk_widget_get_style_context (GTK_WIDGET (bar));
-  gtk_style_context_add_class (context, "search-bar");
-  gtk_style_context_add_class (context, GTK_STYLE_CLASS_HORIZONTAL);
-
 };
 
 /**

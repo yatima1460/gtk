@@ -1,4 +1,4 @@
-/* CSS Theming/Multiple Backgrounds
+/* Theming/Multiple Backgrounds
  *
  * Gtk themes are written using CSS. Every widget is build of multiple items
  * that you can style very similarly to a regular website.
@@ -6,8 +6,6 @@
  */
 
 #include <gtk/gtk.h>
-
-static GtkWidget *window = NULL;
 
 static void
 show_parsing_error (GtkCssProvider *provider,
@@ -34,7 +32,7 @@ show_parsing_error (GtkCssProvider *provider,
 
   gtk_text_buffer_apply_tag_by_name (buffer, tag_name, &start, &end);
 }
-                    
+
 static void
 css_text_changed (GtkTextBuffer  *buffer,
                   GtkCssProvider *provider)
@@ -82,6 +80,8 @@ apply_css (GtkWidget *widget, GtkStyleProvider *provider)
 GtkWidget *
 do_css_multiplebgs (GtkWidget *do_widget)
 {
+  static GtkWidget *window = NULL;
+
   if (!window)
     {
       GtkWidget *paned, *container, *child;
@@ -90,6 +90,7 @@ do_css_multiplebgs (GtkWidget *do_widget)
       GBytes *bytes;
 
       window = gtk_window_new (GTK_WINDOW_TOPLEVEL);
+      gtk_window_set_title (GTK_WINDOW (window), "Multiple Backgrounds");
       gtk_window_set_transient_for (GTK_WINDOW (window), GTK_WINDOW (do_widget));
       gtk_window_set_default_size (GTK_WINDOW (window), 400, 300);
       g_signal_connect (window, "destroy",
@@ -162,10 +163,7 @@ do_css_multiplebgs (GtkWidget *do_widget)
   if (!gtk_widget_get_visible (window))
     gtk_widget_show_all (window);
   else
-    {
-      gtk_widget_destroy (window);
-      window = NULL;
-    }
+    gtk_widget_destroy (window);
 
   return window;
 }

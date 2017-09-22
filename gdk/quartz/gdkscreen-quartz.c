@@ -22,6 +22,8 @@
 #include <gdk/gdk.h>
 
 #include "gdkprivate-quartz.h"
+#include "gdkdisplay-quartz.h"
+#include "gdkmonitor-quartz.h"
  
 
 /* A couple of notes about this file are in order.  In GDK, a
@@ -66,17 +68,18 @@ static void display_reconfiguration_callback (CGDirectDisplayID            displ
                                               CGDisplayChangeSummaryFlags  flags,
                                               void                        *userInfo);
 
+static gint get_mm_from_pixels (NSScreen *screen, int pixels);
+
 G_DEFINE_TYPE (GdkQuartzScreen, gdk_quartz_screen, GDK_TYPE_SCREEN);
 
 static void
 gdk_quartz_screen_init (GdkQuartzScreen *quartz_screen)
 {
   GdkScreen *screen = GDK_SCREEN (quartz_screen);
-  NSScreen *nsscreen;
+  NSDictionary *dd = [[[NSScreen screens] objectAtIndex:0] deviceDescription];
+  NSSize size = [[dd valueForKey:NSDeviceResolution] sizeValue];
 
-  nsscreen = [[NSScreen screens] objectAtIndex:0];
-  _gdk_screen_set_resolution (screen,
-                              72.0 * [nsscreen userSpaceScaleFactor]);
+  _gdk_screen_set_resolution (screen, size.width);
 
   gdk_quartz_screen_calculate_layout (quartz_screen);
 
@@ -104,20 +107,15 @@ gdk_quartz_screen_dispose (GObject *object)
 }
 
 static void
-gdk_quartz_screen_screen_rects_free (GdkQuartzScreen *screen)
-{
-  screen->n_screens = 0;
-  g_clear_pointer (&screen->screen_rects, g_free);
-}
-
-static void
 gdk_quartz_screen_finalize (GObject *object)
 {
-  GdkQuartzScreen *screen = GDK_QUARTZ_SCREEN (object);
-
-  gdk_quartz_screen_screen_rects_free (screen);
+  G_OBJECT_CLASS (gdk_quartz_screen_parent_class)->finalize (object);
 }
 
+/* Protocol to build cleanly for OSX < 10.7 */
+@protocol ScaleFactor
+- (CGFloat) backingScaleFactor;
+@end
 
 static void
 gdk_quartz_screen_calculate_layout (GdkQuartzScreen *screen)
@@ -125,10 +123,13 @@ gdk_quartz_screen_calculate_layout (GdkQuartzScreen *screen)
   NSArray *array;
   int i;
   int max_x, max_y;
+  GdkDisplay *display = gdk_screen_get_display (GDK_SCREEN (screen));
+  GdkQuartzDisplay *display_quartz = GDK_QUARTZ_DISPLAY (display);
+
+  g_ptr_array_free (display_quartz->monitors, TRUE);
+  display_quartz->monitors = g_ptr_array_new_with_free_func (g_object_unref);
 
   GDK_QUARTZ_ALLOC_POOL;
-
-  gdk_quartz_screen_screen_rects_free (screen);
 
   array = [NSScreen screens];
 
@@ -144,6 +145,12 @@ gdk_quartz_screen_calculate_layout (GdkQuartzScreen *screen)
    */
   for (i = 0; i < [array count]; i++)
     {
+      GdkQuartzMonitor *monitor = g_object_new (GDK_TYPE_QUARTZ_MONITOR,
+                                                "display", display,
+                                                NULL);
+      g_ptr_array_add (display_quartz->monitors, monitor);
+      monitor->nsscreen = [array objectAtIndex:i];
+
       NSRect rect = [[array objectAtIndex:i] frame];
 
       screen->min_x = MIN (screen->min_x, rect.origin.x);
@@ -156,22 +163,31 @@ gdk_quartz_screen_calculate_layout (GdkQuartzScreen *screen)
   screen->width = max_x - screen->min_x;
   screen->height = max_y - screen->min_y;
 
-  screen->n_screens = [array count];
-  screen->screen_rects = g_new0 (GdkRectangle, screen->n_screens);
-
-  for (i = 0; i < screen->n_screens; i++)
+  for (i = 0; i < [array count] ; i++)
     {
       NSScreen *nsscreen;
       NSRect rect;
+      GdkMonitor *monitor;
 
+      monitor = GDK_MONITOR(display_quartz->monitors->pdata[i]);
       nsscreen = [array objectAtIndex:i];
       rect = [nsscreen frame];
 
-      screen->screen_rects[i].x = rect.origin.x - screen->min_x;
-      screen->screen_rects[i].y
+      monitor->geometry.x = rect.origin.x - screen->min_x;
+      monitor->geometry.y
           = screen->height - (rect.origin.y + rect.size.height) + screen->min_y;
-      screen->screen_rects[i].width = rect.size.width;
-      screen->screen_rects[i].height = rect.size.height;
+      monitor->geometry.width = rect.size.width;
+      monitor->geometry.height = rect.size.height;
+      if (gdk_quartz_osx_version() >= GDK_OSX_LION)
+        monitor->scale_factor = [(id <ScaleFactor>) nsscreen backingScaleFactor];
+      else
+        monitor->scale_factor = 1;
+      monitor->width_mm = get_mm_from_pixels(nsscreen, monitor->geometry.width);
+      monitor->height_mm = get_mm_from_pixels(nsscreen, monitor->geometry.height);
+      monitor->refresh_rate = 0; // unknown
+      monitor->manufacturer = NULL; // unknown
+      monitor->model = NULL; // unknown
+      monitor->subpixel_layout = GDK_SUBPIXEL_LAYOUT_UNKNOWN; // unknown
     }
 
   GDK_QUARTZ_RELEASE_POOL;
@@ -318,17 +334,35 @@ gdk_quartz_screen_get_height (GdkScreen *screen)
 static gint
 get_mm_from_pixels (NSScreen *screen, int pixels)
 {
-  /* userSpaceScaleFactor is in "pixels per point", 
-   * 72 is the number of points per inch, 
-   * and 25.4 is the number of millimeters per inch.
-   */
-#if MAC_OS_X_VERSION_MAX_ALLOWED > MAC_OS_X_VERSION_10_3
-  float dpi = [screen userSpaceScaleFactor] * 72.0;
-#else
-  float dpi = 96.0 / 72.0;
-#endif
+  const float mm_per_inch = 25.4;
+  NSDictionary *dd = [[[NSScreen screens] objectAtIndex:0] deviceDescription];
+  NSSize size = [[dd valueForKey:NSDeviceResolution] sizeValue];
+  float dpi = size.width;
+  return (pixels / dpi) * mm_per_inch;
+}
 
-  return (pixels / dpi) * 25.4;
+static gchar *
+gdk_quartz_screen_make_display_name (GdkScreen *screen)
+{
+  return g_strdup (gdk_display_get_name (_gdk_display));
+}
+
+static GdkWindow *
+gdk_quartz_screen_get_active_window (GdkScreen *screen)
+{
+  return NULL;
+}
+
+static GList *
+gdk_quartz_screen_get_window_stack (GdkScreen *screen)
+{
+  return NULL;
+}
+
+static gboolean
+gdk_quartz_screen_is_composited (GdkScreen *screen)
+{
+  return TRUE;
 }
 
 static NSScreen *
@@ -361,127 +395,6 @@ gdk_quartz_screen_get_height_mm (GdkScreen *screen)
                              GDK_QUARTZ_SCREEN (screen)->height);
 }
 
-static gint
-gdk_quartz_screen_get_n_monitors (GdkScreen *screen)
-{
-  return GDK_QUARTZ_SCREEN (screen)->n_screens;
-}
-
-static gint
-gdk_quartz_screen_get_primary_monitor (GdkScreen *screen)
-{
-  return 0;
-}
-
-static gint
-gdk_quartz_screen_get_monitor_width_mm (GdkScreen *screen,
-                                        gint       monitor_num)
-{
-  return get_mm_from_pixels (get_nsscreen_for_monitor (monitor_num),
-                             GDK_QUARTZ_SCREEN (screen)->screen_rects[monitor_num].width);
-}
-
-static gint
-gdk_quartz_screen_get_monitor_height_mm (GdkScreen *screen,
-                                         gint       monitor_num)
-{
-  return get_mm_from_pixels (get_nsscreen_for_monitor (monitor_num),
-                             GDK_QUARTZ_SCREEN (screen)->screen_rects[monitor_num].height);
-}
-
-static gchar *
-gdk_quartz_screen_get_monitor_plug_name (GdkScreen *screen,
-                                         gint       monitor_num)
-{
-  /* FIXME: Is there some useful name we could use here? */
-  return NULL;
-}
-
-static void
-gdk_quartz_screen_get_monitor_geometry (GdkScreen    *screen,
-                                        gint          monitor_num,
-                                        GdkRectangle *dest)
-{
-  *dest = GDK_QUARTZ_SCREEN (screen)->screen_rects[monitor_num];
-}
-
-static void
-gdk_quartz_screen_get_monitor_workarea (GdkScreen    *screen,
-                                        gint          monitor_num,
-                                        GdkRectangle *dest)
-{
-  GdkQuartzScreen *quartz_screen = GDK_QUARTZ_SCREEN (screen);
-  NSArray *array;
-  NSScreen *nsscreen;
-  NSRect rect;
-
-  GDK_QUARTZ_ALLOC_POOL;
-
-  array = [NSScreen screens];
-  nsscreen = [array objectAtIndex:monitor_num];
-  rect = [nsscreen visibleFrame];
-
-  dest->x = rect.origin.x - quartz_screen->min_x;
-  dest->y = quartz_screen->height - (rect.origin.y + rect.size.height) + quartz_screen->min_y;
-  dest->width = rect.size.width;
-  dest->height = rect.size.height;
-
-  GDK_QUARTZ_RELEASE_POOL;
-}
-
-/* Protocol to build cleanly for OSX < 10.7 */
-@protocol ScaleFactor
-- (CGFloat) backingScaleFactor;
-@end
-
-gint
-_gdk_quartz_screen_get_monitor_scale_factor (GdkScreen *screen,
-                                             gint       monitor_num)
-{
-  GdkQuartzScreen *quartz_screen;
-  NSArray *array;
-  NSScreen *nsscreen;
-  gint scale_factor = 1;
-
-  quartz_screen = GDK_QUARTZ_SCREEN (screen);
-
-  GDK_QUARTZ_ALLOC_POOL;
-
-  array = [NSScreen screens];
-  nsscreen = [array objectAtIndex:monitor_num];
-
-  if (gdk_quartz_osx_version() >= GDK_OSX_LION)
-    scale_factor = [(id <ScaleFactor>) nsscreen backingScaleFactor];
-
-  GDK_QUARTZ_RELEASE_POOL;
-
-  return scale_factor;
-}
-
-static gchar *
-gdk_quartz_screen_make_display_name (GdkScreen *screen)
-{
-  return g_strdup (gdk_display_get_name (_gdk_display));
-}
-
-static GdkWindow *
-gdk_quartz_screen_get_active_window (GdkScreen *screen)
-{
-  return NULL;
-}
-
-static GList *
-gdk_quartz_screen_get_window_stack (GdkScreen *screen)
-{
-  return NULL;
-}
-
-static gboolean
-gdk_quartz_screen_is_composited (GdkScreen *screen)
-{
-  return TRUE;
-}
-
 static void
 gdk_quartz_screen_class_init (GdkQuartzScreenClass *klass)
 {
@@ -498,13 +411,6 @@ gdk_quartz_screen_class_init (GdkQuartzScreenClass *klass)
   screen_class->get_height_mm = gdk_quartz_screen_get_height_mm;
   screen_class->get_number = gdk_quartz_screen_get_number;
   screen_class->get_root_window = gdk_quartz_screen_get_root_window;
-  screen_class->get_n_monitors = gdk_quartz_screen_get_n_monitors;
-  screen_class->get_primary_monitor = gdk_quartz_screen_get_primary_monitor;
-  screen_class->get_monitor_width_mm = gdk_quartz_screen_get_monitor_width_mm;
-  screen_class->get_monitor_height_mm = gdk_quartz_screen_get_monitor_height_mm;
-  screen_class->get_monitor_plug_name = gdk_quartz_screen_get_monitor_plug_name;
-  screen_class->get_monitor_geometry = gdk_quartz_screen_get_monitor_geometry;
-  screen_class->get_monitor_workarea = gdk_quartz_screen_get_monitor_workarea;
   screen_class->is_composited = gdk_quartz_screen_is_composited;
   screen_class->make_display_name = gdk_quartz_screen_make_display_name;
   screen_class->get_active_window = gdk_quartz_screen_get_active_window;
@@ -522,5 +428,4 @@ gdk_quartz_screen_class_init (GdkQuartzScreenClass *klass)
   screen_class->query_depths = _gdk_quartz_screen_query_depths;
   screen_class->query_visual_types = _gdk_quartz_screen_query_visual_types;
   screen_class->list_visuals = _gdk_quartz_screen_list_visuals;
-  screen_class->get_monitor_scale_factor = _gdk_quartz_screen_get_monitor_scale_factor;
 }

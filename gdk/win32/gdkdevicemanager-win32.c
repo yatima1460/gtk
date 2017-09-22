@@ -30,6 +30,7 @@
 #include "gdkdevice-virtual.h"
 #include "gdkdevice-wintab.h"
 #include "gdkdisplayprivate.h"
+#include "gdkseatdefaultprivate.h"
 
 #define WINTAB32_DLL "Wintab32.dll"
 
@@ -65,31 +66,12 @@ static t_WTOverlap p_WTOverlap;
 static t_WTPacket p_WTPacket;
 static t_WTQueueSizeSet p_WTQueueSizeSet;
 
-
-static void    gdk_device_manager_win32_finalize    (GObject *object);
-static void    gdk_device_manager_win32_constructed (GObject *object);
-
-static GList * gdk_device_manager_win32_list_devices (GdkDeviceManager *device_manager,
-                                                      GdkDeviceType     type);
-static GdkDevice * gdk_device_manager_win32_get_client_pointer (GdkDeviceManager *device_manager);
-
+static gboolean default_display_opened = FALSE;
 
 G_DEFINE_TYPE (GdkDeviceManagerWin32, gdk_device_manager_win32, GDK_TYPE_DEVICE_MANAGER)
 
-static void
-gdk_device_manager_win32_class_init (GdkDeviceManagerWin32Class *klass)
-{
-  GdkDeviceManagerClass *device_manager_class = GDK_DEVICE_MANAGER_CLASS (klass);
-  GObjectClass *object_class = G_OBJECT_CLASS (klass);
-
-  object_class->finalize = gdk_device_manager_win32_finalize;
-  object_class->constructed = gdk_device_manager_win32_constructed;
-  device_manager_class->list_devices = gdk_device_manager_win32_list_devices;
-  device_manager_class->get_client_pointer = gdk_device_manager_win32_get_client_pointer;
-}
-
 static GdkDevice *
-create_pointer (GdkDeviceManager *device_manager, 
+create_pointer (GdkDeviceManager *device_manager,
 		GType g_type,
 		const char *name,
 		GdkDeviceType type)
@@ -100,13 +82,13 @@ create_pointer (GdkDeviceManager *device_manager,
                        "input-source", GDK_SOURCE_MOUSE,
                        "input-mode", GDK_MODE_SCREEN,
                        "has-cursor", type == GDK_DEVICE_TYPE_MASTER,
-                       "display", _gdk_display,
+                       "display", gdk_device_manager_get_display (device_manager),
                        "device-manager", device_manager,
                        NULL);
 }
 
 static GdkDevice *
-create_keyboard (GdkDeviceManager *device_manager, 
+create_keyboard (GdkDeviceManager *device_manager,
 		 GType g_type,
 		 const char *name,
 		 GdkDeviceType type)
@@ -117,7 +99,7 @@ create_keyboard (GdkDeviceManager *device_manager,
                        "input-source", GDK_SOURCE_KEYBOARD,
                        "input-mode", GDK_MODE_SCREEN,
                        "has-cursor", FALSE,
-                       "display", _gdk_display,
+                       "display", gdk_device_manager_get_display (device_manager),
                        "device-manager", device_manager,
                        NULL);
 }
@@ -367,11 +349,10 @@ print_cursor (int index)
 }
 #endif
 
-void
-_gdk_input_wintab_init_check (GdkDeviceManager *_device_manager)
+static void
+wintab_init_check (GdkDeviceManagerWin32 *device_manager)
 {
-  GdkDeviceManagerWin32 *device_manager = (GdkDeviceManagerWin32 *)_device_manager;
-  GdkDisplay *display = gdk_device_manager_get_display (_device_manager);
+  GdkDisplay *display = gdk_device_manager_get_display (GDK_DEVICE_MANAGER (device_manager));
   GdkWindow *root = gdk_screen_get_root_window (gdk_display_get_default_screen (display));
   static gboolean wintab_initialized = FALSE;
   GdkDeviceWintab *device;
@@ -382,7 +363,8 @@ _gdk_input_wintab_init_check (GdkDeviceManager *_device_manager)
   BOOL active;
   DWORD physid;
   AXIS axis_x, axis_y, axis_npressure, axis_or[3];
-  int i, devix, cursorix, num_axes = 0;
+  UINT devix, cursorix;
+  int i, num_axes = 0;
   wchar_t devname[100], csrname[100];
   gchar *devname_utf8, *csrname_utf8, *device_name;
   BOOL defcontext_done;
@@ -408,7 +390,7 @@ _gdk_input_wintab_init_check (GdkDeviceManager *_device_manager)
 
   wintab32_dll_path = g_malloc (n + 1 + strlen (WINTAB32_DLL));
   k = GetSystemDirectory (wintab32_dll_path, n);
-  
+
   if (k == 0 || k > n)
     {
       g_free (wintab32_dll_path);
@@ -481,7 +463,7 @@ _gdk_input_wintab_init_check (GdkDeviceManager *_device_manager)
       (*p_WTInfoW) (WTI_DEVICES + devix, DVC_NAME, devname);
       devname_utf8 = g_utf16_to_utf8 (devname, -1, NULL, NULL, NULL);
 #ifdef DEBUG_WINTAB
-      GDK_NOTE (INPUT, (g_print("Device %d: %s\n", devix, devname_utf8)));
+      GDK_NOTE (INPUT, (g_print("Device %u: %s\n", devix, devname_utf8)));
 #endif
       (*p_WTInfoA) (WTI_DEVICES + devix, DVC_NCSRTYPES, &ncsrtypes);
       (*p_WTInfoA) (WTI_DEVICES + devix, DVC_FIRSTCSR, &firstcsr);
@@ -525,7 +507,7 @@ _gdk_input_wintab_init_check (GdkDeviceManager *_device_manager)
       lc.lcOutExtY = axis_y.axMax - axis_y.axMin + 1;
       lc.lcOutExtY = -lc.lcOutExtY; /* We want Y growing downward */
 #if DEBUG_WINTAB
-      GDK_NOTE (INPUT, (g_print("context for device %d:\n", devix),
+      GDK_NOTE (INPUT, (g_print("context for device %u:\n", devix),
 			print_lc(&lc)));
 #endif
       hctx = g_new (HCTX, 1);
@@ -534,7 +516,7 @@ _gdk_input_wintab_init_check (GdkDeviceManager *_device_manager)
           g_warning ("gdk_input_wintab_init: WTOpen failed");
           return;
         }
-      GDK_NOTE (INPUT, g_print ("opened Wintab device %d %p\n",
+      GDK_NOTE (INPUT, g_print ("opened Wintab device %u %p\n",
                                 devix, *hctx));
 
       wintab_contexts = g_list_append (wintab_contexts, hctx);
@@ -544,7 +526,7 @@ _gdk_input_wintab_init_check (GdkDeviceManager *_device_manager)
       (*p_WTOverlap) (*hctx, TRUE);
 
 #if DEBUG_WINTAB
-      GDK_NOTE (INPUT, (g_print("context for device %d after WTOpen:\n", devix),
+      GDK_NOTE (INPUT, (g_print("context for device %u after WTOpen:\n", devix),
 			print_lc(&lc)));
 #endif
       /* Increase packet queue size to reduce the risk of lost packets.
@@ -565,7 +547,7 @@ _gdk_input_wintab_init_check (GdkDeviceManager *_device_manager)
       for (cursorix = firstcsr; cursorix < firstcsr + ncsrtypes; cursorix++)
         {
 #ifdef DEBUG_WINTAB
-          GDK_NOTE (INPUT, (g_print("Cursor %d:\n", cursorix), print_cursor (cursorix)));
+          GDK_NOTE (INPUT, (g_print("Cursor %u:\n", cursorix), print_cursor (cursorix)));
 #endif
           active = FALSE;
           (*p_WTInfoA) (WTI_CURSORS + cursorix, CSR_ACTIVE, &active);
@@ -594,7 +576,7 @@ _gdk_input_wintab_init_check (GdkDeviceManager *_device_manager)
                                  "input-source", GDK_SOURCE_PEN,
                                  "input-mode", GDK_MODE_SCREEN,
                                  "has-cursor", lc.lcOptions & CXO_SYSTEM,
-                                 "display", _gdk_display,
+                                 "display", display,
                                  "device-manager", device_manager,
                                  NULL);
 
@@ -645,17 +627,12 @@ _gdk_input_wintab_init_check (GdkDeviceManager *_device_manager)
               num_axes++;
             }
 
-          /* The wintab driver for the Wacom ArtPad II reports
-           * PK_ORIENTATION in CSR_PKTDATA, but the tablet doesn't
-           * actually sense tilt. Catch this by noticing that the
-           * orientation axis's azimuth resolution is zero.
-           */
-          if ((device->pktdata & PK_ORIENTATION) && axis_or[0].axResolution == 0)
+          if (device->pktdata & PK_ORIENTATION)
             {
               device->orientation_axes[0] = axis_or[0];
               device->orientation_axes[1] = axis_or[1];
 
-              /* Wintab gives us aximuth and altitude, which
+              /* Wintab gives us azimuth and altitude, which
                * we convert to x and y tilt in the -1000..1000 range
                */
               _gdk_device_add_axis (GDK_DEVICE (device),
@@ -676,7 +653,7 @@ _gdk_input_wintab_init_check (GdkDeviceManager *_device_manager)
 
           device->last_axis_data = g_new (gint, num_axes);
 
-          GDK_NOTE (INPUT, g_print ("device: (%d) %s axes: %d\n",
+          GDK_NOTE (INPUT, g_print ("device: (%u) %s axes: %d\n",
                                     cursorix,
                                     device_name,
                                     num_axes));
@@ -700,18 +677,50 @@ _gdk_input_wintab_init_check (GdkDeviceManager *_device_manager)
     }
 }
 
+/* Only initialize Wintab after the default display is set for
+ * the first time. WTOpenA() executes code beyond our control,
+ * and it can cause messages to be sent to the application even
+ * before a window is opened. GDK has to be in a fit state to
+ * handle them when they come.
+ *
+ * https://bugzilla.gnome.org/show_bug.cgi?id=774379
+ */
+static void
+wintab_default_display_notify_cb (GdkDisplayManager *display_manager)
+{
+  GdkDeviceManagerWin32 *device_manager = NULL;
+  GdkDisplay *display = gdk_display_get_default();
+
+  if (default_display_opened)
+    return;
+
+  g_assert (display != NULL);
+
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
+  device_manager = GDK_DEVICE_MANAGER_WIN32 (gdk_display_get_device_manager (display));
+G_GNUC_END_IGNORE_DEPRECATIONS;
+  g_assert (display_manager != NULL);
+
+  default_display_opened = TRUE;
+  GDK_NOTE (INPUT, g_print ("wintab init: doing delayed initialization\n"));
+  wintab_init_check (device_manager);
+}
+
 static void
 gdk_device_manager_win32_constructed (GObject *object)
 {
   GdkDeviceManagerWin32 *device_manager;
+  GdkSeat *seat;
+  GdkDisplayManager *display_manager = NULL;
+  GdkDisplay *default_display = NULL;
 
   device_manager = GDK_DEVICE_MANAGER_WIN32 (object);
-  device_manager->core_pointer = 
+  device_manager->core_pointer =
     create_pointer (GDK_DEVICE_MANAGER (device_manager),
 		    GDK_TYPE_DEVICE_VIRTUAL,
 		    "Virtual Core Pointer",
 		    GDK_DEVICE_TYPE_MASTER);
-  device_manager->system_pointer = 
+  device_manager->system_pointer =
     create_pointer (GDK_DEVICE_MANAGER (device_manager),
 		    GDK_TYPE_DEVICE_WIN32,
 		    "System Aggregated Pointer",
@@ -721,12 +730,12 @@ gdk_device_manager_win32_constructed (GObject *object)
   _gdk_device_set_associated_device (device_manager->system_pointer, device_manager->core_pointer);
   _gdk_device_add_slave (device_manager->core_pointer, device_manager->system_pointer);
 
-  device_manager->core_keyboard = 
+  device_manager->core_keyboard =
     create_keyboard (GDK_DEVICE_MANAGER (device_manager),
 		     GDK_TYPE_DEVICE_VIRTUAL,
 		     "Virtual Core Keyboard",
 		     GDK_DEVICE_TYPE_MASTER);
-  device_manager->system_keyboard = 
+  device_manager->system_keyboard =
     create_keyboard (GDK_DEVICE_MANAGER (device_manager),
 		    GDK_TYPE_DEVICE_WIN32,
 		     "System Aggregated Keyboard",
@@ -738,6 +747,26 @@ gdk_device_manager_win32_constructed (GObject *object)
 
   _gdk_device_set_associated_device (device_manager->core_pointer, device_manager->core_keyboard);
   _gdk_device_set_associated_device (device_manager->core_keyboard, device_manager->core_pointer);
+
+  seat = gdk_seat_default_new_for_master_pair (device_manager->core_pointer,
+                                               device_manager->core_keyboard);
+  gdk_display_add_seat (gdk_device_manager_get_display (GDK_DEVICE_MANAGER (object)), seat);
+  gdk_seat_default_add_slave (GDK_SEAT_DEFAULT (seat), device_manager->system_pointer);
+  gdk_seat_default_add_slave (GDK_SEAT_DEFAULT (seat), device_manager->system_keyboard);
+  g_object_unref (seat);
+
+  /* Only call Wintab init stuff after the default display
+   * is globally known and accessible through the display manager
+   * singleton. Approach lifted from gtkmodules.c.
+   */
+  display_manager = gdk_display_manager_get();
+  g_assert (display_manager != NULL);
+  default_display = gdk_display_manager_get_default_display (display_manager);
+  g_assert (default_display == NULL);
+
+  g_signal_connect (display_manager, "notify::default-display",
+                    G_CALLBACK (wintab_default_display_notify_cb),
+                    NULL);
 }
 
 static GList *
@@ -754,7 +783,7 @@ gdk_device_manager_win32_list_devices (GdkDeviceManager *device_manager,
       devices = g_list_prepend (devices, device_manager_win32->core_keyboard);
       devices = g_list_prepend (devices, device_manager_win32->core_pointer);
     }
-  else 
+  else
     {
       if (type == GDK_DEVICE_TYPE_SLAVE)
 	{
@@ -781,6 +810,18 @@ gdk_device_manager_win32_get_client_pointer (GdkDeviceManager *device_manager)
 
   device_manager_win32 = (GdkDeviceManagerWin32 *) device_manager;
   return device_manager_win32->core_pointer;
+}
+
+static void
+gdk_device_manager_win32_class_init (GdkDeviceManagerWin32Class *klass)
+{
+  GdkDeviceManagerClass *device_manager_class = GDK_DEVICE_MANAGER_CLASS (klass);
+  GObjectClass *object_class = G_OBJECT_CLASS (klass);
+
+  object_class->finalize = gdk_device_manager_win32_finalize;
+  object_class->constructed = gdk_device_manager_win32_constructed;
+  device_manager_class->list_devices = gdk_device_manager_win32_list_devices;
+  device_manager_class->get_client_pointer = gdk_device_manager_win32_get_client_pointer;
 }
 
 void
@@ -815,11 +856,34 @@ decode_tilt (gint   *axis_data,
 {
   double az, el;
 
-  /* As I don't have a tilt-sensing tablet,
-   * I cannot test this code.
+  g_return_if_fail (axis_data != NULL);
+
+  /* The wintab driver for the Wacom ArtPad II reports
+   * PK_ORIENTATION in CSR_PKTDATA, but the tablet doesn't
+   * actually sense tilt. Catch this by noticing that the
+   * orientation axis's azimuth resolution is zero.
+   *
+   * The same is true of the Huion H610PRO, but in this case
+   * it's the altitude resolution that's zero. GdkEvents with
+   * sensible tilts will need both, so only add the GDK tilt axes
+   * if both wintab axes are going to be well-behaved in use.
+   */
+  if ((axes == NULL) ||
+      (axes[0].axResolution == 0) ||
+      (axes[1].axResolution == 0))
+    {
+      axis_data[0] = 0;
+      axis_data[1] = 0;
+      return;
+    }
+
+  /*
+   * Tested with a Wacom Intuos 5 touch M (PTH-650) + Wacom drivers 6.3.18-5.
+   * Wintab's reference angle leads gdk's by 90 degrees.
    */
   az = TWOPI * packet->pkOrientation.orAzimuth /
     (axes[0].axResolution / 65536.);
+  az -= G_PI / 2;
   el = TWOPI * packet->pkOrientation.orAltitude /
     (axes[1].axResolution / 65536.);
 
@@ -855,20 +919,16 @@ get_modifier_key_state (void)
 }
 
 static GdkDeviceWintab *
-_gdk_device_manager_find_wintab_device (HCTX hctx,
-                                        UINT cursor)
+gdk_device_manager_find_wintab_device (GdkDeviceManagerWin32 *device_manager,
+                                       HCTX                   hctx,
+                                       UINT                   cursor)
 {
-  GdkDeviceManagerWin32 *device_manager;
   GdkDeviceWintab *device;
   GList *tmp_list;
 
-  device_manager = GDK_DEVICE_MANAGER_WIN32 (gdk_display_get_device_manager (_gdk_display));
-  tmp_list = device_manager->wintab_devices;
-
-  while (tmp_list)
+  for (tmp_list = device_manager->wintab_devices; tmp_list != NULL; tmp_list = tmp_list->next)
     {
       device = tmp_list->data;
-      tmp_list = tmp_list->next;
 
       if (device->hctx == hctx &&
           device->cursor == cursor)
@@ -879,9 +939,10 @@ _gdk_device_manager_find_wintab_device (HCTX hctx,
 }
 
 gboolean
-_gdk_input_other_event (GdkEvent  *event,
-                        MSG       *msg,
-                        GdkWindow *window)
+gdk_input_other_event (GdkDisplay *display,
+                       GdkEvent   *event,
+                       MSG        *msg,
+                       GdkWindow  *window)
 {
   GdkDeviceManagerWin32 *device_manager;
   GdkDeviceWintab *source_device = NULL;
@@ -889,6 +950,7 @@ _gdk_input_other_event (GdkEvent  *event,
   GdkEventMask masktest;
   guint key_state;
   POINT pt;
+  GdkWindowImplWin32 *impl;
 
   PACKET packet;
   gint root_x, root_y;
@@ -902,19 +964,21 @@ _gdk_input_other_event (GdkEvent  *event,
 
   if (event->any.window != wintab_window)
     {
-      g_warning ("_gdk_input_other_event: not wintab_window?");
+      g_warning ("gdk_input_other_event: not wintab_window?");
       return FALSE;
     }
 
-  device_manager = GDK_DEVICE_MANAGER_WIN32 (gdk_display_get_device_manager (_gdk_display));
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
+  device_manager = GDK_DEVICE_MANAGER_WIN32 (gdk_display_get_device_manager (display));
+G_GNUC_END_IGNORE_DEPRECATIONS;
   window = gdk_device_get_window_at_position (device_manager->core_pointer, &x, &y);
   if (window == NULL)
-    window = _gdk_root;
+    window = gdk_get_default_root_window ();
 
   g_object_ref (window);
 
   GDK_NOTE (EVENTS_OR_INPUT,
-	    g_print ("_gdk_input_other_event: window=%p %+d%+d\n",
+	    g_print ("gdk_input_other_event: window=%p %+d%+d\n",
                GDK_WINDOW_HWND (window), x, y));
 
   if (msg->message == WT_PACKET || msg->message == WT_CSRCHANGE)
@@ -926,6 +990,54 @@ _gdk_input_other_event (GdkEvent  *event,
   switch (msg->message)
     {
     case WT_PACKET:
+      source_device = gdk_device_manager_find_wintab_device (device_manager,
+							     (HCTX) msg->lParam,
+							     packet.pkCursor);
+
+      /* Check this first, as we get WT_PROXIMITY for disabled devices too */
+      if (device_manager->dev_entered_proximity > 0)
+	{
+	  /* This is the same code as in WT_CSRCHANGE. Some drivers send
+	   * WT_CSRCHANGE after each WT_PROXIMITY with LOWORD(lParam) != 0,
+	   * this code is for those that don't.
+	   */
+	  device_manager->dev_entered_proximity -= 1;
+
+	  if (source_device != NULL &&
+	      source_device->sends_core &&
+	      gdk_device_get_mode (GDK_DEVICE (source_device)) != GDK_MODE_DISABLED)
+	    {
+	      _gdk_device_virtual_set_active (device_manager->core_pointer,
+					      GDK_DEVICE (source_device));
+	      _gdk_input_ignore_core += 1;
+	    }
+	}
+      else if (source_device != NULL &&
+	       source_device->sends_core &&
+	       gdk_device_get_mode (GDK_DEVICE (source_device)) != GDK_MODE_DISABLED &&
+               _gdk_input_ignore_core == 0)
+        {
+          /* A fallback for cases when two devices (disabled and enabled)
+           * were in proximity simultaneously.
+           * In this case the removal of a disabled device would also
+           * make the system pointer active, as we don't know which
+           * device was removed and assume it was the enabled one.
+           * If we are still getting packets for the enabled device,
+           * it means that the device that was removed was the disabled
+           * device, so we must make the enabled device active again and
+           * start ignoring the core pointer events. In practice this means that
+           * removing a disabled device while an enabled device is still
+           * in proximity might briefly make the core pointer active/visible.
+           */
+	  _gdk_device_virtual_set_active (device_manager->core_pointer,
+					  GDK_DEVICE (source_device));
+	  _gdk_input_ignore_core += 1;
+        }
+
+      if (source_device == NULL ||
+	  gdk_device_get_mode (GDK_DEVICE (source_device)) == GDK_MODE_DISABLED)
+	return FALSE;
+
       /* Don't produce any button or motion events while a window is being
        * moved or resized, see bug #151090.
        */
@@ -935,14 +1047,7 @@ _gdk_input_other_event (GdkEvent  *event,
           return FALSE;
         }
 
-      if ((source_device = _gdk_device_manager_find_wintab_device ((HCTX) msg->lParam,
-								   packet.pkCursor)) == NULL)
-        return FALSE;
-
-      if (gdk_device_get_mode (GDK_DEVICE (source_device)) == GDK_MODE_DISABLED)
-        return FALSE;
-
-      last_grab = _gdk_display_get_last_device_grab (_gdk_display, GDK_DEVICE (source_device));
+      last_grab = _gdk_display_get_last_device_grab (display, GDK_DEVICE (source_device));
 
       if (last_grab && last_grab->window)
         {
@@ -951,7 +1056,7 @@ _gdk_input_other_event (GdkEvent  *event,
           window = g_object_ref (last_grab->window);
         }
 
-      if (window == _gdk_root)
+      if (window == gdk_get_default_root_window ())
         {
           GDK_NOTE (EVENTS_OR_INPUT, g_print ("... is root\n"));
           return FALSE;
@@ -1028,19 +1133,20 @@ _gdk_input_other_event (GdkEvent  *event,
         {
           GDK_NOTE (EVENTS_OR_INPUT, g_print ("... not selected\n"));
 
-          if (window->parent == GDK_WINDOW (_gdk_root) ||
-	      window->parent == NULL)
+          if (window->parent == gdk_get_default_root_window () || window->parent == NULL)
             return FALSE;
 
-          pt.x = x;
-          pt.y = y;
+          impl = GDK_WINDOW_IMPL_WIN32 (window->impl);
+          pt.x = x * impl->window_scale;
+          pt.y = y * impl->window_scale;
           ClientToScreen (GDK_WINDOW_HWND (window), &pt);
           g_object_unref (window);
           window = window->parent;
+          impl = GDK_WINDOW_IMPL_WIN32 (window->impl);
           g_object_ref (window);
           ScreenToClient (GDK_WINDOW_HWND (window), &pt);
-          x = pt.x;
-          y = pt.y;
+          x = pt.x / impl->window_scale;
+          y = pt.y / impl->window_scale;
           GDK_NOTE (EVENTS_OR_INPUT, g_print ("... propagating to %p %+d%+d\n",
                                               GDK_WINDOW_HWND (window), x, y));
         }
@@ -1054,6 +1160,7 @@ _gdk_input_other_event (GdkEvent  *event,
 	  if (source_device->sends_core)
 	    gdk_event_set_device (event, device_manager->core_pointer);
           gdk_event_set_source_device (event, GDK_DEVICE (source_device));
+          gdk_event_set_seat (event, gdk_device_get_seat (device_manager->core_pointer));
 
           event->button.axes = g_new (gdouble, num_axes);
 	  gdk_window_get_origin (window, &root_x, &root_y);
@@ -1086,6 +1193,7 @@ _gdk_input_other_event (GdkEvent  *event,
           event->motion.is_hint = FALSE;
           gdk_event_set_device (event, device_manager->core_pointer);
           gdk_event_set_source_device (event, GDK_DEVICE (source_device));
+          gdk_event_set_seat (event, gdk_device_get_seat (device_manager->core_pointer));
 
           event->motion.axes = g_new (gdouble, num_axes);
 	  gdk_window_get_origin (window, &root_x, &root_y);
@@ -1112,17 +1220,20 @@ _gdk_input_other_event (GdkEvent  *event,
       return TRUE;
 
     case WT_CSRCHANGE:
-      if ((source_device = _gdk_device_manager_find_wintab_device ((HCTX) msg->lParam,
-								   packet.pkCursor)) == NULL)
-        return FALSE;
+      if (device_manager->dev_entered_proximity > 0)
+	device_manager->dev_entered_proximity -= 1;
 
-      if (gdk_device_get_mode (GDK_DEVICE (source_device)) == GDK_MODE_DISABLED)
-        return FALSE;
+      if ((source_device = gdk_device_manager_find_wintab_device (device_manager,
+								  (HCTX) msg->lParam,
+								  packet.pkCursor)) == NULL)
+	return FALSE;
 
-      if (source_device->sends_core)
+      if (source_device->sends_core &&
+	  gdk_device_get_mode (GDK_DEVICE (source_device)) != GDK_MODE_DISABLED)
 	{
-	  _gdk_device_virtual_set_active (device_manager->core_pointer, GDK_DEVICE (source_device));
-	  _gdk_input_ignore_core = TRUE;
+	  _gdk_device_virtual_set_active (device_manager->core_pointer,
+					  GDK_DEVICE (source_device));
+	  _gdk_input_ignore_core += 1;
 	}
 
       return FALSE;
@@ -1130,10 +1241,19 @@ _gdk_input_other_event (GdkEvent  *event,
     case WT_PROXIMITY:
       if (LOWORD (msg->lParam) == 0)
         {
-	  _gdk_input_ignore_core = FALSE;
-	  _gdk_device_virtual_set_active (device_manager->core_pointer,
-					  device_manager->system_pointer);
-        }
+          if (_gdk_input_ignore_core > 0)
+            {
+	      _gdk_input_ignore_core -= 1;
+
+	      if (_gdk_input_ignore_core == 0)
+		_gdk_device_virtual_set_active (device_manager->core_pointer,
+						device_manager->system_pointer);
+	    }
+	}
+      else
+	{
+	  device_manager->dev_entered_proximity += 1;
+	}
 
       return FALSE;
     }

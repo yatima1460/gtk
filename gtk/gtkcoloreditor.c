@@ -15,13 +15,6 @@
  * License along with this library. If not, see <http://www.gnu.org/licenses/>.
  */
 
-/* TODO
- * - touch
- * - accessible relations for popups
- * - saving per-application (?)
- * - better popup theming
- */
-
 #include "config.h"
 
 #include "gtkcoloreditorprivate.h"
@@ -67,6 +60,8 @@ struct _GtkColorEditorPrivate
   GtkAdjustment *s_adj;
   GtkAdjustment *v_adj;
   GtkAdjustment *a_adj;
+
+  gint popup_position;
 
   guint text_changed : 1;
   guint use_alpha    : 1;
@@ -177,10 +172,12 @@ dismiss_current_popup (GtkColorEditor *editor)
     {
       gtk_widget_hide (editor->priv->current_popup);
       editor->priv->current_popup = NULL;
+      editor->priv->popup_position = 0;
       if (editor->priv->popdown_focus)
         {
-          gtk_widget_grab_focus (editor->priv->popdown_focus);
-          editor->priv->popdown_focus = NULL;
+          if (gtk_widget_is_visible (editor->priv->popdown_focus))
+            gtk_widget_grab_focus (editor->priv->popdown_focus);
+          g_clear_object (&editor->priv->popdown_focus);
         }
     }
 }
@@ -192,29 +189,39 @@ popup_edit (GtkWidget      *widget,
   GtkWidget *popup = NULL;
   GtkWidget *toplevel;
   GtkWidget *focus;
+  gint position;
+  gint s, e;
 
   if (widget == editor->priv->sv_plane)
     {
       popup = editor->priv->sv_popup;
       focus = editor->priv->s_entry;
+      position = 0;
     }
   else if (widget == editor->priv->h_slider)
     {
       popup = editor->priv->h_popup;
       focus = editor->priv->h_entry;
+      gtk_range_get_slider_range (GTK_RANGE (editor->priv->h_slider), &s, &e);
+      position = (s + e) / 2;
     }
   else if (widget == editor->priv->a_slider)
     {
       popup = editor->priv->a_popup;
       focus = editor->priv->a_entry;
+      gtk_range_get_slider_range (GTK_RANGE (editor->priv->a_slider), &s, &e);
+      position = (s + e) / 2;
     }
 
-  if (popup)
+  if (popup == editor->priv->current_popup)
+    dismiss_current_popup (editor);
+  else if (popup)
     {
       dismiss_current_popup (editor);
       toplevel = gtk_widget_get_toplevel (GTK_WIDGET (editor));
-      editor->priv->popdown_focus = gtk_window_get_focus (GTK_WINDOW (toplevel));
+      g_set_object (&editor->priv->popdown_focus, gtk_window_get_focus (GTK_WINDOW (toplevel)));
       editor->priv->current_popup = popup;
+      editor->priv->popup_position = position;
       gtk_widget_show (popup);
       gtk_widget_grab_focus (focus);
     }
@@ -253,11 +260,14 @@ get_child_position (GtkOverlay     *overlay,
 
   if (widget == editor->priv->sv_popup)
     {
+      gtk_widget_translate_coordinates (editor->priv->sv_plane,
+                                        gtk_widget_get_parent (editor->priv->grid),
+                                        0, -6,
+                                        &allocation->x, &allocation->y);
       if (gtk_widget_get_direction (GTK_WIDGET (overlay)) == GTK_TEXT_DIR_RTL)
         allocation->x = 0;
       else
         allocation->x = gtk_widget_get_allocated_width (GTK_WIDGET (overlay)) - req.width;
-      allocation->y = req.height / 3;
     }
   else if (widget == editor->priv->h_popup)
     {
@@ -267,12 +277,12 @@ get_child_position (GtkOverlay     *overlay,
       if (gtk_widget_get_direction (GTK_WIDGET (overlay)) == GTK_TEXT_DIR_RTL)
         gtk_widget_translate_coordinates (editor->priv->h_slider,
                                           gtk_widget_get_parent (editor->priv->grid),
-                                          - req.width, (s + e - req.height) / 2,
+                                          - req.width - 6, editor->priv->popup_position - req.height / 2,
                                           &allocation->x, &allocation->y);
       else
         gtk_widget_translate_coordinates (editor->priv->h_slider,
                                           gtk_widget_get_parent (editor->priv->grid),
-                                          alloc.width, (s + e - req.height) / 2,
+                                          alloc.width + 6, editor->priv->popup_position - req.height / 2,
                                           &allocation->x, &allocation->y);
     }
   else if (widget == editor->priv->a_popup)
@@ -282,7 +292,7 @@ get_child_position (GtkOverlay     *overlay,
 
       gtk_widget_translate_coordinates (editor->priv->a_slider,
                                         gtk_widget_get_parent (editor->priv->grid),
-                                        (s + e - req.width) / 2, - req.height,
+                                        editor->priv->popup_position - req.width / 2, - req.height - 6,
                                         &allocation->x, &allocation->y);
     }
   else
@@ -364,10 +374,10 @@ gtk_color_editor_init (GtkColorEditor *editor)
 
   if (gtk_widget_get_direction (editor->priv->h_slider) == GTK_TEXT_DIR_RTL)
     gtk_style_context_add_class (gtk_widget_get_style_context (editor->priv->h_slider),
-                                 GTK_STYLE_CLASS_SCALE_HAS_MARKS_ABOVE);
+                                 "marks-before");
   else
     gtk_style_context_add_class (gtk_widget_get_style_context (editor->priv->h_slider),
-                                 GTK_STYLE_CLASS_SCALE_HAS_MARKS_BELOW);
+                                 "marks-after");
 
   /* Create the scaled popup adjustments manually here because connecting user data is not
    * supported by template GtkBuilder xml (it would be possible to set this up in the xml
@@ -382,6 +392,18 @@ gtk_color_editor_init (GtkColorEditor *editor)
   gtk_overlay_add_overlay (GTK_OVERLAY (editor->priv->overlay), editor->priv->sv_popup);
   gtk_overlay_add_overlay (GTK_OVERLAY (editor->priv->overlay), editor->priv->h_popup);
   gtk_overlay_add_overlay (GTK_OVERLAY (editor->priv->overlay), editor->priv->a_popup);
+
+  gtk_style_context_remove_class (gtk_widget_get_style_context (editor->priv->swatch), "activatable");
+}
+
+static void
+gtk_color_editor_dispose (GObject *object)
+{
+  GtkColorEditor *editor = GTK_COLOR_EDITOR (object);
+
+  dismiss_current_popup (editor);
+
+  G_OBJECT_CLASS (gtk_color_editor_parent_class)->dispose (object);
 }
 
 static void
@@ -452,6 +474,7 @@ gtk_color_editor_class_init (GtkColorEditorClass *class)
   GObjectClass *object_class = G_OBJECT_CLASS (class);
   GtkWidgetClass *widget_class = GTK_WIDGET_CLASS (class);
 
+  object_class->dispose = gtk_color_editor_dispose;
   object_class->get_property = gtk_color_editor_get_property;
   object_class->set_property = gtk_color_editor_set_property;
 

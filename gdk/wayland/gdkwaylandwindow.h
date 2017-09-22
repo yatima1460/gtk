@@ -60,6 +60,23 @@ void                     gdk_wayland_window_set_dbus_properties_libgtk_only (Gdk
 									     const char *application_object_path,
 									     const char *unique_bus_name);
 
+typedef void (*GdkWaylandWindowExported) (GdkWindow  *window,
+                                          const char *handle,
+                                          gpointer    user_data);
+
+GDK_AVAILABLE_IN_3_22
+gboolean                 gdk_wayland_window_export_handle (GdkWindow               *window,
+                                                           GdkWaylandWindowExported callback,
+                                                           gpointer                 user_data,
+                                                           GDestroyNotify           destroy_func);
+
+GDK_AVAILABLE_IN_3_22
+void                     gdk_wayland_window_unexport_handle (GdkWindow *window);
+
+GDK_AVAILABLE_IN_3_22
+gboolean                 gdk_wayland_window_set_transient_for_exported (GdkWindow *window,
+                                                                        char      *parent_handle_str);
+
 G_END_DECLS
 
 #endif /* __GDK_WAYLAND_WINDOW_H__ */

@@ -95,7 +95,7 @@ ChangeLog:
 uninstall-local:
 	rm -f $(DESTDIR)$(pkgconfigdir)/gtk+-3.0.pc
 
-DISTCHECK_CONFIGURE_FLAGS =		\
+AM_DISTCHECK_CONFIGURE_FLAGS =		\
 	--enable-gtk-doc 		\
 	--disable-doc-cross-references  \
 	--enable-man 			\
@@ -103,14 +103,7 @@ DISTCHECK_CONFIGURE_FLAGS =		\
 	--enable-introspection  	\
 	--enable-installed-tests
 
-GITIGNOREFILES = \
-	po-properties/Makefile.in.in \
-	po-properties/Makefile.in \
-	po-properties/Makefile \
-	po-properties/*.gmo \
-	po-properties/*.mo \
-	po-properties/POTFILES \
-	po-properties/stamp-it \
-	po-properties/.intltool-merge-cache
+GITIGNORE_TRANSLATION_DIRS = po-properties
+GITIGNOREFILES = po-properties/gtk30-properties.pot
 
 -include $(top_srcdir)/git.mk

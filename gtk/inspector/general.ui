@@ -350,11 +350,11 @@
         </child>
 
         <child>
-          <object class="GtkFrame" id="x_frame">
+          <object class="GtkFrame" id="display_frame">
             <property name="visible">True</property>
             <property name="halign">center</property>
             <child>
-              <object class="GtkListBox" id="x_box">
+              <object class="GtkListBox" id="display_box">
                 <property name="visible">True</property>
                 <property name="selection-mode">none</property>
                 <child>
@@ -368,16 +368,16 @@
                         <property name="margin">10</property>
                         <property name="spacing">40</property>
                         <child>
-                          <object class="GtkLabel" id="x_display_label">
+                          <object class="GtkLabel" id="display_label">
                             <property name="visible">True</property>
-                            <property name="label" translatable="yes">X display</property>
+                            <property name="label" translatable="yes">Display</property>
                             <property name="halign">start</property>
                             <property name="valign">baseline</property>
                             <property name="xalign">0.0</property>
                           </object>
                         </child>
                         <child>
-                          <object class="GtkLabel" id="x_display">
+                          <object class="GtkLabel" id="display_name">
                             <property name="visible">True</property>
                             <property name="selectable">True</property>
                             <property name="halign">end</property>
@@ -403,7 +403,7 @@
                         <property name="margin">10</property>
                         <property name="spacing">40</property>
                         <child>
-                          <object class="GtkLabel" id="x_rgba_label">
+                          <object class="GtkLabel" id="display_rgba_label">
                             <property name="visible">True</property>
                             <property name="label" translatable="yes">RGBA visual</property>
                             <property name="halign">start</property>
@@ -412,7 +412,7 @@
                           </object>
                         </child>
                         <child>
-                          <object class="GtkImage" id="x_rgba">
+                          <object class="GtkImage" id="display_rgba">
                             <property name="halign">end</property>
                             <property name="valign">baseline</property>
                             <property name="icon-name">object-select-symbolic</property>
@@ -437,7 +437,7 @@
                         <property name="margin">10</property>
                         <property name="spacing">40</property>
                         <child>
-                          <object class="GtkLabel" id="x_composited_label">
+                          <object class="GtkLabel" id="display_composited_label">
                             <property name="visible">True</property>
                             <property name="label" translatable="yes">Composited</property>
                             <property name="halign">start</property>
@@ -446,7 +446,7 @@
                           </object>
                         </child>
                         <child>
-                          <object class="GtkImage" id="x_composited">
+                          <object class="GtkImage" id="display_composited">
                             <property name="halign">end</property>
                             <property name="valign">baseline</property>
                             <property name="icon-name">object-select-symbolic</property>
@@ -547,6 +547,20 @@
             </child>
           </object>
         </child>
+
+        <child>
+          <object class="GtkFrame" id="device_frame">
+            <property name="visible">True</property>
+            <property name="halign">center</property>
+            <child>
+              <object class="GtkListBox" id="device_box">
+                <property name="visible">True</property>
+                <property name="selection-mode">none</property>
+              </object>
+            </child>
+          </object>
+        </child>
+
       </object>
     </child>
   </template>
@@ -564,9 +578,9 @@
       <widget name="gtk_exe_prefix_label"/>
       <widget name="gtk_data_prefix_label"/>
       <widget name="gsettings_schema_dir_label"/>
-      <widget name="x_display_label"/>
-      <widget name="x_rgba_label"/>
-      <widget name="x_composited_label"/>
+      <widget name="display_label"/>
+      <widget name="display_rgba_label"/>
+      <widget name="display_composited_label"/>
     </widgets>
   </object>
   <object class="GtkSizeGroup">
@@ -575,7 +589,8 @@
       <widget name="version_frame"/>
       <widget name="gl_frame"/>
       <widget name="env_frame"/>
-      <widget name="x_frame"/>
+      <widget name="display_frame"/>
+      <widget name="device_frame"/>
     </widgets>
   </object>
 </interface>

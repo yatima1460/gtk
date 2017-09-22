@@ -19,7 +19,7 @@
  * Modified by the GTK+ Team and others 1997-2000.  See the AUTHORS
  * file for a list of people on the GTK+ Team.  See the ChangeLog
  * files for a list of changes.  These files are distributed with
- * GTK+ at ftp://ftp.gtk.org/pub/gtk/. 
+ * GTK+ at ftp://ftp.gtk.org/pub/gtk/.
  */
 
 #ifndef __GDK_WIN32_DISPLAY_H__
@@ -49,6 +49,11 @@ typedef struct _GdkWin32DisplayClass GdkWin32DisplayClass;
 
 GDK_AVAILABLE_IN_ALL
 GType      gdk_win32_display_get_type            (void);
+
+GDK_AVAILABLE_IN_3_18
+void       gdk_win32_display_set_cursor_theme    (GdkDisplay  *display,
+                                                  const gchar *name,
+                                                  gint         size);
 
 G_END_DECLS
 

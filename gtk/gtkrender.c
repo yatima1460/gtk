@@ -23,7 +23,6 @@
 #include <math.h>
 
 #include "gtkcsscornervalueprivate.h"
-#include "gtkcssenumvalueprivate.h"
 #include "gtkcssimagebuiltinprivate.h"
 #include "gtkcssimagevalueprivate.h"
 #include "gtkcssnumbervalueprivate.h"
@@ -53,9 +52,9 @@ gtk_do_render_check (GtkStyleContext *context,
   if (state & GTK_STATE_FLAG_INCONSISTENT)
     image_type = GTK_CSS_IMAGE_BUILTIN_CHECK_INCONSISTENT;
   else if (state & GTK_STATE_FLAG_CHECKED)
-    image_type = GTK_CSS_IMAGE_BUILTIN_CHECK_CHECKED;
-  else
     image_type = GTK_CSS_IMAGE_BUILTIN_CHECK;
+  else
+    image_type = GTK_CSS_IMAGE_BUILTIN_NONE;
 
   gtk_css_style_render_icon (gtk_style_context_lookup_style (context), cr, x, y, width, height, image_type);
 }
@@ -95,12 +94,7 @@ gtk_render_check (GtkStyleContext *context,
   if (width <= 0 || height <= 0)
     return;
 
-  cairo_save (cr);
-  cairo_new_path (cr);
-
   gtk_do_render_check (context, cr, x, y, width, height);
-
-  cairo_restore (cr);
 }
 
 static void
@@ -118,9 +112,9 @@ gtk_do_render_option (GtkStyleContext *context,
   if (state & GTK_STATE_FLAG_INCONSISTENT)
     image_type = GTK_CSS_IMAGE_BUILTIN_OPTION_INCONSISTENT;
   else if (state & GTK_STATE_FLAG_CHECKED)
-    image_type = GTK_CSS_IMAGE_BUILTIN_OPTION_CHECKED;
-  else
     image_type = GTK_CSS_IMAGE_BUILTIN_OPTION;
+  else
+    image_type = GTK_CSS_IMAGE_BUILTIN_NONE;
 
   gtk_css_style_render_icon (gtk_style_context_lookup_style (context), cr, x, y, width, height, image_type);
 }
@@ -158,12 +152,7 @@ gtk_render_option (GtkStyleContext *context,
   if (width <= 0 || height <= 0)
     return;
 
-  cairo_save (cr);
-  cairo_new_path (cr);
-
   gtk_do_render_option (context, cr, x, y, width, height);
-
-  cairo_restore (cr);
 }
 
 static void
@@ -213,7 +202,7 @@ gtk_do_render_arrow (GtkStyleContext *context,
  *
  * Renders an arrow pointing to @angle.
  *
- * Typical arrow rendering at 0, 1&solidus;2 &pi;, &pi; and 3&solidus;2 &pi;:
+ * Typical arrow rendering at 0, 1⁄2 π;, π; and 3⁄2 π:
  *
  * ![](arrows.png)
  *
@@ -233,16 +222,7 @@ gtk_render_arrow (GtkStyleContext *context,
   if (size <= 0)
     return;
 
-  cairo_save (cr);
-  cairo_new_path (cr);
-
-  gtk_style_context_save (context);
-  gtk_style_context_add_class (context, GTK_STYLE_CLASS_ARROW);
-
   gtk_do_render_arrow (context, cr, angle, x, y, size);
-
-  gtk_style_context_restore (context);
-  cairo_restore (cr);
 }
 
 /**
@@ -277,14 +257,42 @@ gtk_render_background (GtkStyleContext *context,
   if (width <= 0 || height <= 0)
     return;
 
-  cairo_save (cr);
-  cairo_new_path (cr);
-
   gtk_css_style_render_background (gtk_style_context_lookup_style (context),
                                    cr, x, y, width, height,
                                    gtk_style_context_get_junction_sides (context));
+}
 
-  cairo_restore (cr);
+/**
+ * gtk_render_background_get_clip:
+ * @context: a #GtkStyleContext
+ * @x: X origin of the rectangle
+ * @y: Y origin of the rectangle
+ * @width: rectangle width
+ * @height: rectangle height
+ * @out_clip: (out): return location for the clip
+ *
+ * Returns the area that will be affected (i.e. drawn to) when
+ * calling gtk_render_background() for the given @context and
+ * rectangle.
+ *
+ * Since: 3.20
+ */
+void
+gtk_render_background_get_clip (GtkStyleContext *context,
+                                gdouble          x,
+                                gdouble          y,
+                                gdouble          width,
+                                gdouble          height,
+                                GdkRectangle    *out_clip)
+{
+  GtkBorder shadow;
+
+  _gtk_css_shadows_value_get_extents (_gtk_style_context_peek_property (context, GTK_CSS_PROPERTY_BOX_SHADOW), &shadow);
+
+  out_clip->x = floor (x) - shadow.left;
+  out_clip->y = floor (y) - shadow.top;
+  out_clip->width = ceil (width) + shadow.left + shadow.right;
+  out_clip->height = ceil (height) + shadow.top + shadow.bottom;
 }
 
 /**
@@ -319,17 +327,11 @@ gtk_render_frame (GtkStyleContext *context,
   if (width <= 0 || height <= 0)
     return;
 
-  cairo_save (cr);
-  cairo_new_path (cr);
-
   gtk_css_style_render_border (gtk_style_context_lookup_style (context),
                                cr,
                                x, y, width, height,
                                0,
                                gtk_style_context_get_junction_sides (context));
-
-
-  cairo_restore (cr);
 }
 
 static void
@@ -403,12 +405,7 @@ gtk_render_expander (GtkStyleContext *context,
   if (width <= 0 || height <= 0)
     return;
 
-  cairo_save (cr);
-  cairo_new_path (cr);
-
   gtk_do_render_expander (context, cr, x, y, width, height);
-
-  cairo_restore (cr);
 }
 
 /**
@@ -442,14 +439,9 @@ gtk_render_focus (GtkStyleContext *context,
   if (width <= 0 || height <= 0)
     return;
 
-  cairo_save (cr);
-  cairo_new_path (cr);
-
   gtk_css_style_render_outline (gtk_style_context_lookup_style (context),
                                 cr,
                                 x, y, width, height);
-
-  cairo_restore (cr);
 }
 
 static void
@@ -523,12 +515,7 @@ gtk_render_layout (GtkStyleContext *context,
   g_return_if_fail (PANGO_IS_LAYOUT (layout));
   g_return_if_fail (cr != NULL);
 
-  cairo_save (cr);
-  cairo_new_path (cr);
-
   gtk_do_render_layout (context, cr, x, y, layout);
-
-  cairo_restore (cr);
 }
 
 static void
@@ -581,12 +568,7 @@ gtk_render_line (GtkStyleContext *context,
   g_return_if_fail (GTK_IS_STYLE_CONTEXT (context));
   g_return_if_fail (cr != NULL);
 
-  cairo_save (cr);
-  cairo_new_path (cr);
-
   gtk_do_render_line (context, cr, x0, y0, x1, y1);
-
-  cairo_restore (cr);
 }
 
 static void
@@ -650,12 +632,7 @@ gtk_render_slider (GtkStyleContext *context,
   if (width <= 0 || height <= 0)
     return;
 
-  cairo_save (cr);
-  cairo_new_path (cr);
-
   gtk_do_render_slider (context, cr, x, y, width, height, orientation);
-
-  cairo_restore (cr);
 }
 
 static void
@@ -806,17 +783,11 @@ gtk_render_frame_gap (GtkStyleContext *context,
   else
     g_return_if_fail (xy1_gap <= width);
 
-  cairo_save (cr);
-  cairo_new_path (cr);
-
   gtk_css_style_render_frame_gap (gtk_style_context_lookup_style (context),
                                   cr,
                                   x, y, width, height, gap_side,
                                   xy0_gap, xy1_gap,
                                   gtk_style_context_get_junction_sides (context));
-
-
-  cairo_restore (cr);
 }
 
 static void
@@ -897,15 +868,10 @@ gtk_render_extension (GtkStyleContext *context,
   if (width <= 0 || height <= 0)
     return;
 
-  cairo_save (cr);
-  cairo_new_path (cr);
-
   gtk_css_style_render_extension (gtk_style_context_lookup_style (context),
                                   cr,
                                   x, y, width, height,
                                   gap_side);
-
-  cairo_restore (cr);
 }
 
 static void
@@ -990,12 +956,7 @@ gtk_render_handle (GtkStyleContext *context,
   if (width <= 0 || height <= 0)
     return;
 
-  cairo_save (cr);
-  cairo_new_path (cr);
-
   gtk_do_render_handle (context, cr, x, y, width, height);
-
-  cairo_restore (cr);
 }
 
 /**
@@ -1027,32 +988,7 @@ gtk_render_activity (GtkStyleContext *context,
   if (width <= 0 || height <= 0)
     return;
 
-  cairo_save (cr);
-  cairo_new_path (cr);
-
   gtk_css_style_render_icon (gtk_style_context_lookup_style (context), cr, x, y, width, height, GTK_CSS_IMAGE_BUILTIN_SPINNER);
-
-  cairo_restore (cr);
-}
-
-static void
-colorshift_source (cairo_t *cr,
-		   gdouble shift)
-{
-  cairo_pattern_t *source;
-
-  cairo_save (cr);
-  cairo_paint (cr);
-
-  source = cairo_pattern_reference (cairo_get_source (cr));
-
-  cairo_set_source_rgb (cr, shift, shift, shift);
-  cairo_set_operator (cr, CAIRO_OPERATOR_COLOR_DODGE);
-
-  cairo_mask (cr, source);
-
-  cairo_pattern_destroy (source);
-  cairo_restore (cr);
 }
 
 static GdkPixbuf *
@@ -1069,99 +1005,50 @@ scale_or_ref (GdkPixbuf *src,
                                     GDK_INTERP_BILINEAR);
 }
 
-static GdkPixbuf *
-gtk_do_render_icon_pixbuf (GtkStyleContext     *context,
-                           const GtkIconSource *source,
-                           GtkIconSize          size)
+GdkPixbuf *
+gtk_render_icon_pixbuf_unpacked (GdkPixbuf           *base_pixbuf,
+                                 GtkIconSize          size,
+                                 GtkCssIconEffect     icon_effect)
 {
   GdkPixbuf *scaled;
   GdkPixbuf *stated;
-  GdkPixbuf *base_pixbuf;
-  gint width = 1;
-  gint height = 1;
-  cairo_t *cr;
   cairo_surface_t *surface;
-  gboolean wildcarded;
-  GtkCssImageEffect image_effect;
-
-  G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
-  base_pixbuf = gtk_icon_source_get_pixbuf (source);
-  G_GNUC_END_IGNORE_DEPRECATIONS;
 
   g_return_val_if_fail (base_pixbuf != NULL, NULL);
-
-  if (size != (GtkIconSize) -1 &&
-      !gtk_icon_size_lookup (size, &width, &height))
-    {
-      g_warning (G_STRLOC ": invalid icon size '%d'", size);
-      return NULL;
-    }
 
   /* If the size was wildcarded, and we're allowed to scale, then scale; otherwise,
    * leave it alone.
    */
-  G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
-  wildcarded = gtk_icon_source_get_size_wildcarded (source);
-  G_GNUC_END_IGNORE_DEPRECATIONS;
-  if (size != (GtkIconSize) -1 && wildcarded)
-    scaled = scale_or_ref (base_pixbuf, width, height);
-  else
-    scaled = g_object_ref (base_pixbuf);
-
-  /* If the state was wildcarded, then generate a state. */
-  G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
-  wildcarded = gtk_icon_source_get_state_wildcarded (source);
-  G_GNUC_END_IGNORE_DEPRECATIONS;
-
-  if (!wildcarded)
-    return scaled;
-
-  image_effect = _gtk_css_image_effect_value_get
-    (_gtk_style_context_peek_property (context, GTK_CSS_PROPERTY_GTK_IMAGE_EFFECT));
-
-  switch (image_effect)
+  if (size != (GtkIconSize) -1)
     {
-    case GTK_CSS_IMAGE_EFFECT_DIM:
-      surface = cairo_image_surface_create (CAIRO_FORMAT_ARGB32,
-					    gdk_pixbuf_get_width (scaled),
-					    gdk_pixbuf_get_height (scaled));
-      cr = cairo_create (surface);
-      gdk_cairo_set_source_pixbuf (cr, scaled, 0, 0);
-      cairo_paint_with_alpha (cr, 0.5);
+      int width = 1;
+      int height = 1;
 
-      cairo_destroy (cr);
+      if (!gtk_icon_size_lookup (size, &width, &height))
+        {
+          g_warning (G_STRLOC ": invalid icon size '%d'", size);
+          return NULL;
+        }
 
-      g_object_unref (scaled);
+      scaled = scale_or_ref (base_pixbuf, width, height);
+    }
+  else
+    {
+      scaled = g_object_ref (base_pixbuf);
+    }
+
+  if (icon_effect != GTK_CSS_ICON_EFFECT_NONE)
+    {
+      surface = gdk_cairo_surface_create_from_pixbuf (scaled, 1, NULL);
+      gtk_css_icon_effect_apply (icon_effect, surface);
       stated = gdk_pixbuf_get_from_surface (surface, 0, 0,
 					    cairo_image_surface_get_width (surface),
 					    cairo_image_surface_get_height (surface));
       cairo_surface_destroy (surface);
-      break;
-
-    case GTK_CSS_IMAGE_EFFECT_HIGHLIGHT:
-      surface = cairo_image_surface_create (CAIRO_FORMAT_ARGB32,
-					    gdk_pixbuf_get_width (scaled),
-					    gdk_pixbuf_get_height (scaled));
-
-      cr = cairo_create (surface);
-      gdk_cairo_set_source_pixbuf (cr, scaled, 0, 0);
-      colorshift_source (cr, 0.10);
-
-      cairo_destroy (cr);
-
-      g_object_unref (scaled);
-      stated = gdk_pixbuf_get_from_surface (surface, 0, 0,
-					    cairo_image_surface_get_width (surface),
-					    cairo_image_surface_get_height (surface));
-      cairo_surface_destroy (surface);
-      break;
-
-    default:
-      g_warn_if_reached ();
-      /* fall through */
-    case GTK_CSS_IMAGE_EFFECT_NONE:
+    }
+  else
+    {
       stated = scaled;
-      break;
     }
 
   return stated;
@@ -1171,8 +1058,9 @@ gtk_do_render_icon_pixbuf (GtkStyleContext     *context,
  * gtk_render_icon_pixbuf:
  * @context: a #GtkStyleContext
  * @source: the #GtkIconSource specifying the icon to render
- * @size: (type int): the size to render the icon at. A size of (GtkIconSize) -1
- *        means render at the size of the source and don’t scale.
+ * @size: (type int): the size (#GtkIconSize) to render the icon at.
+ *        A size of `(GtkIconSize) -1` means render at the size of the source
+ *        and don’t scale.
  *
  * Renders the icon specified by @source at the given @size, returning the result
  * in a pixbuf.
@@ -1192,7 +1080,14 @@ gtk_render_icon_pixbuf (GtkStyleContext     *context,
   g_return_val_if_fail (size > GTK_ICON_SIZE_INVALID || size == (GtkIconSize)-1, NULL);
   g_return_val_if_fail (source != NULL, NULL);
 
-  return gtk_do_render_icon_pixbuf (context, source, size);
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
+  return gtk_render_icon_pixbuf_unpacked (gtk_icon_source_get_pixbuf (source),
+                                          gtk_icon_source_get_size_wildcarded (source) ? size : -1,
+                                          gtk_icon_source_get_state_wildcarded (source)
+                                          ? _gtk_css_icon_effect_value_get (
+                                             _gtk_style_context_peek_property (context, GTK_CSS_PROPERTY_ICON_EFFECT))
+                                          : GTK_CSS_ICON_EFFECT_NONE);
+G_GNUC_END_IGNORE_DEPRECATIONS;
 }
 
 /**
@@ -1204,6 +1099,13 @@ gtk_render_icon_pixbuf (GtkStyleContext     *context,
  * @y: Y position for the @pixbuf
  *
  * Renders the icon in @pixbuf at the specified @x and @y coordinates.
+ *
+ * This function will render the icon in @pixbuf at exactly its size,
+ * regardless of scaling factors, which may not be appropriate when
+ * drawing on displays with high pixel densities.
+ *
+ * You probably want to use gtk_render_icon_surface() instead, if you
+ * already have a Cairo surface.
  *
  * Since: 3.2
  **/
@@ -1219,9 +1121,6 @@ gtk_render_icon (GtkStyleContext *context,
   g_return_if_fail (GTK_IS_STYLE_CONTEXT (context));
   g_return_if_fail (cr != NULL);
 
-  cairo_save (cr);
-  cairo_new_path (cr);
-
   surface = gdk_cairo_surface_create_from_pixbuf (pixbuf, 1, NULL);
 
   gtk_css_style_render_icon_surface (gtk_style_context_lookup_style (context),
@@ -1230,8 +1129,6 @@ gtk_render_icon (GtkStyleContext *context,
                                      x, y);
 
   cairo_surface_destroy (surface);
-
-  cairo_restore (cr);
 }
 
 /**
@@ -1256,15 +1153,10 @@ gtk_render_icon_surface (GtkStyleContext *context,
   g_return_if_fail (GTK_IS_STYLE_CONTEXT (context));
   g_return_if_fail (cr != NULL);
 
-  cairo_save (cr);
-  cairo_new_path (cr);
-
   gtk_css_style_render_icon_surface (gtk_style_context_lookup_style (context),
                                      cr,
                                      surface,
                                      x, y);
-
-  cairo_restore (cr);
 }
 
 /*

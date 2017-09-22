@@ -366,6 +366,8 @@ static const GdkColor gtk_default_insensitive_bg = { 0, GTK_GRAY };
 static const GdkColor gtk_default_selected_base =  { 0, GTK_BLUE };
 static const GdkColor gtk_default_active_base =    { 0, GTK_VERY_DARK_GRAY };
 
+static GQuark quark_default_style;
+
 /* --- signals --- */
 static guint realize_signal = 0;
 static guint unrealize_signal = 0;
@@ -487,7 +489,7 @@ gtk_style_class_init (GtkStyleClass *klass)
 				 G_SIGNAL_RUN_FIRST,
 				 G_STRUCT_OFFSET (GtkStyleClass, realize),
 				 NULL, NULL,
-				 _gtk_marshal_VOID__VOID,
+				 NULL,
 				 G_TYPE_NONE, 0);
   /**
    * GtkStyle::unrealize:
@@ -505,7 +507,7 @@ gtk_style_class_init (GtkStyleClass *klass)
 				   G_SIGNAL_RUN_FIRST,
 				   G_STRUCT_OFFSET (GtkStyleClass, unrealize),
 				   NULL, NULL,
-				   _gtk_marshal_VOID__VOID,
+				   NULL,
 				   G_TYPE_NONE, 0);
 }
 
@@ -542,8 +544,7 @@ gtk_style_finalize (GObject *object)
         }
     }
 
-  g_slist_foreach (style->icon_factories, (GFunc) g_object_unref, NULL);
-  g_slist_free (style->icon_factories);
+  g_slist_free_full (style->icon_factories, g_object_unref);
 
   pango_font_description_free (style->font_desc);
 
@@ -1108,8 +1109,7 @@ gtk_style_real_copy (GtkStyle *style,
   if (src->rc_style)
     g_object_ref (src->rc_style);
 
-  g_slist_foreach (style->icon_factories, (GFunc) g_object_unref, NULL);
-  g_slist_free (style->icon_factories);
+  g_slist_free_full (style->icon_factories, g_object_unref);
   style->icon_factories = g_slist_copy (src->icon_factories);
   g_slist_foreach (style->icon_factories, (GFunc) g_object_ref, NULL);
 }
@@ -1287,8 +1287,8 @@ gtk_style_real_set_background (GtkStyle    *style,
  * @source: the #GtkIconSource specifying the icon to render
  * @direction: a text direction
  * @state: a state
- * @size: (type int): the size to render the icon at. A size of
- *     (GtkIconSize)-1 means render at the size of the source and
+ * @size: (type int): the size to render the icon at (#GtkIconSize). A size of
+ *     `(GtkIconSize)-1` means render at the size of the source and
  *     don’t scale.
  * @widget: (allow-none): the widget
  * @detail: (allow-none): a style detail
@@ -4017,14 +4017,17 @@ gtk_widget_get_default_style_for_screen (GdkScreen *screen)
 {
   GtkStyle *default_style;
 
-  default_style = g_object_get_data (G_OBJECT (screen), "gtk-legacy-default-style");
+  if G_UNLIKELY (quark_default_style == 0)
+    quark_default_style = g_quark_from_static_string ("gtk-legacy-default-style");
+
+  default_style = g_object_get_qdata (G_OBJECT (screen), quark_default_style);
   if (default_style == NULL)
     {
       default_style = gtk_style_new ();
-      g_object_set_data_full (G_OBJECT (screen),
-                              I_("gtk-legacy-default-style"),
-                              default_style,
-                              g_object_unref);
+      g_object_set_qdata_full (G_OBJECT (screen),
+                               quark_default_style,
+                               default_style,
+                               g_object_unref);
     }
 
   return default_style;
@@ -4151,8 +4154,6 @@ gtk_widget_ensure_style (GtkWidget *widget)
     {
       g_object_unref (style);
       _gtk_widget_set_style (widget, NULL);
-
-      g_signal_emit_by_name (widget, "style-set", 0, NULL);
     }
 }
 
@@ -4734,8 +4735,8 @@ gtk_widget_class_path (GtkWidget *widget,
  * gtk_widget_render_icon:
  * @widget: a #GtkWidget
  * @stock_id: a stock ID
- * @size: (type int): a stock size. A size of (GtkIconSize)-1 means
- *     render at the size of the source and don’t scale (if there are
+ * @size: (type int): a stock size (#GtkIconSize). A size of `(GtkIconSize)-1`
+ *     means render at the size of the source and don’t scale (if there are
  *     multiple source sizes, GTK+ picks one of the available sizes).
  * @detail: (allow-none): render detail to pass to theme engine
  *
@@ -4751,7 +4752,7 @@ gtk_widget_class_path (GtkWidget *widget,
  * the application and should not be modified. The pixbuf should be
  * freed after use with g_object_unref().
  *
- * Returns: (transfer full): a new pixbuf, or %NULL if the
+ * Returns: (nullable) (transfer full): a new pixbuf, or %NULL if the
  *     stock ID wasn’t known
  *
  * Deprecated: 3.0: Use gtk_widget_render_icon_pixbuf() instead.

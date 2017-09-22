@@ -66,7 +66,6 @@ typedef enum
 typedef struct _GtkWidgetPrivate       GtkWidgetPrivate;
 typedef struct _GtkWidgetClass	       GtkWidgetClass;
 typedef struct _GtkWidgetClassPrivate  GtkWidgetClassPrivate;
-typedef struct _GtkWidgetAuxInfo       GtkWidgetAuxInfo;
 
 /**
  * GtkAllocation:
@@ -609,25 +608,6 @@ struct _GtkWidgetClass
   void (*_gtk_reserved7) (void);
 };
 
-/**
- * GtkWidgetAuxInfo:
- * @width: the widget’s width
- * @height: the widget’s height
- * @halign: the widget’s horizontal alignment
- * @valign: the widget’s horizontal alignment
- * @margin: the widget’s #GtkBorder margins
- *
- */
-struct _GtkWidgetAuxInfo
-{
-  gint width;
-  gint height;
-
-  guint   halign : 4;
-  guint   valign : 4;
-
-  GtkBorder margin;
-};
 
 GDK_AVAILABLE_IN_ALL
 GType	   gtk_widget_get_type		  (void) G_GNUC_CONST;
@@ -683,6 +663,8 @@ GDK_AVAILABLE_IN_ALL
 void	   gtk_widget_queue_resize	  (GtkWidget	       *widget);
 GDK_AVAILABLE_IN_ALL
 void	   gtk_widget_queue_resize_no_redraw (GtkWidget *widget);
+GDK_AVAILABLE_IN_3_20
+void       gtk_widget_queue_allocate      (GtkWidget           *widget);
 GDK_AVAILABLE_IN_3_8
 GdkFrameClock* gtk_widget_get_frame_clock (GtkWidget           *widget);
 
@@ -759,7 +741,7 @@ gboolean   gtk_widget_mnemonic_activate   (GtkWidget           *widget,
 GDK_AVAILABLE_IN_ALL
 gboolean   gtk_widget_event		  (GtkWidget	       *widget,
 					   GdkEvent	       *event);
-GDK_AVAILABLE_IN_ALL
+GDK_DEPRECATED_IN_3_22
 gint       gtk_widget_send_expose         (GtkWidget           *widget,
 					   GdkEvent            *event);
 GDK_AVAILABLE_IN_ALL
@@ -801,6 +783,11 @@ GDK_AVAILABLE_IN_3_2
 gboolean   gtk_widget_has_visible_focus   (GtkWidget           *widget);
 GDK_AVAILABLE_IN_ALL
 void       gtk_widget_grab_focus          (GtkWidget           *widget);
+GDK_AVAILABLE_IN_3_20
+void       gtk_widget_set_focus_on_click  (GtkWidget           *widget,
+                                           gboolean             focus_on_click);
+GDK_AVAILABLE_IN_3_20
+gboolean   gtk_widget_get_focus_on_click  (GtkWidget           *widget);
 
 GDK_AVAILABLE_IN_ALL
 void       gtk_widget_set_can_default     (GtkWidget           *widget,
@@ -938,6 +925,10 @@ GDK_AVAILABLE_IN_ALL
 int                   gtk_widget_get_allocated_height   (GtkWidget     *widget);
 GDK_AVAILABLE_IN_3_10
 int                   gtk_widget_get_allocated_baseline (GtkWidget     *widget);
+GDK_AVAILABLE_IN_3_20
+void                  gtk_widget_get_allocated_size     (GtkWidget     *widget,
+                                                         GtkAllocation *allocation,
+                                                         int           *baseline);
 
 GDK_AVAILABLE_IN_ALL
 void                  gtk_widget_get_allocation         (GtkWidget     *widget,
@@ -1178,6 +1169,11 @@ GDK_AVAILABLE_IN_ALL
 PangoContext *gtk_widget_create_pango_context (GtkWidget   *widget);
 GDK_AVAILABLE_IN_ALL
 PangoContext *gtk_widget_get_pango_context    (GtkWidget   *widget);
+GDK_AVAILABLE_IN_3_18
+void gtk_widget_set_font_options (GtkWidget                  *widget,
+                                  const cairo_font_options_t *options);
+GDK_AVAILABLE_IN_3_18
+const cairo_font_options_t *gtk_widget_get_font_options (GtkWidget *widget);
 GDK_AVAILABLE_IN_ALL
 PangoLayout  *gtk_widget_create_pango_layout  (GtkWidget   *widget,
 					       const gchar *text);
@@ -1247,7 +1243,7 @@ GDK_AVAILABLE_IN_ALL
 GtkTextDirection gtk_widget_get_default_direction (void);
 
 /* Compositing manager functionality */
-GDK_AVAILABLE_IN_ALL
+GDK_DEPRECATED_IN_3_22_FOR(gdk_screen_is_composited)
 gboolean gtk_widget_is_composited (GtkWidget *widget);
 
 /* Counterpart to gdk_window_shape_combine_region.
@@ -1316,6 +1312,12 @@ GtkStyleContext * gtk_widget_get_style_context (GtkWidget *widget);
 
 GDK_AVAILABLE_IN_ALL
 GtkWidgetPath *   gtk_widget_get_path (GtkWidget *widget);
+
+GDK_AVAILABLE_IN_3_20
+void              gtk_widget_class_set_css_name (GtkWidgetClass *widget_class,
+                                                 const char     *name);
+GDK_AVAILABLE_IN_3_20
+const char *      gtk_widget_class_get_css_name (GtkWidgetClass *widget_class);
 
 GDK_AVAILABLE_IN_3_4
 GdkModifierType   gtk_widget_get_modifier_mask (GtkWidget         *widget,
@@ -1476,11 +1478,20 @@ void    gtk_widget_class_bind_template_child_full       (GtkWidgetClass        *
 						         gssize                 struct_offset);
 
 GDK_AVAILABLE_IN_3_16
-GActionGroup           *gtk_widget_get_action_group                     (GtkWidget    *widget,
-                                                                         const gchar  *prefix);
+GActionGroup           *gtk_widget_get_action_group     (GtkWidget             *widget,
+                                                         const gchar           *prefix);
 
 GDK_AVAILABLE_IN_3_16
-const gchar **          gtk_widget_list_action_prefixes                 (GtkWidget    *widget);
+const gchar **          gtk_widget_list_action_prefixes (GtkWidget             *widget);
+
+GDK_AVAILABLE_IN_3_18
+void                    gtk_widget_set_font_map         (GtkWidget             *widget,
+                                                         PangoFontMap          *font_map);
+GDK_AVAILABLE_IN_3_18
+PangoFontMap *          gtk_widget_get_font_map         (GtkWidget             *widget);
+
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(GtkWidget, g_object_unref)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(GtkRequisition, gtk_requisition_free)
 
 G_END_DECLS
 

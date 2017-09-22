@@ -65,6 +65,11 @@
  * This kind of widget is commonly used for volume controls in multimedia
  * applications, and GTK+ provides a #GtkVolumeButton subclass that
  * is tailored for this use case.
+ *
+ * # CSS nodes
+ *
+ * GtkScaleButton has a single CSS node with name button. To differentiate
+ * it from a plain #GtkButton, it gets the .scale style class.
  */
 
 
@@ -257,7 +262,7 @@ gtk_scale_button_class_init (GtkScaleButtonClass *klass)
 		  G_SIGNAL_RUN_LAST,
 		  G_STRUCT_OFFSET (GtkScaleButtonClass, value_changed),
 		  NULL, NULL,
-		  _gtk_marshal_VOID__DOUBLE,
+		  NULL,
 		  G_TYPE_NONE, 1, G_TYPE_DOUBLE);
 
   /**
@@ -329,7 +334,6 @@ gtk_scale_button_class_init (GtkScaleButtonClass *klass)
   gtk_widget_class_bind_template_child_private (widget_class, GtkScaleButton, box);
   gtk_widget_class_bind_template_child_private (widget_class, GtkScaleButton, scale);
   gtk_widget_class_bind_template_child_private (widget_class, GtkScaleButton, image);
-  gtk_widget_class_bind_template_child_private (widget_class, GtkScaleButton, adjustment);
 
   gtk_widget_class_bind_template_callback (widget_class, cb_button_press);
   gtk_widget_class_bind_template_callback (widget_class, cb_button_release);
@@ -338,12 +342,14 @@ gtk_scale_button_class_init (GtkScaleButtonClass *klass)
   gtk_widget_class_bind_template_callback (widget_class, cb_popup_mapped);
 
   gtk_widget_class_set_accessible_type (widget_class, GTK_TYPE_SCALE_BUTTON_ACCESSIBLE);
+  gtk_widget_class_set_css_name (widget_class, "button");
 }
 
 static void
 gtk_scale_button_init (GtkScaleButton *button)
 {
   GtkScaleButtonPrivate *priv;
+  GtkStyleContext *context;
 
   button->priv = priv = gtk_scale_button_get_instance_private (button);
 
@@ -355,9 +361,14 @@ gtk_scale_button_init (GtkScaleButton *button)
   gtk_popover_set_relative_to (GTK_POPOVER (priv->dock), GTK_WIDGET (button));
 
   /* Need a local reference to the adjustment */
-  g_object_ref (priv->adjustment);
+  priv->adjustment = gtk_adjustment_new (0, 0, 100, 2, 20, 0);
+  g_object_ref_sink (priv->adjustment);
+  gtk_range_set_adjustment (GTK_RANGE (priv->scale), priv->adjustment);
 
   gtk_widget_add_events (GTK_WIDGET (button), GDK_SMOOTH_SCROLL_MASK);
+
+  context = gtk_widget_get_style_context (GTK_WIDGET (button));
+  gtk_style_context_add_class (context, "scale");
 }
 
 static void
@@ -486,7 +497,7 @@ gtk_scale_button_dispose (GObject *object)
 
 /**
  * gtk_scale_button_new:
- * @size: (type int): a stock icon size
+ * @size: (type int): a stock icon size (#GtkIconSize)
  * @min: the minimum value of the scale (usually 0)
  * @max: the maximum value of the scale (usually 100)
  * @step: the stepping of value when a scroll-wheel event,
@@ -660,7 +671,7 @@ gtk_scale_button_set_adjustment	(GtkScaleButton *button,
  *
  * Retrieves the plus button of the #GtkScaleButton.
  *
- * Returns: (transfer none): the plus button of the #GtkScaleButton
+ * Returns: (transfer none) (type Gtk.Button): the plus button of the #GtkScaleButton as a #GtkButton
  *
  * Since: 2.14
  */
@@ -678,7 +689,7 @@ gtk_scale_button_get_plus_button (GtkScaleButton *button)
  *
  * Retrieves the minus button of the #GtkScaleButton.
  *
- * Returns: (transfer none): the minus button of the #GtkScaleButton
+ * Returns: (transfer none) (type Gtk.Button): the minus button of the #GtkScaleButton as a #GtkButton
  *
  * Since: 2.14
  */
@@ -814,7 +825,7 @@ gtk_scale_popup (GtkWidget *widget)
   gint w, h;
   gint size;
 
-  gtk_widget_show (priv->dock);
+  gtk_popover_popup (GTK_POPOVER (priv->dock));
 
   toplevel = gtk_widget_get_toplevel (widget);
   _gtk_window_get_shadow_width (GTK_WINDOW (toplevel), &border);
@@ -839,7 +850,7 @@ gtk_scale_button_popdown (GtkWidget *widget)
   GtkScaleButton *button = GTK_SCALE_BUTTON (widget);
   GtkScaleButtonPrivate *priv = button->priv;
 
-  gtk_widget_hide (priv->dock);
+  gtk_popover_popdown (GTK_POPOVER (priv->dock));
 }
 
 static void
@@ -974,7 +985,7 @@ gtk_scale_button_update_icon (GtkScaleButton *button)
   const gchar *name;
   guint num_icons;
 
-  if (!priv->icon_list || priv->icon_list[0] == '\0')
+  if (!priv->icon_list || ((char*)priv->icon_list)[0] == '\0')
     {
       gtk_image_set_from_icon_name (GTK_IMAGE (priv->image),
                                     "image-missing",

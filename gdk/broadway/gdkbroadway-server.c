@@ -95,7 +95,6 @@ GdkBroadwayServer *
 _gdk_broadway_server_new (const char *display, GError **error)
 {
   GdkBroadwayServer *server;
-  char *basename;
   GSocketClient *client;
   GSocketConnection *connection;
   GInetAddress *inet;
@@ -103,7 +102,6 @@ _gdk_broadway_server_new (const char *display, GError **error)
   GPollableInputStream *pollable;
   GInputStream *in;
   GSource *source;
-  char *path;
   char *local_socket_type = NULL;
   int port;
 
@@ -128,6 +126,8 @@ _gdk_broadway_server_new (const char *display, GError **error)
 #ifdef G_OS_UNIX
   else if (display[0] == ':' && g_ascii_isdigit(display[1]))
     {
+      char *path, *basename;
+
       port = strtol (display + strlen (":"), NULL, 10);
       basename = g_strdup_printf ("broadway%d.socket", port + 1);
       path = g_build_filename (g_get_user_runtime_dir (), basename, NULL);
@@ -320,7 +320,7 @@ process_input_messages (GdkBroadwayServer *server)
       if (reply->base.type == BROADWAY_REPLY_EVENT)
 	_gdk_broadway_events_got_input (&reply->event.msg);
       else
-	g_warning ("Unhandled reply type %d\n", reply->base.type);
+	g_warning ("Unhandled reply type %d", reply->base.type);
       g_free (reply);
     }
 }
@@ -524,10 +524,11 @@ _gdk_broadway_server_window_set_transient_for (GdkBroadwayServer *server,
 }
 
 static void *
-map_named_shm (char *name, gsize size)
+map_named_shm (char *name, gsize size, gboolean *is_shm)
 {
 #ifdef G_OS_UNIX
 
+  char *filename = NULL;
   int fd;
   void *ptr;
   int res;
@@ -535,10 +536,24 @@ map_named_shm (char *name, gsize size)
   fd = shm_open(name, O_RDWR|O_CREAT|O_EXCL, 0600);
   if (fd == -1)
     {
-      if (errno != EEXIST)
-	g_error ("Unable to allocate shared mem for window");
-      return NULL;
+      if (errno == EEXIST)
+	return NULL;
+
+      filename = g_build_filename (g_get_tmp_dir (), name, NULL);
+
+      fd = open (filename, O_RDWR | O_CREAT | O_EXCL, 0600);
+      g_free (filename);
+      if (fd == -1)
+	{
+	  if (errno != EEXIST)
+	    g_error ("Unable to allocate shared mem for window");
+	  return NULL;
+	}
+      else
+	*is_shm = FALSE;
     }
+  else
+    *is_shm = TRUE;
 
   res = ftruncate (fd, size);
   g_assert (res != -1);
@@ -547,7 +562,10 @@ map_named_shm (char *name, gsize size)
   res = posix_fallocate (fd, 0, size);
   if (res != 0 && errno == ENOSPC)
     {
-      shm_unlink (name);
+      if (filename)
+	unlink (filename);
+      else
+	shm_unlink (name);
       g_error ("Not enough shared memory for window surface");
     }
 #endif
@@ -579,6 +597,7 @@ map_named_shm (char *name, gsize size)
       return NULL;
     }
 
+  *is_shm = TRUE;
   res = ftruncate (fd, size);
   g_assert (res != -1);
   
@@ -614,7 +633,7 @@ make_valid_fs_char (char c)
 
 /* name must have at least space for 34 bytes */
 static gpointer
-create_random_shm (char *name, gsize size)
+create_random_shm (char *name, gsize size, gboolean *is_shm)
 {
   guint32 r;
   int i, o;
@@ -638,7 +657,7 @@ create_random_shm (char *name, gsize size)
 	}
       name[o++] = 0;
 
-      ptr = map_named_shm (name, size);
+      ptr = map_named_shm (name, size, is_shm);
       if (ptr)
 	return ptr;
     }
@@ -650,6 +669,7 @@ typedef struct {
   char name[36];
   void *data;
   gsize data_size;
+  gboolean is_shm;
 } BroadwayShmSurfaceData;
 
 static void
@@ -660,7 +680,14 @@ shm_data_destroy (void *_data)
 #ifdef G_OS_UNIX
 
   munmap (data->data, data->data_size);
-  shm_unlink (data->name);
+  if (data->is_shm)
+    shm_unlink (data->name);
+  else
+    {
+      char *filename = g_build_filename (g_get_tmp_dir (), data->name, NULL);
+      unlink (filename);
+      g_free (filename);
+    }
 
 #elif defined(G_OS_WIN32)
 
@@ -689,7 +716,7 @@ _gdk_broadway_server_create_surface (int                 width,
 
   data = g_new (BroadwayShmSurfaceData, 1);
   data->data_size = width * height * sizeof (guint32);
-  data->data = create_random_shm (data->name, data->data_size);
+  data->data = create_random_shm (data->name, data->data_size, &data->is_shm);
 
   surface = cairo_image_surface_create_for_data ((guchar *)data->data,
 						 CAIRO_FORMAT_ARGB32, width, height, width * sizeof (guint32));

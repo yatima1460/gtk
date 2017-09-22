@@ -28,14 +28,16 @@
 #include <glib.h>
 #include <glib/gi18n.h>
 #include <gio/gio.h>
-#ifdef G_OS_UNIX
+#if defined(HAVE_GIO_UNIX) && !defined(__APPLE__)
 #include <gio/gdesktopappinfo.h>
 #endif
 #include <gtk.h>
 
+static gboolean show_version;
 static gchar **args = NULL;
 
 static GOptionEntry entries[] = {
+  { "version", 0, 0, G_OPTION_ARG_NONE, &show_version, N_("Show program version"), NULL },
   { G_OPTION_REMAINING, 0, 0, G_OPTION_ARG_FILENAME_ARRAY, &args, NULL, NULL },
   { NULL}
 };
@@ -49,6 +51,7 @@ main (int argc, char *argv[])
   gchar *app_name;
 #ifdef G_OS_UNIX
   gchar *desktop_file_name;
+  gchar *bus_name = NULL;
 #endif
   GAppInfo *info = NULL;
   GAppLaunchContext *launch_context;
@@ -66,14 +69,14 @@ main (int argc, char *argv[])
 #endif
 
   /* Translators: this message will appear immediately after the */
-  /* usage string - Usage: COMMAND [OPTION]… <THIS_MESSAGE>    */
+  /* usage string - Usage: COMMAND [OPTION...] <THIS_MESSAGE>    */
   context =
-    g_option_context_new (_("APPLICATION [URI…] — launch an APPLICATION with URI."));
+    g_option_context_new (_("APPLICATION [URI...] — launch an APPLICATION"));
 
   /* Translators: this message will appear after the usage string */
   /* and before the list of options.                              */
-  summary = _("Launch specified application by its desktop file info\n"
-              "optionally passing list of URIs as arguments.");
+  summary = _("Launch an application (specified by its desktop file name),\n"
+              "optionally passing one or more URIs as arguments.");
   g_option_context_set_summary (context, summary);
   g_option_context_add_main_entries (context, entries, GETTEXT_PACKAGE);
   g_option_context_add_group (context, gtk_get_option_group (FALSE));
@@ -86,11 +89,19 @@ main (int argc, char *argv[])
     {
       g_printerr (_("Error parsing commandline options: %s\n"), error->message);
       g_printerr ("\n");
-      g_printerr (_("Try \"%s --help\" for more information."),
-                  g_get_prgname ());
+      g_printerr (_("Try \"%s --help\" for more information."), g_get_prgname ());
       g_printerr ("\n");
-      g_error_free(error);
+      g_error_free (error);
       return 1;
+    }
+
+  if (show_version)
+    {
+      g_print ("%d.%d.%d\n",
+               gtk_get_major_version (),
+               gtk_get_minor_version (),
+               gtk_get_micro_version ());
+      return 0;
     }
 
   if (!args)
@@ -99,8 +110,7 @@ main (int argc, char *argv[])
       /* means the user is calling gtk-launch without any argument.  */
       g_printerr (_("%s: missing application name"), g_get_prgname ());
       g_printerr ("\n");
-      g_printerr (_("Try \"%s --help\" for more information."),
-                  g_get_prgname ());
+      g_printerr (_("Try \"%s --help\" for more information."), g_get_prgname ());
       g_printerr ("\n");
       return 1;
     }
@@ -109,11 +119,20 @@ main (int argc, char *argv[])
   gtk_init (&argc, &argv);
 
   app_name = *args;
-#ifdef G_OS_UNIX
+#if defined(HAVE_GIO_UNIX) && !defined(__APPLE__)
+  bus_name = g_strdup (app_name);
   if (g_str_has_suffix (app_name, ".desktop"))
-    desktop_file_name = g_strdup (app_name);
-  else 
-    desktop_file_name = g_strconcat (app_name, ".desktop", NULL);
+    {
+      desktop_file_name = g_strdup (app_name);
+      bus_name[strlen (bus_name) - strlen(".desktop")] = '\0';
+    }
+  else
+    {
+      desktop_file_name = g_strconcat (app_name, ".desktop", NULL);
+    }
+
+  if (!g_dbus_is_name (bus_name))
+    g_clear_pointer (&bus_name, g_free);
   info = G_APP_INFO (g_desktop_app_info_new (desktop_file_name));
   g_free (desktop_file_name);
 #else
@@ -150,6 +169,33 @@ main (int argc, char *argv[])
     }
   g_object_unref (info);
   g_object_unref (launch_context);
+
+#ifdef G_OS_UNIX
+  if (bus_name != NULL)
+    {
+      GDBusConnection *connection;
+      gchar *object_path, *p;
+
+      connection = g_bus_get_sync (G_BUS_TYPE_SESSION, NULL, NULL);
+
+      object_path = g_strdup_printf ("/%s", bus_name);
+      for (p = object_path; *p != '\0'; p++)
+          if (*p == '.')
+              *p = '/';
+
+      if (connection)
+        g_dbus_connection_call_sync (connection,
+                                     bus_name,
+                                     object_path,
+                                     "org.freedesktop.DBus.Peer",
+                                     "Ping",
+                                     NULL, NULL,
+                                     G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL);
+      g_clear_pointer (&object_path, g_free);
+      g_clear_object (&connection);
+      g_clear_pointer (&bus_name, g_free);
+    }
+#endif
   g_list_free_full (l, g_object_unref);
 
   return 0;

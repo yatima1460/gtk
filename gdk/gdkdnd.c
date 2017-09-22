@@ -27,7 +27,33 @@
 #include "gdkdndprivate.h"
 #include "gdkdisplay.h"
 #include "gdkwindow.h"
+#include "gdkintl.h"
+#include "gdkenumtypes.h"
+#include "gdkcursor.h"
 
+static struct {
+  GdkDragAction action;
+  const gchar  *name;
+  GdkCursor    *cursor;
+} drag_cursors[] = {
+  { GDK_ACTION_DEFAULT, NULL,       NULL },
+  { GDK_ACTION_ASK,     "dnd-ask",  NULL },
+  { GDK_ACTION_COPY,    "dnd-copy", NULL },
+  { GDK_ACTION_MOVE,    "dnd-move", NULL },
+  { GDK_ACTION_LINK,    "dnd-link", NULL },
+  { 0,                  "dnd-none", NULL },
+};
+
+enum {
+  CANCEL,
+  DROP_PERFORMED,
+  DND_FINISHED,
+  ACTION_CHANGED,
+  N_SIGNALS
+};
+
+static guint signals[N_SIGNALS] = { 0 };
+static GList *contexts = NULL;
 
 /**
  * SECTION:dnd
@@ -217,6 +243,7 @@ G_DEFINE_TYPE (GdkDragContext, gdk_drag_context, G_TYPE_OBJECT)
 static void
 gdk_drag_context_init (GdkDragContext *context)
 {
+  contexts = g_list_prepend (contexts, context);
 }
 
 static void
@@ -224,6 +251,7 @@ gdk_drag_context_finalize (GObject *object)
 {
   GdkDragContext *context = GDK_DRAG_CONTEXT (object);
 
+  contexts = g_list_remove (contexts, context);
   g_list_free (context->targets);
 
   if (context->source_window)
@@ -241,6 +269,95 @@ gdk_drag_context_class_init (GdkDragContextClass *klass)
   GObjectClass *object_class = G_OBJECT_CLASS (klass);
 
   object_class->finalize = gdk_drag_context_finalize;
+
+  /**
+   * GdkDragContext::cancel:
+   * @context: The object on which the signal is emitted
+   * @reason: The reason the context was cancelled
+   *
+   * The drag and drop operation was cancelled.
+   *
+   * This signal will only be emitted if the #GdkDragContext manages
+   * the drag and drop operation. See gdk_drag_context_manage_dnd()
+   * for more information.
+   *
+   * Since: 3.20
+   */
+  signals[CANCEL] =
+    g_signal_new ("cancel",
+                  G_TYPE_FROM_CLASS (object_class),
+                  G_SIGNAL_RUN_LAST,
+                  G_STRUCT_OFFSET (GdkDragContextClass, cancel),
+                  NULL, NULL,
+                  g_cclosure_marshal_VOID__ENUM,
+                  G_TYPE_NONE, 1, GDK_TYPE_DRAG_CANCEL_REASON);
+
+  /**
+   * GdkDragContext::drop-performed:
+   * @context: The object on which the signal is emitted
+   * @time: the time at which the drop happened.
+   *
+   * The drag and drop operation was performed on an accepting client.
+   *
+   * This signal will only be emitted if the #GdkDragContext manages
+   * the drag and drop operation. See gdk_drag_context_manage_dnd()
+   * for more information.
+   *
+   * Since: 3.20
+   */
+  signals[DROP_PERFORMED] =
+    g_signal_new ("drop-performed",
+                  G_TYPE_FROM_CLASS (object_class),
+                  G_SIGNAL_RUN_LAST,
+                  G_STRUCT_OFFSET (GdkDragContextClass, drop_performed),
+                  NULL, NULL,
+                  g_cclosure_marshal_VOID__INT,
+                  G_TYPE_NONE, 1, G_TYPE_INT);
+
+  /**
+   * GdkDragContext::dnd-finished:
+   * @context: The object on which the signal is emitted
+   *
+   * The drag and drop operation was finished, the drag destination
+   * finished reading all data. The drag source can now free all
+   * miscellaneous data.
+   *
+   * This signal will only be emitted if the #GdkDragContext manages
+   * the drag and drop operation. See gdk_drag_context_manage_dnd()
+   * for more information.
+   *
+   * Since: 3.20
+   */
+  signals[DND_FINISHED] =
+    g_signal_new ("dnd-finished",
+                  G_TYPE_FROM_CLASS (object_class),
+                  G_SIGNAL_RUN_LAST,
+                  G_STRUCT_OFFSET (GdkDragContextClass, dnd_finished),
+                  NULL, NULL,
+                  g_cclosure_marshal_VOID__VOID,
+                  G_TYPE_NONE, 0);
+
+  /**
+   * GdkDragContext::action-changed:
+   * @context: The object on which the signal is emitted
+   * @action: The action currently chosen
+   *
+   * A new action is being chosen for the drag and drop operation.
+   *
+   * This signal will only be emitted if the #GdkDragContext manages
+   * the drag and drop operation. See gdk_drag_context_manage_dnd()
+   * for more information.
+   *
+   * Since: 3.20
+   */
+  signals[ACTION_CHANGED] =
+    g_signal_new ("action-changed",
+                  G_TYPE_FROM_CLASS (object_class),
+                  G_SIGNAL_RUN_LAST,
+                  G_STRUCT_OFFSET (GdkDragContextClass, action_changed),
+                  NULL, NULL,
+                  g_cclosure_marshal_VOID__FLAGS,
+                  G_TYPE_NONE, 1, GDK_TYPE_DRAG_ACTION);
 }
 
 /**
@@ -316,6 +433,9 @@ gdk_drag_status (GdkDragContext *context,
  *
  * This function is called by the drag source.
  *
+ * This function does not need to be called in managed drag and drop
+ * operations. See gdk_drag_context_manage_dnd() for more information.
+ *
  * Returns:
  */
 gboolean
@@ -349,6 +469,9 @@ gdk_drag_motion (GdkDragContext *context,
  * Aborts a drag without dropping.
  *
  * This function is called by the drag source.
+ *
+ * This function does not need to be called in managed drag and drop
+ * operations. See gdk_drag_context_manage_dnd() for more information.
  */
 void
 gdk_drag_abort (GdkDragContext *context,
@@ -367,6 +490,9 @@ gdk_drag_abort (GdkDragContext *context,
  * Drops on the current destination.
  *
  * This function is called by the drag source.
+ *
+ * This function does not need to be called in managed drag and drop
+ * operations. See gdk_drag_context_manage_dnd() for more information.
  */
 void
 gdk_drag_drop (GdkDragContext *context,
@@ -453,4 +579,241 @@ gdk_drag_get_selection (GdkDragContext *context)
   g_return_val_if_fail (GDK_IS_DRAG_CONTEXT (context), GDK_NONE);
 
   return GDK_DRAG_CONTEXT_GET_CLASS (context)->get_selection (context);
+}
+
+/**
+ * gdk_drag_context_get_drag_window:
+ * @context: a #GdkDragContext
+ *
+ * Returns the window on which the drag icon should be rendered
+ * during the drag operation. Note that the window may not be
+ * available until the drag operation has begun. GDK will move
+ * the window in accordance with the ongoing drag operation.
+ * The window is owned by @context and will be destroyed when
+ * the drag operation is over.
+ *
+ * Returns: (nullable) (transfer none): the drag window, or %NULL
+ *
+ * Since: 3.20
+ */
+GdkWindow *
+gdk_drag_context_get_drag_window (GdkDragContext *context)
+{
+  g_return_val_if_fail (GDK_IS_DRAG_CONTEXT (context), NULL);
+
+  if (GDK_DRAG_CONTEXT_GET_CLASS (context)->get_drag_window)
+    return GDK_DRAG_CONTEXT_GET_CLASS (context)->get_drag_window (context);
+
+  return NULL;
+}
+
+/**
+ * gdk_drag_context_set_hotspot:
+ * @context: a #GdkDragContext
+ * @hot_x: x coordinate of the drag window hotspot
+ * @hot_y: y coordinate of the drag window hotspot
+ *
+ * Sets the position of the drag window that will be kept
+ * under the cursor hotspot. Initially, the hotspot is at the
+ * top left corner of the drag window.
+ *
+ * Since: 3.20
+ */
+void
+gdk_drag_context_set_hotspot (GdkDragContext *context,
+                              gint            hot_x,
+                              gint            hot_y)
+{
+  g_return_if_fail (GDK_IS_DRAG_CONTEXT (context));
+
+  if (GDK_DRAG_CONTEXT_GET_CLASS (context)->set_hotspot)
+    GDK_DRAG_CONTEXT_GET_CLASS (context)->set_hotspot (context, hot_x, hot_y);
+}
+
+/**
+ * gdk_drag_drop_done:
+ * @context: a #GdkDragContext
+ * @success: whether the drag was ultimatively successful
+ *
+ * Inform GDK if the drop ended successfully. Passing %FALSE
+ * for @success may trigger a drag cancellation animation.
+ *
+ * This function is called by the drag source, and should
+ * be the last call before dropping the reference to the
+ * @context.
+ *
+ * The #GdkDragContext will only take the first gdk_drag_drop_done()
+ * call as effective, if this function is called multiple times,
+ * all subsequent calls will be ignored.
+ *
+ * Since: 3.20
+ */
+void
+gdk_drag_drop_done (GdkDragContext *context,
+                    gboolean        success)
+{
+  g_return_if_fail (GDK_IS_DRAG_CONTEXT (context));
+
+  if (context->drop_done)
+    return;
+
+  context->drop_done = TRUE;
+
+  if (GDK_DRAG_CONTEXT_GET_CLASS (context)->drop_done)
+    GDK_DRAG_CONTEXT_GET_CLASS (context)->drop_done (context, success);
+}
+
+/**
+ * gdk_drag_context_manage_dnd:
+ * @context: a #GdkDragContext
+ * @ipc_window: Window to use for IPC messaging/events
+ * @actions: the actions supported by the drag source
+ *
+ * Requests the drag and drop operation to be managed by @context.
+ * When a drag and drop operation becomes managed, the #GdkDragContext
+ * will internally handle all input and source-side #GdkEventDND events
+ * as required by the windowing system.
+ *
+ * Once the drag and drop operation is managed, the drag context will
+ * emit the following signals:
+ * - The #GdkDragContext::action-changed signal whenever the final action
+ *   to be performed by the drag and drop operation changes.
+ * - The #GdkDragContext::drop-performed signal after the user performs
+ *   the drag and drop gesture (typically by releasing the mouse button).
+ * - The #GdkDragContext::dnd-finished signal after the drag and drop
+ *   operation concludes (after all #GdkSelection transfers happen).
+ * - The #GdkDragContext::cancel signal if the drag and drop operation is
+ *   finished but doesn't happen over an accepting destination, or is
+ *   cancelled through other means.
+ *
+ * Returns: #TRUE if the drag and drop operation is managed.
+ *
+ * Since: 3.20
+ **/
+gboolean
+gdk_drag_context_manage_dnd (GdkDragContext *context,
+                             GdkWindow      *ipc_window,
+                             GdkDragAction   actions)
+{
+  g_return_val_if_fail (GDK_IS_DRAG_CONTEXT (context), FALSE);
+  g_return_val_if_fail (GDK_IS_WINDOW (ipc_window), FALSE);
+
+  if (GDK_DRAG_CONTEXT_GET_CLASS (context)->manage_dnd)
+    return GDK_DRAG_CONTEXT_GET_CLASS (context)->manage_dnd (context, ipc_window, actions);
+
+  return FALSE;
+}
+
+void
+gdk_drag_context_set_cursor (GdkDragContext *context,
+                             GdkCursor      *cursor)
+{
+  g_return_if_fail (GDK_IS_DRAG_CONTEXT (context));
+
+  if (GDK_DRAG_CONTEXT_GET_CLASS (context)->set_cursor)
+    GDK_DRAG_CONTEXT_GET_CLASS (context)->set_cursor (context, cursor);
+}
+
+void
+gdk_drag_context_cancel (GdkDragContext      *context,
+                         GdkDragCancelReason  reason)
+{
+  g_return_if_fail (GDK_IS_DRAG_CONTEXT (context));
+
+  g_signal_emit (context, signals[CANCEL], 0, reason);
+}
+
+GList *
+gdk_drag_context_list (void)
+{
+  return contexts;
+}
+
+gboolean
+gdk_drag_context_handle_source_event (GdkEvent *event)
+{
+  GdkDragContext *context;
+  GList *l;
+
+  for (l = contexts; l; l = l->next)
+    {
+      context = l->data;
+
+      if (!context->is_source)
+        continue;
+
+      if (!GDK_DRAG_CONTEXT_GET_CLASS (context)->handle_event)
+        continue;
+
+      if (GDK_DRAG_CONTEXT_GET_CLASS (context)->handle_event (context, event))
+        return TRUE;
+    }
+
+  return FALSE;
+}
+
+GdkCursor *
+gdk_drag_get_cursor (GdkDragContext *context,
+                     GdkDragAction   action)
+{
+  gint i;
+
+  for (i = 0 ; i < G_N_ELEMENTS (drag_cursors) - 1; i++)
+    if (drag_cursors[i].action == action)
+      break;
+
+  if (drag_cursors[i].cursor == NULL)
+    drag_cursors[i].cursor = gdk_cursor_new_from_name (context->display,
+                                                       drag_cursors[i].name);
+  return drag_cursors[i].cursor;
+}
+
+static void
+gdk_drag_context_commit_drag_status (GdkDragContext *context)
+{
+  GdkDragContextClass *context_class;
+
+  g_return_if_fail (GDK_IS_DRAG_CONTEXT (context));
+  g_return_if_fail (!context->is_source);
+
+  context_class = GDK_DRAG_CONTEXT_GET_CLASS (context);
+
+  if (context_class->commit_drag_status)
+    context_class->commit_drag_status (context);
+}
+
+gboolean
+gdk_drag_context_handle_dest_event (GdkEvent *event)
+{
+  GdkDragContext *context = NULL;
+  GList *l;
+
+  switch (event->type)
+    {
+    case GDK_DRAG_MOTION:
+    case GDK_DROP_START:
+      context = event->dnd.context;
+      break;
+    case GDK_SELECTION_NOTIFY:
+      for (l = contexts; l; l = l->next)
+        {
+          GdkDragContext *c = l->data;
+
+          if (!c->is_source &&
+              event->selection.selection == gdk_drag_get_selection (c))
+            {
+              context = c;
+              break;
+            }
+        }
+      break;
+    default:
+      return FALSE;
+    }
+
+  if (!context)
+    return FALSE;
+
+  gdk_drag_context_commit_drag_status (context);
+  return TRUE;;
 }

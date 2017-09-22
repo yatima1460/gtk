@@ -35,6 +35,7 @@
 #include "gtkimcontextsimple.h"
 #include "gtksettings.h"
 #include "gtkprivate.h"
+#include "gtkutilsprivate.h"
 #include "gtkintl.h"
 
 #ifdef GDK_WINDOWING_X11
@@ -63,6 +64,23 @@
 #define GDK_DEPRECATED_FOR(f)
 
 #include "deprecated/gtkrc.h"
+
+/* We need to call getc() a lot in a loop. This is suboptimal,
+ * as getc() does thread locking on the FILE it is given.
+ * To optimize that, lock the file first, then call getc(),
+ * then unlock.
+ * If locking functions are not present in libc, fall back
+ * to the suboptimal getc().
+ */
+#if !defined(HAVE_FLOCKFILE) && !defined(HAVE__LOCK_FILE)
+#  define flockfile(f) (void)1
+#  define funlockfile(f) (void)1
+#  define getc_unlocked(f) getc(f)
+#elif !defined(HAVE_FLOCKFILE) && defined(HAVE__LOCK_FILE)
+#  define flockfile(f) _lock_file(f)
+#  define funlockfile(f) _unlock_file(f)
+#  define getc_unlocked(f) _getc_nolock(f)
+#endif
 
 #define SIMPLE_ID "gtk-im-context-simple"
 #define NONE_ID   "gtk-im-context-none"
@@ -116,8 +134,6 @@ static GType gtk_im_module_get_type (void);
 static gint n_loaded_contexts = 0;
 static GHashTable *contexts_hash = NULL;
 static GSList *modules_list = NULL;
-
-static GObjectClass *parent_class = NULL;
 
 static gboolean
 gtk_im_module_load (GTypeModule *module)
@@ -176,6 +192,8 @@ gtk_im_module_unload (GTypeModule *module)
     }
 }
 
+G_DEFINE_TYPE (GtkIMModule, gtk_im_module, G_TYPE_TYPE_MODULE)
+
 /* This only will ever be called if an error occurs during
  * initialization
  */
@@ -186,10 +204,8 @@ gtk_im_module_finalize (GObject *object)
 
   g_free (module->path);
 
-  parent_class->finalize (object);
+  G_OBJECT_CLASS (gtk_im_module_parent_class)->finalize (object);
 }
-
-G_DEFINE_TYPE (GtkIMModule, gtk_im_module, G_TYPE_TYPE_MODULE)
 
 static void
 gtk_im_module_class_init (GtkIMModuleClass *class)
@@ -197,8 +213,6 @@ gtk_im_module_class_init (GtkIMModuleClass *class)
   GTypeModuleClass *module_class = G_TYPE_MODULE_CLASS (class);
   GObjectClass *gobject_class = G_OBJECT_CLASS (class);
 
-  parent_class = G_OBJECT_CLASS (g_type_class_peek_parent (class));
-  
   module_class->load = gtk_im_module_load;
   module_class->unload = gtk_im_module_unload;
 
@@ -337,7 +351,7 @@ gtk_im_module_initialize (void)
     const GtkIMContextInfo **contexts;					\
     int n_contexts;							\
     extern void _gtk_immodule_ ## m ## _list (const GtkIMContextInfo ***contexts, \
-					      guint                    *n_contexts); \
+					      int                      *n_contexts); \
     extern void _gtk_immodule_ ## m ## _init (GTypeModule *module);	\
     extern void _gtk_immodule_ ## m ## _exit (void);			\
     extern GtkIMContext *_gtk_immodule_ ## m ## _create (const gchar *context_id); \
@@ -404,13 +418,13 @@ gtk_im_module_initialize (void)
       return;
     }
 
-  while (!have_error && pango_read_line (file, line_buf))
+  while (!have_error && gtk_read_line (file, line_buf))
     {
       const char *p;
-      
+
       p = line_buf->str;
 
-      if (!pango_skip_space (&p))
+      if (!gtk_skip_space (&p))
 	{
 	  /* Blank line marking the end of a module
 	   */
@@ -420,7 +434,7 @@ gtk_im_module_initialize (void)
 	      module = NULL;
 	      infos = NULL;
 	    }
-	  
+
 	  continue;
 	}
 
@@ -430,11 +444,9 @@ gtk_im_module_initialize (void)
 	   */
 	  module = g_object_new (GTK_TYPE_IM_MODULE, NULL);
 
-	  if (!pango_scan_string (&p, tmp_buf) ||
-	      pango_skip_space (&p))
+	  if (!gtk_scan_string (&p, tmp_buf) || gtk_skip_space (&p))
 	    {
-	      g_warning ("Error parsing context info in '%s'\n  %s", 
-			 filename, line_buf->str);
+	      g_warning ("Error parsing context info in '%s'\n  %s", filename, line_buf->str);
 	      have_error = TRUE;
 	    }
 
@@ -447,55 +459,48 @@ gtk_im_module_initialize (void)
       else
 	{
 	  GtkIMContextInfo *info = g_new0 (GtkIMContextInfo, 1);
-	  
+
 	  /* Read information about a context type
 	   */
-	  if (!pango_scan_string (&p, tmp_buf))
+	  if (!gtk_scan_string (&p, tmp_buf))
 	    goto context_error;
 	  info->context_id = g_strdup (tmp_buf->str);
 
-	  if (!pango_scan_string (&p, tmp_buf))
+	  if (!gtk_scan_string (&p, tmp_buf))
 	    goto context_error;
 	  info->context_name = g_strdup (tmp_buf->str);
 
-	  if (!pango_scan_string (&p, tmp_buf))
+	  if (!gtk_scan_string (&p, tmp_buf))
 	    goto context_error;
 	  info->domain = g_strdup (tmp_buf->str);
 
-	  if (!pango_scan_string (&p, tmp_buf))
+	  if (!gtk_scan_string (&p, tmp_buf))
 	    goto context_error;
+
 	  info->domain_dirname = g_strdup (tmp_buf->str);
 #ifdef G_OS_WIN32
 	  correct_localedir_prefix ((char **) &info->domain_dirname);
 #endif
 
-	  if (!pango_scan_string (&p, tmp_buf))
+	  if (!gtk_scan_string (&p, tmp_buf))
 	    goto context_error;
 	  info->default_locales = g_strdup (tmp_buf->str);
 
-	  if (pango_skip_space (&p))
+	  if (gtk_skip_space (&p))
 	    goto context_error;
 
 	  infos = g_slist_prepend (infos, info);
 	  continue;
 
 	context_error:
-	  g_warning ("Error parsing context info in '%s'\n  %s", 
-		     filename, line_buf->str);
+	  g_warning ("Error parsing context info in '%s'\n  %s", filename, line_buf->str);
 	  have_error = TRUE;
 	}
     }
 
   if (have_error)
     {
-      GSList *tmp_list = infos;
-      while (tmp_list)
-	{
-	  free_info (tmp_list->data);
-	  tmp_list = tmp_list->next;
-	}
-      g_slist_free (infos);
-
+      g_slist_free_full (infos, (GDestroyNotify)free_info);
       g_object_unref (module);
     }
   else if (module)
@@ -508,8 +513,8 @@ gtk_im_module_initialize (void)
 }
 
 static gint
-compare_gtkimcontextinfo_name(const GtkIMContextInfo **a,
-			      const GtkIMContextInfo **b)
+compare_gtkimcontextinfo_name (const GtkIMContextInfo **a,
+                               const GtkIMContextInfo **b)
 {
   return g_utf8_collate ((*a)->context_name, (*b)->context_name);
 }
@@ -754,7 +759,7 @@ get_current_input_language (void)
   /* Current thread's keyboard layout */
   kblayout = GetKeyboardLayout(0);
   /* lowest word in the HKL is the LANGID */
-  langid = ((guint32)kblayout) & 0xFFFF;
+  langid = LOWORD (kblayout);
   /* LCID is the LANGID without order */
   lcid = langid;
 
@@ -797,7 +802,6 @@ get_current_input_language (void)
 
 /**
  * _gtk_im_module_get_default_context_id:
- * @client_window: a window
  * 
  * Return the context_id of the best IM context type 
  * for the given window.
@@ -805,7 +809,7 @@ get_current_input_language (void)
  * Returns: the context ID (will never be %NULL)
  */
 const gchar *
-_gtk_im_module_get_default_context_id (GdkWindow *client_window)
+_gtk_im_module_get_default_context_id (void)
 {
   GSList *tmp_list;
   const gchar *context_id = NULL;

@@ -31,6 +31,13 @@
 #include "gtkintl.h"
 #include "gtkbuildable.h"
 #include "gtkwidgetpath.h"
+#include "gtkcssnodeprivate.h"
+#include "gtkcsscustomgadgetprivate.h"
+#include "gtkwidgetprivate.h"
+#include "gtkcontainerprivate.h"
+#include "gtkstylecontextprivate.h"
+#include "gtkcssstylepropertyprivate.h"
+#include "gtklabel.h"
 
 #include "a11y/gtkframeaccessible.h"
 
@@ -39,11 +46,10 @@
  * @Short_description: A bin with a decorative frame and optional label
  * @Title: GtkFrame
  *
- * The frame widget is a Bin that surrounds its child
- * with a decorative frame and an optional label.
- * If present, the label is drawn in a gap in the
- * top side of the frame. The position of the
- * label can be controlled with gtk_frame_set_label_align().
+ * The frame widget is a bin that surrounds its child with a decorative
+ * frame and an optional label. If present, the label is drawn in a gap
+ * in the top side of the frame. The position of the label can be
+ * controlled with gtk_frame_set_label_align().
  *
  * # GtkFrame as GtkBuildable
  *
@@ -63,6 +69,23 @@
  *   </child>
  * </object>
  * ]|
+ *
+ * # CSS nodes
+ *
+ * |[<!-- language="plain" -->
+ * frame 
+ * ├── border
+ * ├── <label widget>
+ * ╰── <child>
+ * ]|
+ *
+ * GtkFrame has a main CSS node with name frame and a subnode with
+ * name border. The border node is used to render the visible border.
+ *
+ * The border node can be given the style class .flat, which is used by themes
+ * to disable drawing of the border. To do this from code, call
+ * gtk_frame_set_shadow_type() with %GTK_SHADOW_NONE to add the .flat class or
+ * any other shadow type to remove it.
  */
 
 
@@ -73,6 +96,9 @@ struct _GtkFramePrivate
 {
   /* Properties */
   GtkWidget *label_widget;
+
+  GtkCssGadget *gadget;
+  GtkCssGadget *border_gadget;
 
   gint16 shadow_type;
   gfloat label_xalign;
@@ -89,9 +115,13 @@ enum {
   PROP_LABEL_XALIGN,
   PROP_LABEL_YALIGN,
   PROP_SHADOW_TYPE,
-  PROP_LABEL_WIDGET
+  PROP_LABEL_WIDGET,
+  LAST_PROP
 };
 
+static GParamSpec *frame_props[LAST_PROP];
+
+static void gtk_frame_finalize     (GObject      *object);
 static void gtk_frame_set_property (GObject      *object,
 				    guint         param_id,
 				    const GValue *value,
@@ -110,8 +140,6 @@ static void gtk_frame_forall        (GtkContainer   *container,
 				     gboolean	     include_internals,
 			             GtkCallback     callback,
 			             gpointer        callback_data);
-static GtkWidgetPath * gtk_frame_get_path_for_child (GtkContainer *container,
-                                                     GtkWidget    *child);
 
 static void gtk_frame_compute_child_allocation      (GtkFrame      *frame,
 						     GtkAllocation *child_allocation);
@@ -139,6 +167,42 @@ static void gtk_frame_get_preferred_width_for_height(GtkWidget           *layout
 						     gint                 width,
 						     gint                *minimum_height,
 						     gint                *natural_height);
+static void gtk_frame_state_flags_changed (GtkWidget     *widget,
+                                           GtkStateFlags  previous_state);
+
+static void     gtk_frame_measure        (GtkCssGadget        *gadget,
+                                          GtkOrientation       orientation,
+                                          gint                 for_size,
+                                          gint                *minimum_size,
+                                          gint                *natural_size,
+                                          gint                *minimum_baseline,
+                                          gint                *natural_baseline,
+                                          gpointer             data);
+static void     gtk_frame_measure_border (GtkCssGadget        *gadget,
+                                          GtkOrientation       orientation,
+                                          gint                 for_size,
+                                          gint                *minimum_size,
+                                          gint                *natural_size,
+                                          gint                *minimum_baseline,
+                                          gint                *natural_baseline,
+                                          gpointer             data);
+static void     gtk_frame_allocate       (GtkCssGadget        *gadget,
+                                          const GtkAllocation *allocation,
+                                          int                  baseline,
+                                          GtkAllocation       *out_clip,
+                                          gpointer             data);
+static void     gtk_frame_allocate_border (GtkCssGadget        *gadget,
+                                          const GtkAllocation *allocation,
+                                          int                  baseline,
+                                          GtkAllocation       *out_clip,
+                                          gpointer             data);
+static gboolean gtk_frame_render         (GtkCssGadget        *gadget,
+                                          cairo_t             *cr,
+                                          int                  x,
+                                          int                  y,
+                                          int                  width,
+                                          int                  height,
+                                          gpointer             data);
 
 
 G_DEFINE_TYPE_WITH_CODE (GtkFrame, gtk_frame, GTK_TYPE_BIN,
@@ -157,50 +221,49 @@ gtk_frame_class_init (GtkFrameClass *class)
   widget_class = GTK_WIDGET_CLASS (class);
   container_class = GTK_CONTAINER_CLASS (class);
 
+  gobject_class->finalize = gtk_frame_finalize;
   gobject_class->set_property = gtk_frame_set_property;
   gobject_class->get_property = gtk_frame_get_property;
 
-  g_object_class_install_property (gobject_class,
-                                   PROP_LABEL,
-                                   g_param_spec_string ("label",
-                                                        P_("Label"),
-                                                        P_("Text of the frame's label"),
-                                                        NULL,
-                                                        GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
-  g_object_class_install_property (gobject_class,
-				   PROP_LABEL_XALIGN,
-				   g_param_spec_float ("label-xalign",
-						       P_("Label xalign"),
-						       P_("The horizontal alignment of the label"),
-						       0.0,
-						       1.0,
-						       0.0,
-						       GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
-  g_object_class_install_property (gobject_class,
-				   PROP_LABEL_YALIGN,
-				   g_param_spec_float ("label-yalign",
-						       P_("Label yalign"),
-						       P_("The vertical alignment of the label"),
-						       0.0,
-						       1.0,
-						       0.5,
-						       GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
-  g_object_class_install_property (gobject_class,
-                                   PROP_SHADOW_TYPE,
-                                   g_param_spec_enum ("shadow-type",
-                                                      P_("Frame shadow"),
-                                                      P_("Appearance of the frame border"),
-						      GTK_TYPE_SHADOW_TYPE,
-						      GTK_SHADOW_ETCHED_IN,
-                                                      GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
+  frame_props[PROP_LABEL] =
+      g_param_spec_string ("label",
+                           P_("Label"),
+                           P_("Text of the frame's label"),
+                           NULL,
+                           GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
-  g_object_class_install_property (gobject_class,
-                                   PROP_LABEL_WIDGET,
-                                   g_param_spec_object ("label-widget",
-                                                        P_("Label widget"),
-                                                        P_("A widget to display in place of the usual frame label"),
-                                                        GTK_TYPE_WIDGET,
-                                                        GTK_PARAM_READWRITE));
+  frame_props[PROP_LABEL_XALIGN] =
+      g_param_spec_float ("label-xalign",
+                          P_("Label xalign"),
+                          P_("The horizontal alignment of the label"),
+                          0.0, 1.0,
+                          0.0,
+                          GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
+
+  frame_props[PROP_LABEL_YALIGN] =
+      g_param_spec_float ("label-yalign",
+                          P_("Label yalign"),
+                          P_("The vertical alignment of the label"),
+                          0.0, 1.0,
+                          0.5,
+                          GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
+
+  frame_props[PROP_SHADOW_TYPE] =
+      g_param_spec_enum ("shadow-type",
+                         P_("Frame shadow"),
+                         P_("Appearance of the frame border"),
+			GTK_TYPE_SHADOW_TYPE,
+			GTK_SHADOW_ETCHED_IN,
+                        GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
+
+  frame_props[PROP_LABEL_WIDGET] =
+      g_param_spec_object ("label-widget",
+                           P_("Label widget"),
+                           P_("A widget to display in place of the usual frame label"),
+                           GTK_TYPE_WIDGET,
+                           GTK_PARAM_READWRITE);
+
+  g_object_class_install_properties (gobject_class, LAST_PROP, frame_props);
 
   widget_class->draw                           = gtk_frame_draw;
   widget_class->size_allocate                  = gtk_frame_size_allocate;
@@ -208,14 +271,17 @@ gtk_frame_class_init (GtkFrameClass *class)
   widget_class->get_preferred_height           = gtk_frame_get_preferred_height;
   widget_class->get_preferred_height_for_width = gtk_frame_get_preferred_height_for_width;
   widget_class->get_preferred_width_for_height = gtk_frame_get_preferred_width_for_height;
+  widget_class->state_flags_changed            = gtk_frame_state_flags_changed;
 
   container_class->remove = gtk_frame_remove;
   container_class->forall = gtk_frame_forall;
-  container_class->get_path_for_child = gtk_frame_get_path_for_child;
+
+  gtk_container_class_handle_border_width (container_class);
 
   class->compute_child_allocation = gtk_frame_real_compute_child_allocation;
 
   gtk_widget_class_set_accessible_type (widget_class, GTK_TYPE_FRAME_ACCESSIBLE);
+  gtk_widget_class_set_css_name (widget_class, "frame");
 }
 
 static void
@@ -242,7 +308,7 @@ static void
 gtk_frame_init (GtkFrame *frame)
 {
   GtkFramePrivate *priv;
-  GtkStyleContext *context;
+  GtkCssNode *widget_node;
 
   frame->priv = gtk_frame_get_instance_private (frame); 
   priv = frame->priv;
@@ -252,8 +318,37 @@ gtk_frame_init (GtkFrame *frame)
   priv->label_xalign = 0.0;
   priv->label_yalign = 0.5;
 
-  context = gtk_widget_get_style_context (GTK_WIDGET (frame));
-  gtk_style_context_add_class (context, GTK_STYLE_CLASS_FRAME);
+  widget_node = gtk_widget_get_css_node (GTK_WIDGET (frame));
+  priv->gadget = gtk_css_custom_gadget_new_for_node (widget_node,
+                                                     GTK_WIDGET (frame),
+                                                     gtk_frame_measure,
+                                                     gtk_frame_allocate,
+                                                     gtk_frame_render,
+                                                     NULL,
+                                                     NULL);
+  priv->border_gadget = gtk_css_custom_gadget_new ("border",
+                                                       GTK_WIDGET (frame),
+                                                       priv->gadget,
+                                                       NULL,
+                                                       gtk_frame_measure_border,
+                                                       gtk_frame_allocate_border,
+                                                       NULL,
+                                                       NULL,
+                                                       NULL);
+
+  gtk_css_gadget_set_state (priv->border_gadget, gtk_widget_get_state_flags (GTK_WIDGET (frame)));
+}
+
+static void
+gtk_frame_finalize (GObject *object)
+{
+  GtkFrame *frame = GTK_FRAME (object);
+  GtkFramePrivate *priv = frame->priv;
+
+  g_clear_object (&priv->border_gadget);
+  g_clear_object (&priv->gadget);
+
+  G_OBJECT_CLASS (gtk_frame_parent_class)->finalize (object);
 }
 
 static void 
@@ -273,7 +368,7 @@ gtk_frame_set_property (GObject         *object,
     case PROP_LABEL_XALIGN:
       gtk_frame_set_label_align (frame, g_value_get_float (value), 
 				 priv->label_yalign);
-      break;
+     break;
     case PROP_LABEL_YALIGN:
       gtk_frame_set_label_align (frame, priv->label_xalign,
 				 g_value_get_float (value));
@@ -371,30 +466,13 @@ gtk_frame_forall (GtkContainer *container,
     (* callback) (priv->label_widget, callback_data);
 }
 
-static GtkWidgetPath *
-gtk_frame_get_path_for_child (GtkContainer *container,
-                              GtkWidget    *child)
-{
-  GtkFramePrivate *priv = GTK_FRAME (container)->priv;
-  GtkWidgetPath *path;
-
-  path = GTK_CONTAINER_CLASS (gtk_frame_parent_class)->get_path_for_child (container, child);
-
-  if (child == priv->label_widget)
-    gtk_widget_path_iter_add_class (path,
-                                    gtk_widget_path_length (path) - 2,
-                                    GTK_STYLE_CLASS_FRAME);
-
-  return path;
-}
-
 /**
  * gtk_frame_set_label:
  * @frame: a #GtkFrame
  * @label: (allow-none): the text to use as the label of the frame
  *
- * Sets the text of the label. If @label is %NULL,
- * the current label is removed.
+ * Removes the current #GtkFrame:label-widget. If @label is not %NULL, creates a
+ * new #GtkLabel with that text and adds it as the #GtkFrame:label-widget.
  **/
 void
 gtk_frame_set_label (GtkFrame *frame,
@@ -424,7 +502,7 @@ gtk_frame_set_label (GtkFrame *frame,
  * for the label widget if a non-%NULL argument was passed
  * to gtk_frame_new().)
  * 
- * Returns: the text in the label, or %NULL if there
+ * Returns: (nullable): the text in the label, or %NULL if there
  *               was no label widget or the lable widget was not
  *               a #GtkLabel. This string is owned by GTK+ and
  *               must not be modified or freed.
@@ -449,9 +527,8 @@ gtk_frame_get_label (GtkFrame *frame)
  * @frame: a #GtkFrame
  * @label_widget: (nullable): the new label widget
  * 
- * Sets the label widget for the frame. This is the widget that
- * will appear embedded in the top edge of the frame as a
- * title.
+ * Sets the #GtkFrame:label-widget for the frame. This is the widget that
+ * will appear embedded in the top edge of the frame as a title.
  **/
 void
 gtk_frame_set_label_widget (GtkFrame  *frame,
@@ -488,8 +565,8 @@ gtk_frame_set_label_widget (GtkFrame  *frame,
     gtk_widget_queue_resize (GTK_WIDGET (frame));
 
   g_object_freeze_notify (G_OBJECT (frame));
-  g_object_notify (G_OBJECT (frame), "label-widget");
-  g_object_notify (G_OBJECT (frame), "label");
+  g_object_notify_by_pspec (G_OBJECT (frame), frame_props[PROP_LABEL_WIDGET]);
+  g_object_notify_by_pspec (G_OBJECT (frame),  frame_props[PROP_LABEL]);
   g_object_thaw_notify (G_OBJECT (frame));
 }
 
@@ -543,13 +620,13 @@ gtk_frame_set_label_align (GtkFrame *frame,
   if (xalign != priv->label_xalign)
     {
       priv->label_xalign = xalign;
-      g_object_notify (G_OBJECT (frame), "label-xalign");
+      g_object_notify_by_pspec (G_OBJECT (frame), frame_props[PROP_LABEL_XALIGN]);
     }
 
   if (yalign != priv->label_yalign)
     {
       priv->label_yalign = yalign;
-      g_object_notify (G_OBJECT (frame), "label-yalign");
+      g_object_notify_by_pspec (G_OBJECT (frame), frame_props[PROP_LABEL_YALIGN]);
     }
 
   g_object_thaw_notify (G_OBJECT (frame));
@@ -589,15 +666,16 @@ gtk_frame_get_label_align (GtkFrame *frame,
  * @frame: a #GtkFrame
  * @type: the new #GtkShadowType
  * 
- * Sets the shadow type for @frame.
+ * Sets the #GtkFrame:shadow-type for @frame, i.e. whether it is drawn without
+ * (%GTK_SHADOW_NONE) or with (other values) a visible border. Values other than
+ * %GTK_SHADOW_NONE are treated identically by GtkFrame. The chosen type is
+ * applied by removing or adding the .flat class to the CSS node named border.
  **/
 void
 gtk_frame_set_shadow_type (GtkFrame      *frame,
 			   GtkShadowType  type)
 {
   GtkFramePrivate *priv;
-  GtkWidget *widget;
-  GtkStyleContext *context;
 
   g_return_if_fail (GTK_IS_FRAME (frame));
 
@@ -605,20 +683,14 @@ gtk_frame_set_shadow_type (GtkFrame      *frame,
 
   if ((GtkShadowType) priv->shadow_type != type)
     {
-      widget = GTK_WIDGET (frame);
       priv->shadow_type = type;
 
-      context = gtk_widget_get_style_context (GTK_WIDGET (frame));
       if (type == GTK_SHADOW_NONE)
-        gtk_style_context_add_class (context, GTK_STYLE_CLASS_FLAT);
+        gtk_css_gadget_add_class (priv->border_gadget, GTK_STYLE_CLASS_FLAT);
       else
-        gtk_style_context_remove_class (context, GTK_STYLE_CLASS_FLAT);
+        gtk_css_gadget_remove_class (priv->border_gadget, GTK_STYLE_CLASS_FLAT);
 
-      if (gtk_widget_is_drawable (widget))
-	gtk_widget_queue_draw (widget);
-      
-      gtk_widget_queue_resize (widget);
-      g_object_notify (G_OBJECT (frame), "shadow-type");
+      g_object_notify_by_pspec (G_OBJECT (frame), frame_props[PROP_SHADOW_TYPE]);
     }
 }
 
@@ -639,87 +711,65 @@ gtk_frame_get_shadow_type (GtkFrame *frame)
   return frame->priv->shadow_type;
 }
 
-static void
-get_padding_and_border (GtkFrame *frame,
-                        GtkBorder *border)
-{
-  GtkStyleContext *context;
-  GtkStateFlags state;
-
-  context = gtk_widget_get_style_context (GTK_WIDGET (frame));
-  state = gtk_widget_get_state_flags (GTK_WIDGET (frame));
-
-  gtk_style_context_get_padding (context, state, border);
-
-  if (frame->priv->shadow_type != GTK_SHADOW_NONE)
-    {
-      GtkBorder tmp;
-
-      gtk_style_context_get_border (context, state, &tmp);
-      border->top += tmp.top;
-      border->right += tmp.right;
-      border->bottom += tmp.bottom;
-      border->left += tmp.left;
-    }
-}
-
 static gboolean
 gtk_frame_draw (GtkWidget *widget,
 		cairo_t   *cr)
 {
-  GtkFrame *frame;
-  GtkFramePrivate *priv;
-  GtkStyleContext *context;
-  gint x, y, width, height;
-  GtkAllocation allocation;
-  GtkBorder padding;
+  gtk_css_gadget_draw (GTK_FRAME (widget)->priv->gadget, cr);
 
-  frame = GTK_FRAME (widget);
-  priv = frame->priv;
+  return FALSE;
+}
+
+static gboolean
+gtk_frame_render (GtkCssGadget *gadget,
+                  cairo_t      *cr,
+                  int           x,
+                  int           y,
+                  int           width,
+                  int           height,
+                  gpointer      data)
+{
+  GtkWidget *widget;
+  GtkFramePrivate *priv;
+  gint xc, yc, w, h;
+  GtkAllocation allocation;
+
+  widget = gtk_css_gadget_get_owner (gadget);
+  priv = GTK_FRAME (widget)->priv;
+
+  cairo_save (cr);
 
   gtk_widget_get_allocation (widget, &allocation);
-  get_padding_and_border (frame, &padding);
-  context = gtk_widget_get_style_context (widget);
 
-  x = priv->child_allocation.x - allocation.x - padding.left;
-  y = priv->child_allocation.y - allocation.y - padding.top;
-  width = priv->child_allocation.width + padding.left + padding.right;
-  height =  priv->child_allocation.height + padding.top + padding.bottom;
+  /* We want to use the standard gadget drawing for the border,
+   * so we clip out the label allocation in order to get the
+   * frame gap.
+   */
+  xc = priv->label_allocation.x - allocation.x;
+  yc = y;
+  w = priv->label_allocation.width;
+  h = priv->label_allocation.height;
 
-  if (priv->label_widget)
+  if (GTK_IS_LABEL (priv->label_widget))
     {
-      gfloat xalign;
-      gint height_extra;
-      gint x2;
+      PangoRectangle ink_rect;
 
-      if (gtk_widget_get_direction (widget) == GTK_TEXT_DIR_LTR)
-        xalign = priv->label_xalign;
-      else
-        xalign = 1 - priv->label_xalign;
-
-      height_extra = MAX (0, priv->label_allocation.height - padding.top)
-          - priv->label_yalign * priv->label_allocation.height;
-      y -= height_extra;
-      height += height_extra;
-
-      x2 = padding.left + (priv->child_allocation.width - priv->label_allocation.width - 2 * LABEL_PAD - 2 * LABEL_SIDE_PAD) * xalign + LABEL_SIDE_PAD;
-
-      gtk_render_background (context, cr, x, y, width, height);
-
-      /* If the label is completely over or under the frame we can omit the gap */
-      if (priv->label_yalign == 0.0 || priv->label_yalign == 1.0)
-        gtk_render_frame (context, cr, x, y, width, height);
-      else
-        gtk_render_frame_gap (context, cr,
-                              x, y, width, height,
-                              GTK_POS_TOP, x2,
-                              x2 + priv->label_allocation.width + 2 * LABEL_PAD);
+      /* Shrink the clip area for labels, so we get unclipped
+       * frames for the yalign 0.0 and 1.0 cases.
+       */
+      pango_layout_get_pixel_extents (gtk_label_get_layout (GTK_LABEL (priv->label_widget)), &ink_rect, NULL);
+      yc += (h - ink_rect.height) / 2;
+      h = ink_rect.height;
     }
-  else
-    {
-      gtk_render_background (context, cr, x, y, width, height);
-      gtk_render_frame (context, cr, x, y, width, height);
-    }
+
+  cairo_rectangle (cr, 0, 0, allocation.width, allocation.height);
+  cairo_rectangle (cr, xc + w, yc, - w, h);
+  cairo_set_fill_rule (cr, CAIRO_FILL_RULE_WINDING);
+  cairo_clip (cr);
+
+  gtk_css_gadget_draw (priv->border_gadget, cr);
+
+  cairo_restore (cr);
 
   GTK_WIDGET_CLASS (gtk_frame_parent_class)->draw (widget, cr);
 
@@ -730,37 +780,45 @@ static void
 gtk_frame_size_allocate (GtkWidget     *widget,
 			 GtkAllocation *allocation)
 {
-  GtkFrame *frame = GTK_FRAME (widget);
-  GtkFramePrivate *priv = frame->priv;
-  GtkBin *bin = GTK_BIN (widget);
-  GtkAllocation new_allocation;
-  GtkWidget *child;
+  GtkAllocation clip;
 
   gtk_widget_set_allocation (widget, allocation);
 
+  gtk_css_gadget_allocate (GTK_FRAME (widget)->priv->gadget,
+                           allocation,
+                           gtk_widget_get_allocated_baseline (widget),
+                           &clip);
+
+  gtk_widget_set_clip (widget, &clip);
+}
+
+static void
+gtk_frame_allocate (GtkCssGadget        *gadget,
+                    const GtkAllocation *allocation,
+                    int                  baseline,
+                    GtkAllocation       *out_clip,
+                    gpointer             data)
+{
+  GtkWidget *widget;
+  GtkFrame *frame;
+  GtkFramePrivate *priv;
+  GtkAllocation new_allocation;
+  GtkAllocation frame_allocation;
+  gint height_extra;
+  GtkAllocation clip;
+
+  widget = gtk_css_gadget_get_owner (gadget);
+  frame = GTK_FRAME (widget);
+  priv = frame->priv;
+
   gtk_frame_compute_child_allocation (frame, &new_allocation);
-  
-  /* If the child allocation changed, that means that the frame is drawn
-   * in a new place, so we must redraw the entire widget.
-   */
-  if (gtk_widget_get_mapped (widget))
-    {
-      gdk_window_invalidate_rect (gtk_widget_get_window (widget), allocation, FALSE);
-    }
-
-  child = gtk_bin_get_child (bin);
-  if (child && gtk_widget_get_visible (child))
-    gtk_widget_size_allocate (child, &new_allocation);
-
   priv->child_allocation = new_allocation;
 
-  if (priv->label_widget && gtk_widget_get_visible (priv->label_widget))
+  if (priv->label_widget &&
+      gtk_widget_get_visible (priv->label_widget))
     {
-      GtkBorder padding;
       gint nat_width, width, height;
       gfloat xalign;
-
-      get_padding_and_border (frame, &padding);
 
       if (gtk_widget_get_direction (widget) == GTK_TEXT_DIR_LTR)
 	xalign = priv->label_xalign;
@@ -768,23 +826,66 @@ gtk_frame_size_allocate (GtkWidget     *widget,
 	xalign = 1 - priv->label_xalign;
 
       gtk_widget_get_preferred_width (priv->label_widget, NULL, &nat_width);
-      width = new_allocation.width - 2 * LABEL_PAD - 2 * LABEL_SIDE_PAD;
-      width = MIN (width, nat_width);
+      width = MIN (new_allocation.width, nat_width);
+      gtk_widget_get_preferred_height_for_width (priv->label_widget, width, &height, NULL);
 
-      gtk_widget_get_preferred_height_for_width (priv->label_widget, width,
-                                                 &height, NULL);
-
-
-      priv->label_allocation.x = priv->child_allocation.x + LABEL_SIDE_PAD +
-	(new_allocation.width - width - 2 * LABEL_PAD - 2 * LABEL_SIDE_PAD) * xalign + LABEL_PAD;
-
+      priv->label_allocation.x = new_allocation.x + (new_allocation.width - width) * xalign;
+      priv->label_allocation.y = new_allocation.y - height;
+      priv->label_allocation.height = height;
       priv->label_allocation.width = width;
 
-      priv->label_allocation.y = priv->child_allocation.y - MAX (height, padding.top);
-      priv->label_allocation.height = height;
-
       gtk_widget_size_allocate (priv->label_widget, &priv->label_allocation);
+
+      height_extra = (1 - priv->label_yalign) * height;
     }
+  else
+    height_extra = 0;
+
+  frame_allocation.x = priv->child_allocation.x;
+  frame_allocation.y = priv->child_allocation.y - height_extra;
+  frame_allocation.width = priv->child_allocation.width;
+  frame_allocation.height = priv->child_allocation.height + height_extra;
+
+  gtk_css_gadget_allocate (priv->border_gadget,
+                           &frame_allocation,
+                           -1,
+                           &clip);
+
+  gtk_container_get_children_clip (GTK_CONTAINER (widget), out_clip);
+  gdk_rectangle_union (out_clip, &clip, out_clip);
+}
+
+static void
+gtk_frame_allocate_border (GtkCssGadget        *gadget,
+                           const GtkAllocation *allocation,
+                           int                  baseline,
+                           GtkAllocation       *out_clip,
+                           gpointer             data)
+{
+  GtkWidget *widget;
+  GtkFramePrivate *priv;
+  GtkWidget *child;
+  GtkAllocation child_allocation;
+  gint height_extra;
+
+  widget = gtk_css_gadget_get_owner (gadget);
+  priv = GTK_FRAME (widget)->priv;
+
+  if (priv->label_widget &&
+      gtk_widget_get_visible (priv->label_widget))
+    height_extra = priv->label_allocation.height * (1 - priv->label_yalign);
+  else
+    height_extra = 0;
+
+  child_allocation = *allocation;
+  child_allocation.y += height_extra;
+  child_allocation.height -= height_extra;
+
+  child = gtk_bin_get_child (GTK_BIN (widget));
+  if (child && gtk_widget_get_visible (child))
+    gtk_widget_size_allocate (child, &child_allocation);
+
+  *out_clip = *allocation;
 }
 
 static void
@@ -802,190 +903,175 @@ gtk_frame_real_compute_child_allocation (GtkFrame      *frame,
 					 GtkAllocation *child_allocation)
 {
   GtkFramePrivate *priv = frame->priv;
-  GtkWidget *widget = GTK_WIDGET (frame);
   GtkAllocation allocation;
-  GtkBorder padding;
-  gint top_margin;
-  gint border_width;
+  gint height;
 
-  gtk_widget_get_allocation (widget, &allocation);
-  get_padding_and_border (frame, &padding);
-  border_width = gtk_container_get_border_width (GTK_CONTAINER (frame));
+  gtk_css_gadget_get_content_allocation (priv->gadget, &allocation, NULL);
 
   if (priv->label_widget)
     {
-      gint nat_width, width, height;
+      gint nat_width, width;
 
       gtk_widget_get_preferred_width (priv->label_widget, NULL, &nat_width);
-
-      width = allocation.width;
-      width -= 2 * LABEL_PAD + 2 * LABEL_SIDE_PAD;
-      width -= (border_width * 2) + padding.left + padding.right;
-
-      width = MIN (width, nat_width);
-
-      gtk_widget_get_preferred_height_for_width (priv->label_widget, width,
-                                                 &height, NULL);
-
-      top_margin = MAX (height, padding.top);
+      width = MIN (allocation.width, nat_width);
+      gtk_widget_get_preferred_height_for_width (priv->label_widget, width, &height, NULL);
     }
   else
-    top_margin = padding.top;
+    height = 0;
 
-  child_allocation->x = border_width + padding.left;
-  child_allocation->y = border_width + top_margin;
-  child_allocation->width = MAX (1, (gint) (allocation.width - (border_width * 2) -
-					    padding.left - padding.right));
-  child_allocation->height = MAX (1, (gint) (allocation.height - child_allocation->y -
-					     border_width - padding.bottom));
-
-  child_allocation->x += allocation.x;
-  child_allocation->y += allocation.y;
+  child_allocation->x = allocation.x;
+  child_allocation->y = allocation.y + height;
+  child_allocation->width = MAX (1, allocation.width);
+  child_allocation->height = MAX (1, allocation.height - height);
 }
 
 static void
-gtk_frame_get_preferred_size (GtkWidget      *widget,
-                              GtkOrientation  orientation,
-                              gint           *minimum_size,
-                              gint           *natural_size)
+gtk_frame_measure (GtkCssGadget   *gadget,
+                   GtkOrientation  orientation,
+                   int             for_size,
+                   int            *minimum,
+                   int            *natural,
+                   int            *minimum_baseline,
+                   int            *natural_baseline,
+                   gpointer        data)
 {
-  GtkFrame *frame = GTK_FRAME (widget);
-  GtkFramePrivate *priv = frame->priv;
-  GtkBorder padding;
-  GtkWidget *child;
-  GtkBin *bin = GTK_BIN (widget);
+  GtkWidget *widget;
+  GtkFrame *frame;
+  GtkFramePrivate *priv;
   gint child_min, child_nat;
-  gint minimum, natural;
-  guint border_width;
 
-  get_padding_and_border (frame, &padding);
-  border_width = gtk_container_get_border_width (GTK_CONTAINER (widget));
+  widget = gtk_css_gadget_get_owner (gadget);
+  frame = GTK_FRAME (widget);
+  priv = frame->priv;
+
+  gtk_css_gadget_get_preferred_size (priv->border_gadget,
+                                     orientation,
+                                     for_size,
+                                     &child_min,
+                                     &child_nat,
+                                     NULL, NULL);
+
+  *minimum = child_min;
+  *natural = child_nat;
 
   if (priv->label_widget && gtk_widget_get_visible (priv->label_widget))
     {
       if (orientation == GTK_ORIENTATION_HORIZONTAL)
         {
-          gtk_widget_get_preferred_width (priv->label_widget,
-                                          &child_min, &child_nat);
-          minimum = child_min + 2 * LABEL_PAD + 2 * LABEL_SIDE_PAD;
-          natural = child_nat + 2 * LABEL_PAD + 2 * LABEL_SIDE_PAD;
+          gtk_widget_get_preferred_width (priv->label_widget, &child_min, &child_nat);
+          *minimum = MAX (child_min, *minimum);
+          *natural = MAX (child_nat, *natural);
         }
       else
         {
-          gtk_widget_get_preferred_height (priv->label_widget,
-                                           &child_min, &child_nat);
-          minimum = MAX (0, child_min - padding.top);
-          natural = MAX (0, child_nat - padding.top);
+          if (for_size > 0)
+            gtk_widget_get_preferred_height_for_width (priv->label_widget,
+                                                       for_size, &child_min, &child_nat);
+          else
+            gtk_widget_get_preferred_height (priv->label_widget, &child_min, &child_nat);
+
+          *minimum += child_min;
+          *natural += child_nat;
         }
     }
-  else
-    {
-      minimum = 0;
-      natural = 0;
-    }
+}
 
-  child = gtk_bin_get_child (bin);
+static void
+gtk_frame_measure_border (GtkCssGadget   *gadget,
+                          GtkOrientation  orientation,
+                          int             for_size,
+                          int            *minimum,
+                          int            *natural,
+                          int            *minimum_baseline,
+                          int            *natural_baseline,
+                          gpointer        data)
+{
+  GtkWidget *widget = gtk_css_gadget_get_owner (gadget);
+  GtkWidget *child;
+  int child_min, child_nat;
+
+  child = gtk_bin_get_child (GTK_BIN (widget));
   if (child && gtk_widget_get_visible (child))
     {
       if (orientation == GTK_ORIENTATION_HORIZONTAL)
         {
-          gtk_widget_get_preferred_width (child,
-                                          &child_min, &child_nat);
-          minimum = MAX (minimum, child_min);
-          natural = MAX (natural, child_nat);
+          gtk_widget_get_preferred_width (child, &child_min, &child_nat);
         }
       else
         {
-          gtk_widget_get_preferred_height (child,
-                                           &child_min, &child_nat);
-          minimum += child_min;
-          natural += child_nat;
+          if (for_size > 0)
+            gtk_widget_get_preferred_height_for_width (child, for_size, &child_min, &child_nat);
+          else
+            gtk_widget_get_preferred_height (child, &child_min, &child_nat);
         }
-    }
 
-  if (orientation == GTK_ORIENTATION_HORIZONTAL)
-    {
-      minimum += (border_width * 2) + padding.left + padding.right;
-      natural += (border_width * 2) + padding.left + padding.right;
+      *minimum = child_min;
+      *natural = child_nat;
     }
   else
     {
-      minimum += (border_width * 2) + padding.top + padding.bottom;
-      natural += (border_width * 2) + padding.top + padding.bottom;
+      *minimum = 0;
+      *natural = 0;
     }
-
-  *minimum_size = minimum;
-  *natural_size = natural;
 }
+
 
 static void
 gtk_frame_get_preferred_width (GtkWidget *widget,
-                               gint      *minimum_size,
-                               gint      *natural_size)
+                               gint      *minimum,
+                               gint      *natural)
 {
-  gtk_frame_get_preferred_size (widget, GTK_ORIENTATION_HORIZONTAL, minimum_size, natural_size);
+  gtk_css_gadget_get_preferred_size (GTK_FRAME (widget)->priv->gadget,
+                                     GTK_ORIENTATION_HORIZONTAL,
+                                     -1,
+                                     minimum, natural,
+                                     NULL, NULL);
+}
+
+static void
+gtk_frame_get_preferred_width_for_height (GtkWidget *widget,
+                                          gint       height,
+                                          gint      *minimum,
+                                          gint      *natural)
+{
+  gtk_css_gadget_get_preferred_size (GTK_FRAME (widget)->priv->gadget,
+                                     GTK_ORIENTATION_HORIZONTAL,
+                                     height,
+                                     minimum, natural,
+                                     NULL, NULL);
 }
 
 static void
 gtk_frame_get_preferred_height (GtkWidget *widget,
-                                gint      *minimum_size,
-                                gint      *natural_size)
+                                gint      *minimum,
+                                gint      *natural)
 {
-  gtk_frame_get_preferred_size (widget, GTK_ORIENTATION_VERTICAL, minimum_size, natural_size);
+  gtk_css_gadget_get_preferred_size (GTK_FRAME (widget)->priv->gadget,
+                                     GTK_ORIENTATION_VERTICAL,
+                                     -1,
+                                     minimum, natural,
+                                     NULL, NULL);
 }
 
 
 static void
 gtk_frame_get_preferred_height_for_width (GtkWidget *widget,
                                           gint       width,
-                                          gint      *minimum_height,
-                                          gint      *natural_height)
+                                          gint      *minimum,
+                                          gint      *natural)
 {
-  GtkWidget *child;
-  GtkFrame *frame = GTK_FRAME (widget);
-  GtkFramePrivate *priv = frame->priv;
-  GtkBin *bin = GTK_BIN (widget);
-  GtkBorder padding;
-  gint child_min, child_nat, label_width;
-  gint minimum, natural;
-  guint border_width;
-
-  get_padding_and_border (frame, &padding);
-  border_width = gtk_container_get_border_width (GTK_CONTAINER (widget));
-
-  minimum = (border_width * 2) + padding.top + padding.bottom;
-  natural = (border_width * 2) + padding.top + padding.bottom;
-
-  width -= (border_width * 2) + padding.left + padding.right;
-  label_width = width - 2 * LABEL_PAD + 2 * LABEL_SIDE_PAD;
-
-  if (priv->label_widget && gtk_widget_get_visible (priv->label_widget))
-    {
-      gtk_widget_get_preferred_height_for_width (priv->label_widget,
-                                                 label_width, &child_min, &child_nat);
-      minimum += child_min;
-      natural += child_nat;
-    }
-
-  child = gtk_bin_get_child (bin);
-  if (child && gtk_widget_get_visible (child))
-    {
-      gtk_widget_get_preferred_height_for_width (child,
-                                                 width, &child_min, &child_nat);
-      minimum += child_min;
-      natural += child_nat;
-    }
-
-  *minimum_height = minimum;
-  *natural_height = natural;
+  gtk_css_gadget_get_preferred_size (GTK_FRAME (widget)->priv->gadget,
+                                     GTK_ORIENTATION_VERTICAL,
+                                     width,
+                                     minimum, natural,
+                                     NULL, NULL);
 }
 
 static void
-gtk_frame_get_preferred_width_for_height (GtkWidget *widget,
-                                          gint       height,
-                                          gint      *minimum_width,
-                                          gint      *natural_width)
+gtk_frame_state_flags_changed (GtkWidget     *widget,
+                               GtkStateFlags  previous_state)
 {
-  GTK_WIDGET_GET_CLASS (widget)->get_preferred_width (widget, minimum_width, natural_width);
-}
+  gtk_css_gadget_set_state (GTK_FRAME (widget)->priv->border_gadget, gtk_widget_get_state_flags (widget));
 
+  GTK_WIDGET_CLASS (gtk_frame_parent_class)->state_flags_changed (widget, previous_state);
+}

@@ -138,6 +138,10 @@
  * Devices may also have associated “keys” or
  * macro buttons. Such keys can be globally set to map into normal X
  * keyboard events. The mapping is set using gdk_device_set_key().
+ *
+ * In GTK+ 3.20, a new #GdkSeat object has been introduced that
+ * supersedes #GdkDeviceManager and should be preferred in newly
+ * written code.
  */
 
 static void gdk_device_manager_set_property (GObject      *object,
@@ -323,6 +327,9 @@ gdk_device_manager_get_display (GdkDeviceManager *device_manager)
  *          GTK+ and must not be freed or unreffed.
  *
  * Since: 3.0
+ *
+ * Deprecated: 3.20, use gdk_seat_get_pointer(), gdk_seat_get_keyboard()
+ *             and gdk_seat_get_slaves() instead.
  **/
 GList *
 gdk_device_manager_list_devices (GdkDeviceManager *device_manager,
@@ -348,6 +355,8 @@ gdk_device_manager_list_devices (GdkDeviceManager *device_manager,
  *          owned by GDK and must not be freed or unreferenced.
  *
  * Since: 3.0
+ *
+ * Deprecated: 3.20: Use gdk_seat_get_pointer() instead.
  **/
 GdkDevice *
 gdk_device_manager_get_client_pointer (GdkDeviceManager *device_manager)

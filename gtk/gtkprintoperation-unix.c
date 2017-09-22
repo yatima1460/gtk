@@ -30,6 +30,7 @@
 
 #include <glib/gstdio.h>
 #include "gtkprintoperation-private.h"
+#include "gtkprintoperation-portal.h"
 #include "gtkmessagedialog.h"
 
 #include <cairo-pdf.h>
@@ -199,11 +200,12 @@ shell_command_substitute_file (const gchar *cmd,
   return g_string_free (final, FALSE);
 }
 
-void
-_gtk_print_operation_platform_backend_launch_preview (GtkPrintOperation *op,
-						      cairo_surface_t   *surface,
-						      GtkWindow         *parent,
-						      const gchar       *filename)
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+static void
+gtk_print_operation_unix_launch_preview (GtkPrintOperation *op,
+                                         cairo_surface_t   *surface,
+                                         GtkWindow         *parent,
+                                         const gchar       *filename)
 {
   GAppInfo *appinfo;
   GdkAppLaunchContext *context;
@@ -305,7 +307,7 @@ _gtk_print_operation_platform_backend_launch_preview (GtkPrintOperation *op,
     {
       gchar* uri;
 
-      g_warning ("%s %s", _("Error launching preview"), error->message);
+      g_warning ("Error launching preview: %s", error->message);
 
       g_error_free (error);
       error = NULL;
@@ -340,6 +342,7 @@ _gtk_print_operation_platform_backend_launch_preview (GtkPrintOperation *op,
   g_free (data);
   g_free (settings_filename);
 }
+G_GNUC_END_IGNORE_DEPRECATIONS
 
 static void
 unix_finish_send  (GtkPrintJob  *job,
@@ -703,11 +706,11 @@ found_printer (GtkPrinter        *printer,
     g_object_unref (page_setup);
 }
 
-void
-_gtk_print_operation_platform_backend_run_dialog_async (GtkPrintOperation          *op,
-							gboolean                    show_dialog,
-                                                        GtkWindow                  *parent,
-							GtkPrintOperationPrintFunc  print_cb)
+static void
+gtk_print_operation_unix_run_dialog_async (GtkPrintOperation          *op,
+                                           gboolean                    show_dialog,
+                                           GtkWindow                  *parent,
+                                           GtkPrintOperationPrintFunc  print_cb)
 {
   GtkWidget *pd;
   PrintResponseData *rdata;
@@ -778,12 +781,12 @@ close_preview (void *data)
   close (fd);
 }
 
-cairo_surface_t *
-_gtk_print_operation_platform_backend_create_preview_surface (GtkPrintOperation *op,
-							      GtkPageSetup      *page_setup,
-							      gdouble           *dpi_x,
-							      gdouble           *dpi_y,
-							      gchar            **target)
+static cairo_surface_t *
+gtk_print_operation_unix_create_preview_surface (GtkPrintOperation *op,
+                                                 GtkPageSetup      *page_setup,
+                                                 gdouble           *dpi_x,
+                                                 gdouble           *dpi_y,
+                                                 gchar            **target)
 {
   gchar *filename;
   gint fd;
@@ -815,25 +818,25 @@ _gtk_print_operation_platform_backend_create_preview_surface (GtkPrintOperation 
   return surface;
 }
 
-void
-_gtk_print_operation_platform_backend_preview_start_page (GtkPrintOperation *op,
-							  cairo_surface_t   *surface,
-							  cairo_t           *cr)
+static void
+gtk_print_operation_unix_preview_start_page (GtkPrintOperation *op,
+                                             cairo_surface_t   *surface,
+                                             cairo_t           *cr)
 {
 }
 
-void
-_gtk_print_operation_platform_backend_preview_end_page (GtkPrintOperation *op,
-							cairo_surface_t   *surface,
-							cairo_t           *cr)
+static void
+gtk_print_operation_unix_preview_end_page (GtkPrintOperation *op,
+                                           cairo_surface_t   *surface,
+                                           cairo_t           *cr)
 {
   cairo_show_page (cr);
 }
 
-void
-_gtk_print_operation_platform_backend_resize_preview_surface (GtkPrintOperation *op,
-							      GtkPageSetup      *page_setup,
-							      cairo_surface_t   *surface)
+static void
+gtk_print_operation_unix_resize_preview_surface (GtkPrintOperation *op,
+                                                 GtkPageSetup      *page_setup,
+                                                 cairo_surface_t   *surface)
 {
   gdouble w, h;
   
@@ -842,12 +845,11 @@ _gtk_print_operation_platform_backend_resize_preview_surface (GtkPrintOperation 
   cairo_pdf_surface_set_size (surface, w, h);
 }
 
-
-GtkPrintOperationResult
-_gtk_print_operation_platform_backend_run_dialog (GtkPrintOperation *op,
-						  gboolean           show_dialog,
-						  GtkWindow         *parent,
-						  gboolean          *do_print)
+static GtkPrintOperationResult
+gtk_print_operation_unix_run_dialog (GtkPrintOperation *op,
+                                     gboolean           show_dialog,
+                                     GtkWindow         *parent,
+                                     gboolean          *do_print)
  {
   GtkWidget *pd;
   PrintResponseData rdata;
@@ -1217,4 +1219,74 @@ find_printer (const gchar *printer,
 
   if (finder->backends == NULL && !finder->found_printer)
     g_idle_add (find_printer_idle, finder);
+}
+
+
+GtkPrintOperationResult
+_gtk_print_operation_platform_backend_run_dialog (GtkPrintOperation *op,
+						  gboolean           show_dialog,
+						  GtkWindow         *parent,
+						  gboolean          *do_print)
+{
+  if (gtk_should_use_portal ())
+    return gtk_print_operation_portal_run_dialog (op, show_dialog, parent, do_print);
+  else
+    return gtk_print_operation_unix_run_dialog (op, show_dialog, parent, do_print);
+}
+void
+_gtk_print_operation_platform_backend_run_dialog_async (GtkPrintOperation          *op,
+							gboolean                    show_dialog,
+                                                        GtkWindow                  *parent,
+							GtkPrintOperationPrintFunc  print_cb)
+{
+  if (gtk_should_use_portal ())
+    gtk_print_operation_portal_run_dialog_async (op, show_dialog, parent, print_cb);
+  else
+    gtk_print_operation_unix_run_dialog_async (op, show_dialog, parent, print_cb);
+}
+
+void
+_gtk_print_operation_platform_backend_launch_preview (GtkPrintOperation *op,
+                                                      cairo_surface_t   *surface,
+                                                      GtkWindow         *parent,
+                                                      const gchar       *filename)
+{
+  if (gtk_should_use_portal ())
+    gtk_print_operation_portal_launch_preview (op, surface, parent, filename);
+  else
+    gtk_print_operation_unix_launch_preview (op, surface, parent, filename);
+}
+
+cairo_surface_t *
+_gtk_print_operation_platform_backend_create_preview_surface (GtkPrintOperation *op,
+							      GtkPageSetup      *page_setup,
+							      gdouble           *dpi_x,
+							      gdouble           *dpi_y,
+							      gchar            **target)
+{
+  return gtk_print_operation_unix_create_preview_surface (op, page_setup, dpi_x, dpi_y, target);
+}
+
+void
+_gtk_print_operation_platform_backend_resize_preview_surface (GtkPrintOperation *op,
+							      GtkPageSetup      *page_setup,
+							      cairo_surface_t   *surface)
+{
+  gtk_print_operation_unix_resize_preview_surface (op, page_setup, surface);
+}
+
+void
+_gtk_print_operation_platform_backend_preview_start_page (GtkPrintOperation *op,
+							  cairo_surface_t   *surface,
+							  cairo_t           *cr)
+{
+  gtk_print_operation_unix_preview_start_page (op, surface, cr);
+}
+
+void
+_gtk_print_operation_platform_backend_preview_end_page (GtkPrintOperation *op,
+							cairo_surface_t   *surface,
+							cairo_t           *cr)
+{
+  gtk_print_operation_unix_preview_end_page (op, surface, cr);
 }

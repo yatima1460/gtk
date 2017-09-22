@@ -1092,7 +1092,7 @@ _gtk_file_system_model_class_init (GtkFileSystemModelClass *class)
 		  G_SIGNAL_RUN_LAST,
 		  G_STRUCT_OFFSET (GtkFileSystemModelClass, finished_loading),
 		  NULL, NULL,
-		  _gtk_marshal_VOID__POINTER,
+		  NULL,
 		  G_TYPE_NONE, 1, G_TYPE_POINTER);
 }
 
@@ -1655,10 +1655,7 @@ _gtk_file_system_model_iter_is_filtered_out (GtkFileSystemModel *model,
  *   is owned by @model and must not be modified or freed.
  *   If you want to keep the information for later use,
  *   you must take a reference, since the #GFileInfo-struct may be
- *   freed on later changes to the file system.  If you have
- *   called _gtk_file_system_model_add_editable() and the @iter
- *   corresponds to the row that this function returned, the
- *   return value will be NULL.
+ *   freed on later changes to the file system.
  **/
 GFileInfo *
 _gtk_file_system_model_get_info (GtkFileSystemModel *model,
@@ -1965,6 +1962,23 @@ _gtk_file_system_model_update_file (GtkFileSystemModel *model,
     emit_row_changed_for_node (model, id);
 }
 
+void
+_gtk_file_system_model_update_files (GtkFileSystemModel *model,
+                                     GList              *files,
+                                     GList              *infos)
+{
+  GList *l, *i;
+
+  g_return_if_fail (GTK_IS_FILE_SYSTEM_MODEL (model));
+
+  freeze_updates (model);
+
+  for (l = files, i = infos; l; l = l->next, i = i->next)
+    _gtk_file_system_model_update_file (model, (GFile *)l->data, (GFileInfo *)i->data);
+
+  thaw_updates (model);
+}
+
 /**
  * _gtk_file_system_model_set_filter:
  * @mode: a #GtkFileSystemModel
@@ -2133,46 +2147,47 @@ _gtk_file_system_model_add_and_query_file (GtkFileSystemModel *model,
                            model);
 }
 
-/**
- * _gtk_file_system_model_add_editable:
- * @model: a #GtkFileSystemModel
- * @iter: Location to return the iter corresponding to the editable row
- * 
- * Adds an “empty” row at the beginning of the model.  This does not refer to
- * any file, but is a temporary placeholder for a file name that the user will
- * type when a corresponding cell is made editable.  When your code is done
- * using this temporary row, call _gtk_file_system_model_remove_editable().
- **/
-void
-_gtk_file_system_model_add_editable (GtkFileSystemModel *model, GtkTreeIter *iter)
+static void
+gtk_file_system_model_one_query_done (GObject *     object,
+                                      GAsyncResult *res,
+                                      gpointer      data)
 {
-  g_return_if_fail (GTK_IS_FILE_SYSTEM_MODEL (model));
-  g_return_if_fail (!get_node (model, 0)->visible);
+  GtkFileSystemModel *model = data; /* only a valid pointer if not cancelled */
 
-  node_set_visible_and_filtered_out (model, 0, TRUE, FALSE);
-  ITER_INIT_FROM_INDEX (model, iter, 0);
-
-  /* we don't want file system changes to affect the model while
-   * editing is in place
-   */
-  freeze_updates (model);
-}
-
-/**
- * _gtk_file_system_model_remove_editable:
- * @model: a #GtkFileSystemModel
- * 
- * Removes the “empty” row at the beginning of the model that was
- * created with _gtk_file_system_model_add_editable().  You should call
- * this function when your code is finished editing this temporary row.
- **/
-void
-_gtk_file_system_model_remove_editable (GtkFileSystemModel *model)
-{
-  g_return_if_fail (GTK_IS_FILE_SYSTEM_MODEL (model));
-  g_return_if_fail (get_node (model, 0)->visible);
-
+  gtk_file_system_model_query_done (object, res, data);
   thaw_updates (model);
-
-  node_set_visible_and_filtered_out (model, 0, FALSE, FALSE);
 }
+
+void
+_gtk_file_system_model_add_and_query_files (GtkFileSystemModel *model,
+                                            GList              *list,
+                                            const char         *attributes)
+{
+  GList *l;
+  GFile *file;
+
+  g_return_if_fail (GTK_IS_FILE_SYSTEM_MODEL (model));
+  g_return_if_fail (attributes != NULL);
+
+  for (l = list; l; l = l->next)
+    {
+      file = (GFile *)l->data;
+      freeze_updates (model);
+      g_file_query_info_async (file,
+                               attributes,
+                               G_FILE_QUERY_INFO_NONE,
+                               IO_PRIORITY,
+                               model->cancellable,
+                               gtk_file_system_model_one_query_done,
+                               model);
+    }
+}
+
+GFile *
+_gtk_file_system_model_get_directory (GtkFileSystemModel *model)
+{
+  g_return_val_if_fail (GTK_IS_FILE_SYSTEM_MODEL (model), NULL);
+
+  return model->dir;
+}
+

@@ -58,11 +58,13 @@ struct _GtkGestureSinglePrivate
 enum {
   PROP_TOUCH_ONLY = 1,
   PROP_EXCLUSIVE,
-  PROP_BUTTON
+  PROP_BUTTON,
+  LAST_PROP
 };
 
-G_DEFINE_TYPE_WITH_PRIVATE (GtkGestureSingle, gtk_gesture_single,
-                            GTK_TYPE_GESTURE)
+static GParamSpec *properties[LAST_PROP] = { NULL, };
+
+G_DEFINE_TYPE_WITH_PRIVATE (GtkGestureSingle, gtk_gesture_single, GTK_TYPE_GESTURE)
 
 static void
 gtk_gesture_single_get_property (GObject    *object,
@@ -147,8 +149,7 @@ gtk_gesture_single_handle_event (GtkEventController *controller,
   source = gdk_device_get_source (source_device);
 
   if (source != GDK_SOURCE_TOUCHSCREEN)
-    test_touchscreen = ((gtk_get_debug_flags () & GTK_DEBUG_TOUCHSCREEN) != 0 ||
-                        g_getenv ("GTK_TEST_TOUCHSCREEN"));
+    test_touchscreen = gtk_simulate_touchscreen ();
 
   switch (event->type)
     {
@@ -169,6 +170,8 @@ gtk_gesture_single_handle_event (GtkEventController *controller,
       button = event->button.button;
       break;
     case GDK_MOTION_NOTIFY:
+      if (!gtk_gesture_handles_sequence (GTK_GESTURE (controller), sequence))
+        return FALSE;
       if (priv->touch_only && !test_touchscreen && source != GDK_SOURCE_TOUCHSCREEN)
         return FALSE;
 
@@ -190,6 +193,7 @@ gtk_gesture_single_handle_event (GtkEventController *controller,
       break;
     case GDK_TOUCH_CANCEL:
     case GDK_GRAB_BROKEN:
+    case GDK_TOUCHPAD_SWIPE:
       return GTK_EVENT_CONTROLLER_CLASS (gtk_gesture_single_parent_class)->handle_event (controller,
                                                                                          event);
       break;
@@ -253,14 +257,12 @@ gtk_gesture_single_class_init (GtkGestureSingleClass *klass)
    *
    * Since: 3.14
    */
-  g_object_class_install_property (object_class,
-                                   PROP_TOUCH_ONLY,
-                                   g_param_spec_boolean ("touch-only",
-                                                         P_("Handle only touch events"),
-                                                         P_("Whether the gesture handles"
-                                                            " only touch events"),
-                                                         FALSE,
-                                                         GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
+  properties[PROP_TOUCH_ONLY] =
+      g_param_spec_boolean ("touch-only",
+                            P_("Handle only touch events"),
+                            P_("Whether the gesture handles only touch events"),
+                            FALSE,
+                            GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
    * GtkGestureSingle:exclusive:
@@ -270,13 +272,12 @@ gtk_gesture_single_class_init (GtkGestureSingleClass *klass)
    *
    * Since: 3.14
    */
-  g_object_class_install_property (object_class,
-                                   PROP_EXCLUSIVE,
-                                   g_param_spec_boolean ("exclusive",
-                                                         P_("Whether the gesture is exclusive"),
-                                                         P_("Whether the gesture is exclusive"),
-                                                         FALSE,
-                                                         GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
+  properties[PROP_EXCLUSIVE] =
+      g_param_spec_boolean ("exclusive",
+                            P_("Whether the gesture is exclusive"),
+                            P_("Whether the gesture is exclusive"),
+                            FALSE,
+                            GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
    * GtkGestureSingle:button:
@@ -285,13 +286,15 @@ gtk_gesture_single_class_init (GtkGestureSingleClass *klass)
    *
    * Since: 3.14
    */
-  g_object_class_install_property (object_class,
-                                   PROP_BUTTON,
-                                   g_param_spec_uint ("button",
-                                                      P_("Button number"),
-                                                      P_("Button number to listen to"),
-                                                      0, G_MAXUINT, GDK_BUTTON_PRIMARY,
-                                                      GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
+  properties[PROP_BUTTON] =
+      g_param_spec_uint ("button",
+                         P_("Button number"),
+                         P_("Button number to listen to"),
+                         0, G_MAXUINT,
+                         GDK_BUTTON_PRIMARY,
+                         GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
+
+  g_object_class_install_properties (object_class, LAST_PROP, properties);
 }
 
 static void
@@ -303,8 +306,7 @@ _gtk_gesture_single_update_evmask (GtkGestureSingle *gesture)
   priv = gtk_gesture_single_get_instance_private (gesture);
   evmask = GDK_TOUCH_MASK;
 
-  if (!priv->touch_only || g_getenv ("GTK_TEST_TOUCHSCREEN") ||
-      (gtk_get_debug_flags () & GTK_DEBUG_TOUCHSCREEN) != 0)
+  if (!priv->touch_only || gtk_simulate_touchscreen ())
     evmask |= GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK |
       GDK_BUTTON_MOTION_MASK;
 
@@ -371,7 +373,7 @@ gtk_gesture_single_set_touch_only (GtkGestureSingle *gesture,
 
   priv->touch_only = touch_only;
   _gtk_gesture_single_update_evmask (gesture);
-  g_object_notify (G_OBJECT (gesture), "touch-only");
+  g_object_notify_by_pspec (G_OBJECT (gesture), properties[PROP_TOUCH_ONLY]);
 }
 
 /**
@@ -425,7 +427,7 @@ gtk_gesture_single_set_exclusive (GtkGestureSingle *gesture,
 
   priv->exclusive = exclusive;
   _gtk_gesture_single_update_evmask (gesture);
-  g_object_notify (G_OBJECT (gesture), "exclusive");
+  g_object_notify_by_pspec (G_OBJECT (gesture), properties[PROP_EXCLUSIVE]);
 }
 
 /**
@@ -476,7 +478,7 @@ gtk_gesture_single_set_button (GtkGestureSingle *gesture,
     return;
 
   priv->button = button;
-  g_object_notify (G_OBJECT (gesture), "button");
+  g_object_notify_by_pspec (G_OBJECT (gesture), properties[PROP_BUTTON]);
 }
 
 /**
@@ -509,7 +511,7 @@ gtk_gesture_single_get_current_button (GtkGestureSingle *gesture)
  * Returns the event sequence currently interacting with @gesture.
  * This is only meaningful if gtk_gesture_is_active() returns %TRUE.
  *
- * Returns: the current sequence
+ * Returns: (nullable): the current sequence
  *
  * Since: 3.14
  **/

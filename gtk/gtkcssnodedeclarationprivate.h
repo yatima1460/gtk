@@ -34,6 +34,9 @@ GtkJunctionSides        gtk_css_node_declaration_get_junction_sides     (const G
 gboolean                gtk_css_node_declaration_set_type               (GtkCssNodeDeclaration        **decl,
                                                                          GType                          type);
 GType                   gtk_css_node_declaration_get_type               (const GtkCssNodeDeclaration   *decl);
+gboolean                gtk_css_node_declaration_set_name               (GtkCssNodeDeclaration        **decl,
+                                                                         /*interned*/ const char       *name);
+/*interned*/ const char*gtk_css_node_declaration_get_name               (const GtkCssNodeDeclaration   *decl);
 gboolean                gtk_css_node_declaration_set_id                 (GtkCssNodeDeclaration        **decl,
                                                                          const char                    *id);
 const char *            gtk_css_node_declaration_get_id                 (const GtkCssNodeDeclaration   *decl);
@@ -45,15 +48,18 @@ gboolean                gtk_css_node_declaration_add_class              (GtkCssN
                                                                          GQuark                         class_quark);
 gboolean                gtk_css_node_declaration_remove_class           (GtkCssNodeDeclaration        **decl,
                                                                          GQuark                         class_quark);
+gboolean                gtk_css_node_declaration_clear_classes          (GtkCssNodeDeclaration        **decl);
 gboolean                gtk_css_node_declaration_has_class              (const GtkCssNodeDeclaration   *decl,
                                                                          GQuark                         class_quark);
-GList *                 gtk_css_node_declaration_list_classes           (const GtkCssNodeDeclaration   *decl);
+const GQuark *          gtk_css_node_declaration_get_classes            (const GtkCssNodeDeclaration   *decl,
+                                                                         guint                         *n_classes);
 
 gboolean                gtk_css_node_declaration_add_region             (GtkCssNodeDeclaration        **decl,
                                                                          GQuark                         region_quark,
                                                                          GtkRegionFlags                 flags);
 gboolean                gtk_css_node_declaration_remove_region          (GtkCssNodeDeclaration        **decl,
                                                                          GQuark                         region_quark);
+gboolean                gtk_css_node_declaration_clear_regions          (GtkCssNodeDeclaration        **decl);
 gboolean                gtk_css_node_declaration_has_region             (const GtkCssNodeDeclaration   *decl,
                                                                          GQuark                         region_quark,
                                                                          GtkRegionFlags                *flags_return);
@@ -66,6 +72,10 @@ gboolean                gtk_css_node_declaration_equal                  (gconstp
 void                    gtk_css_node_declaration_add_to_widget_path     (const GtkCssNodeDeclaration   *decl,
                                                                          GtkWidgetPath                 *path,
                                                                          guint                          pos);
+
+void                    gtk_css_node_declaration_print                  (const GtkCssNodeDeclaration   *decl,
+                                                                         GString                       *string);
+
 G_END_DECLS
 
 #endif /* __GTK_CSS_NODE_DECLARATION_PRIVATE_H__ */

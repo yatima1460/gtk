@@ -29,7 +29,7 @@
 #include "gtkbuildable.h"
 #include "gtktexttagprivate.h"
 #include "gtkmarshalers.h"
-#include "gtktextbuffer.h" /* just for the lame notify_will_remove_tag hack */
+#include "gtktextbufferprivate.h" /* just for the lame notify_will_remove_tag hack */
 #include "gtkintl.h"
 
 #include <stdlib.h>
@@ -103,7 +103,7 @@ gtk_text_tag_table_class_init (GtkTextTagTableClass *klass)
    * GtkTextTagTable::tag-changed:
    * @texttagtable: the object which received the signal.
    * @tag: the changed tag.
-   * @size_changed: whether the size has been changed.
+   * @size_changed: whether the change affects the #GtkTextView layout.
    */
   signals[TAG_CHANGED] =
     g_signal_new (I_("tag-changed"),
@@ -128,7 +128,7 @@ gtk_text_tag_table_class_init (GtkTextTagTableClass *klass)
                   G_SIGNAL_RUN_LAST,
                   G_STRUCT_OFFSET (GtkTextTagTableClass, tag_added),
                   NULL, NULL,
-                  _gtk_marshal_VOID__OBJECT,
+                  NULL,
                   G_TYPE_NONE,
                   1,
                   GTK_TYPE_TEXT_TAG);
@@ -144,7 +144,7 @@ gtk_text_tag_table_class_init (GtkTextTagTableClass *klass)
                   G_SIGNAL_RUN_LAST,
                   G_STRUCT_OFFSET (GtkTextTagTableClass, tag_removed),
                   NULL, NULL,
-                  _gtk_marshal_VOID__OBJECT,
+                  NULL,
                   G_TYPE_NONE,
                   1,
                   GTK_TYPE_TEXT_TAG);
@@ -289,7 +289,8 @@ gtk_text_tag_table_add (GtkTextTagTable *table,
  * 
  * Look up a named tag.
  * 
- * Returns: (transfer none): The tag, or %NULL if none by that name is in the table.
+ * Returns: (nullable) (transfer none): The tag, or %NULL if none by that
+ * name is in the table.
  **/
 GtkTextTag*
 gtk_text_tag_table_lookup (GtkTextTagTable *table,

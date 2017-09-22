@@ -25,6 +25,7 @@
 
 #include "gdkwindowimpl.h"
 #include "gdkprivate-quartz.h"
+#include "gdkglcontext-quartz.h"
 #include "gdkquartzscreen.h"
 #include "gdkquartzcursor.h"
 
@@ -120,6 +121,7 @@ gdk_window_impl_quartz_get_context (GdkWindowImplQuartz *window_impl,
 				    gboolean             antialias)
 {
   CGContextRef cg_context;
+  CGSize scale;
 
   if (GDK_WINDOW_DESTROYED (window_impl->wrapper))
     return NULL;
@@ -139,6 +141,12 @@ gdk_window_impl_quartz_get_context (GdkWindowImplQuartz *window_impl,
   cg_context = [[NSGraphicsContext currentContext] graphicsPort];
   CGContextSaveGState (cg_context);
   CGContextSetAllowsAntialiasing (cg_context, antialias);
+
+  /* Undo the default scaling transform, since we apply our own
+   * in gdk_quartz_ref_cairo_surface () */
+  scale = CGContextConvertSizeToDeviceSpace (cg_context,
+                                             CGSizeMake (1.0, 1.0));
+  CGContextScaleCTM (cg_context, 1.0 / scale.width, 1.0 / scale.height);
 
   return cg_context;
 }
@@ -316,10 +324,14 @@ gdk_quartz_ref_cairo_surface (GdkWindow *window)
 
   if (!impl->cairo_surface)
     {
+      gint scale = gdk_window_get_scale_factor (impl->wrapper);
+
       impl->cairo_surface = 
           gdk_quartz_create_cairo_surface (impl,
-                                           gdk_window_get_width (impl->wrapper),
-                                           gdk_window_get_height (impl->wrapper));
+                                           gdk_window_get_width (impl->wrapper) * scale,
+                                           gdk_window_get_height (impl->wrapper) * scale);
+
+      cairo_surface_set_device_scale (impl->cairo_surface, scale, scale);
     }
   else
     cairo_surface_reference (impl->cairo_surface);
@@ -411,7 +423,14 @@ _gdk_quartz_display_before_process_all_updates (GdkDisplay *display)
 {
   in_process_all_updates = TRUE;
 
-  NSDisableScreenUpdates ();
+  if (gdk_quartz_osx_version () >= GDK_OSX_EL_CAPITAN)
+    {
+      [NSAnimationContext endGrouping];
+    }
+  else
+    {
+      NSDisableScreenUpdates ();
+    }
 }
 
 void
@@ -441,7 +460,14 @@ _gdk_quartz_display_after_process_all_updates (GdkDisplay *display)
 
   in_process_all_updates = FALSE;
 
-  NSEnableScreenUpdates ();
+  if (gdk_quartz_osx_version() >= GDK_OSX_EL_CAPITAN)
+    {
+      [NSAnimationContext beginGrouping];
+    }
+  else
+    {
+      NSEnableScreenUpdates ();
+    }
 }
 
 static const gchar *
@@ -1862,7 +1888,17 @@ gdk_quartz_window_set_geometry_hints (GdkWindow         *window,
   
   if (geom_mask & GDK_HINT_ASPECT)
     {
-      /* FIXME: Implement */
+      NSSize size;
+
+      if (geometry->min_aspect != geometry->max_aspect)
+        {
+          g_warning ("Only equal minimum and maximum aspect ratios are supported on Mac OS. Using minimum aspect ratio...");
+        }
+
+      size.width = geometry->min_aspect;
+      size.height = 1.0;
+
+      [impl->toplevel setContentAspectRatio:size];
     }
 
   if (geom_mask & GDK_HINT_WIN_GRAVITY)
@@ -2122,6 +2158,19 @@ window_type_hint_to_hides_on_deactivate (GdkWindowTypeHint hint)
 }
 
 static void
+_gdk_quartz_window_update_has_shadow (GdkWindowImplQuartz *impl)
+{
+    gboolean has_shadow;
+
+    /* In case there is any shadow set we have to turn off the
+     * NSWindow setHasShadow as the system drawn ones wont match our
+     * window boundary anymore */
+    has_shadow = (window_type_hint_to_shadow (impl->type_hint) && !impl->shadow_max);
+
+    [impl->toplevel setHasShadow: has_shadow];
+}
+
+static void
 gdk_quartz_window_set_type_hint (GdkWindow        *window,
                                  GdkWindowTypeHint hint)
 {
@@ -2139,7 +2188,7 @@ gdk_quartz_window_set_type_hint (GdkWindow        *window,
   if (GDK_WINDOW_IS_MAPPED (window))
     return;
 
-  [impl->toplevel setHasShadow: window_type_hint_to_shadow (hint)];
+  _gdk_quartz_window_update_has_shadow (impl);
   [impl->toplevel setLevel: window_type_hint_to_level (hint)];
   [impl->toplevel setHidesOnDeactivate: window_type_hint_to_hides_on_deactivate (hint)];
 }
@@ -2200,12 +2249,6 @@ gdk_quartz_window_begin_resize_drag (GdkWindow     *window,
 
   g_return_if_fail (GDK_IS_WINDOW (window));
 
-  if (edge != GDK_WINDOW_EDGE_SOUTH_EAST)
-    {
-      g_warning ("Resizing is only implemented for GDK_WINDOW_EDGE_SOUTH_EAST on Mac OS");
-      return;
-    }
-
   if (GDK_WINDOW_DESTROYED (window))
     return;
 
@@ -2217,7 +2260,7 @@ gdk_quartz_window_begin_resize_drag (GdkWindow     *window,
       return;
     }
 
-  [(GdkQuartzNSWindow *)impl->toplevel beginManualResize];
+  [(GdkQuartzNSWindow *)impl->toplevel beginManualResize:edge];
 }
 
 static void
@@ -2382,7 +2425,8 @@ gdk_quartz_window_set_decorations (GdkWindow       *window,
                                                                   backing:NSBackingStoreBuffered
                                                                     defer:NO
                                                                    screen:screen];
-          [impl->toplevel setHasShadow: window_type_hint_to_shadow (impl->type_hint)];
+          _gdk_quartz_window_update_has_shadow (impl);
+
           [impl->toplevel setLevel: window_type_hint_to_level (impl->type_hint)];
           if (title)
             [impl->toplevel setTitle:title];
@@ -2392,7 +2436,10 @@ gdk_quartz_window_set_decorations (GdkWindow       *window,
         }
 
       if (new_mask == NSBorderlessWindowMask)
-        [impl->toplevel setContentSize:rect.size];
+        {
+          [impl->toplevel setContentSize:rect.size];
+          [impl->toplevel setCollectionBehavior:NSWindowCollectionBehaviorFullScreenPrimary];
+        }
       else
         [impl->toplevel setFrame:rect display:YES];
 
@@ -2441,9 +2488,47 @@ static void
 gdk_quartz_window_set_functions (GdkWindow    *window,
                                  GdkWMFunction functions)
 {
+  GdkWindowImplQuartz *impl;
+  gboolean min, max, close;
+
   g_return_if_fail (GDK_IS_WINDOW (window));
 
-  /* FIXME: Implement */
+  impl = GDK_WINDOW_IMPL_QUARTZ (window->impl);
+
+  if (functions & GDK_FUNC_ALL)
+    {
+      min = !(functions & GDK_FUNC_MINIMIZE);
+      max = !(functions & GDK_FUNC_MAXIMIZE);
+      close = !(functions & GDK_FUNC_CLOSE);
+    }
+  else
+    {
+      min = (functions & GDK_FUNC_MINIMIZE);
+      max = (functions & GDK_FUNC_MAXIMIZE);
+      close = (functions & GDK_FUNC_CLOSE);
+    }
+
+  if (impl->toplevel)
+    {
+      NSUInteger mask = [impl->toplevel styleMask];
+
+      if (min)
+        mask = mask | NSMiniaturizableWindowMask;
+      else
+        mask = mask & ~NSMiniaturizableWindowMask;
+
+      if (max)
+        mask = mask | NSResizableWindowMask;
+      else
+        mask = mask & ~NSResizableWindowMask;
+
+      if (close)
+        mask = mask | NSClosableWindowMask;
+      else
+        mask = mask & ~NSClosableWindowMask;
+
+      [impl->toplevel setStyleMask:mask];
+    }
 }
 
 static void
@@ -2466,27 +2551,23 @@ static void
 gdk_quartz_window_maximize (GdkWindow *window)
 {
   GdkWindowImplQuartz *impl;
+  gboolean maximized;
 
   if (GDK_WINDOW_DESTROYED (window) ||
       !WINDOW_IS_TOPLEVEL (window))
     return;
 
   impl = GDK_WINDOW_IMPL_QUARTZ (window->impl);
+  maximized = gdk_window_get_state (window) & GDK_WINDOW_STATE_MAXIMIZED;
 
   if (GDK_WINDOW_IS_MAPPED (window))
     {
       GDK_QUARTZ_ALLOC_POOL;
 
-      if (impl->toplevel && ![impl->toplevel isZoomed])
-	[impl->toplevel zoom:nil];
+      if (impl->toplevel && !maximized)
+        [impl->toplevel zoom:nil];
 
       GDK_QUARTZ_RELEASE_POOL;
-    }
-  else
-    {
-      gdk_synthesize_window_state (window,
-				   0,
-				   GDK_WINDOW_STATE_MAXIMIZED);
     }
 }
 
@@ -2494,27 +2575,23 @@ static void
 gdk_quartz_window_unmaximize (GdkWindow *window)
 {
   GdkWindowImplQuartz *impl;
+  gboolean maximized;
 
   if (GDK_WINDOW_DESTROYED (window) ||
       !WINDOW_IS_TOPLEVEL (window))
     return;
 
   impl = GDK_WINDOW_IMPL_QUARTZ (window->impl);
+  maximized = gdk_window_get_state (window) & GDK_WINDOW_STATE_MAXIMIZED;
 
   if (GDK_WINDOW_IS_MAPPED (window))
     {
       GDK_QUARTZ_ALLOC_POOL;
 
-      if (impl->toplevel && [impl->toplevel isZoomed])
-	[impl->toplevel zoom:nil];
+      if (impl->toplevel && maximized)
+        [impl->toplevel zoom:nil];
 
       GDK_QUARTZ_RELEASE_POOL;
-    }
-  else
-    {
-      gdk_synthesize_window_state (window,
-				   GDK_WINDOW_STATE_MAXIMIZED,
-				   0);
     }
 }
 
@@ -2822,6 +2899,8 @@ gdk_quartz_window_set_shadow_width (GdkWindow *window,
     return;
 
   impl->shadow_top = top;
+  impl->shadow_max = MAX (MAX (left, right), MAX (top, bottom));
+  _gdk_quartz_window_update_has_shadow (impl);
 }
 
 static cairo_region_t *
@@ -2944,6 +3023,7 @@ gdk_window_impl_quartz_class_init (GdkWindowImplQuartzClass *klass)
   impl_class->change_property = _gdk_quartz_window_change_property;
   impl_class->delete_property = _gdk_quartz_window_delete_property;
 
+  impl_class->create_gl_context = gdk_quartz_window_create_gl_context;
 
   impl_quartz_class->get_context = gdk_window_impl_quartz_get_context;
   impl_quartz_class->release_context = gdk_window_impl_quartz_release_context;

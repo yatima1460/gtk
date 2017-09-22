@@ -118,6 +118,13 @@ gdk_wayland_keymap_get_num_lock_state (GdkKeymap *keymap)
 }
 
 static gboolean
+gdk_wayland_keymap_get_scroll_lock_state (GdkKeymap *keymap)
+{
+  return xkb_state_led_name_is_active (GDK_WAYLAND_KEYMAP (keymap)->xkb_state,
+                                       XKB_LED_NAME_SCROLL);
+}
+
+static gboolean
 gdk_wayland_keymap_get_entries_for_keyval (GdkKeymap     *keymap,
 					   guint          keyval,
 					   GdkKeymapKey **keys,
@@ -126,10 +133,13 @@ gdk_wayland_keymap_get_entries_for_keyval (GdkKeymap     *keymap,
   struct xkb_keymap *xkb_keymap = GDK_WAYLAND_KEYMAP (keymap)->xkb_keymap;
   GArray *retval;
   guint keycode;
+  xkb_keycode_t min_keycode, max_keycode;
 
   retval = g_array_new (FALSE, FALSE, sizeof (GdkKeymapKey));
 
-  for (keycode = 8; keycode < 255; keycode++) /* FIXME: min/max keycode */
+  min_keycode = xkb_keymap_min_keycode (xkb_keymap);
+  max_keycode = xkb_keymap_max_keycode (xkb_keymap);
+  for (keycode = min_keycode; keycode < max_keycode; keycode++)
     {
       gint num_layouts, layout;
       num_layouts = xkb_keymap_num_layouts_for_key (xkb_keymap, keycode);
@@ -257,6 +267,12 @@ get_xkb_modifiers (struct xkb_keymap *xkb_keymap,
     mods |= 1 << xkb_keymap_mod_get_index (xkb_keymap, XKB_MOD_NAME_LOGO);
   if (state & GDK_MOD5_MASK)
     mods |= 1 << xkb_keymap_mod_get_index (xkb_keymap, "Mod5");
+  if (state & GDK_SUPER_MASK)
+    mods |= 1 << xkb_keymap_mod_get_index (xkb_keymap, "Super");
+  if (state & GDK_HYPER_MASK)
+    mods |= 1 << xkb_keymap_mod_get_index (xkb_keymap, "Hyper");
+  if (state & GDK_META_MASK)
+    mods |= 1 << xkb_keymap_mod_get_index (xkb_keymap, "Meta");
 
   return mods;
 }
@@ -283,6 +299,18 @@ get_gdk_modifiers (struct xkb_keymap *xkb_keymap,
     state |= GDK_MOD4_MASK;
   if (mods & (1 << xkb_keymap_mod_get_index (xkb_keymap, "Mod5")))
     state |= GDK_MOD5_MASK;
+  if (mods & (1 << xkb_keymap_mod_get_index (xkb_keymap, "Super")))
+    state |= GDK_SUPER_MASK;
+  if (mods & (1 << xkb_keymap_mod_get_index (xkb_keymap, "Hyper")))
+    state |= GDK_HYPER_MASK;
+  /* Gtk+ treats MOD1 as a synonym for Alt, and does not expect it to
+   * be mapped around, so we should avoid adding GDK_META_MASK if MOD1
+   * is already included to avoid confusing gtk+ and applications that
+   * rely on that behavior.
+   */
+  if (mods & (1 << xkb_keymap_mod_get_index (xkb_keymap, "Meta")) &&
+      (state & GDK_MOD1_MASK) == 0)
+    state |= GDK_META_MASK;
 
   return state;
 }
@@ -332,7 +360,7 @@ gdk_wayland_keymap_translate_keyboard_state (GdkKeymap       *keymap,
   if (consumed_modifiers)
     *consumed_modifiers = get_gdk_modifiers (xkb_keymap, consumed);
 
-  return TRUE;
+  return (sym != XKB_KEY_NoSymbol);
 }
 
 static guint
@@ -351,14 +379,62 @@ static void
 gdk_wayland_keymap_add_virtual_modifiers (GdkKeymap       *keymap,
 					  GdkModifierType *state)
 {
-  return;
+  struct xkb_keymap *xkb_keymap;
+  struct xkb_state *xkb_state;
+  xkb_mod_index_t idx;
+  uint32_t mods, real;
+  struct { const char *name; GdkModifierType mask; } vmods[] = {
+    { "Super", GDK_SUPER_MASK },
+    { "Hyper", GDK_HYPER_MASK },
+    { "Meta", GDK_META_MASK },
+    { NULL, 0 }
+  };
+  int i;
+
+  xkb_keymap = GDK_WAYLAND_KEYMAP (keymap)->xkb_keymap;
+  mods = get_xkb_modifiers (xkb_keymap, *state);
+
+  xkb_state = xkb_state_new (xkb_keymap);
+
+  for (i = 0; vmods[i].name; i++)
+    {
+      idx = xkb_keymap_mod_get_index (xkb_keymap, vmods[i].name);
+      if (idx == XKB_MOD_INVALID)
+        continue;
+
+      xkb_state_update_mask (xkb_state, 1 << idx, 0, 0, 0, 0, 0);
+      real = xkb_state_serialize_mods (xkb_state, XKB_STATE_MODS_EFFECTIVE);
+      real &= 0xf0; /* ignore mapping to Lock, Shift, Control, Mod1 */
+      if (mods & real)
+        *state |= vmods[i].mask;
+      xkb_state_update_mask (xkb_state, 0, 0, 0, 0, 0, 0);
+    }
+
+  xkb_state_unref (xkb_state);
 }
 
 static gboolean
 gdk_wayland_keymap_map_virtual_modifiers (GdkKeymap       *keymap,
 					  GdkModifierType *state)
 {
-  return TRUE;
+  struct xkb_keymap *xkb_keymap;
+  struct xkb_state *xkb_state;
+  uint32_t mods, mapped;
+  gboolean ret = TRUE;
+
+  xkb_keymap = GDK_WAYLAND_KEYMAP (keymap)->xkb_keymap;
+  mods = get_xkb_modifiers (xkb_keymap, *state);
+
+  xkb_state = xkb_state_new (xkb_keymap);
+  xkb_state_update_mask (xkb_state, mods & ~0xff, 0, 0, 0, 0, 0);
+  mapped = xkb_state_serialize_mods (xkb_state, XKB_STATE_MODS_EFFECTIVE);
+  if ((mapped & mods & 0xff) != 0)
+    ret = FALSE;
+  *state |= get_gdk_modifiers (xkb_keymap, mapped);
+
+  xkb_state_unref (xkb_state);
+
+  return ret;
 }
 
 static void
@@ -373,6 +449,7 @@ _gdk_wayland_keymap_class_init (GdkWaylandKeymapClass *klass)
   keymap_class->have_bidi_layouts = gdk_wayland_keymap_have_bidi_layouts;
   keymap_class->get_caps_lock_state = gdk_wayland_keymap_get_caps_lock_state;
   keymap_class->get_num_lock_state = gdk_wayland_keymap_get_num_lock_state;
+  keymap_class->get_scroll_lock_state = gdk_wayland_keymap_get_scroll_lock_state;
   keymap_class->get_entries_for_keyval = gdk_wayland_keymap_get_entries_for_keyval;
   keymap_class->get_entries_for_keycode = gdk_wayland_keymap_get_entries_for_keycode;
   keymap_class->lookup_key = gdk_wayland_keymap_lookup_key;
@@ -391,22 +468,24 @@ static void
 update_direction (GdkWaylandKeymap *keymap)
 {
   gint num_layouts;
+  gint i;
   gint *rtl;
+  xkb_keycode_t min_keycode, max_keycode;
   guint key;
   gboolean have_rtl, have_ltr;
-  gint i;
 
   num_layouts = xkb_keymap_num_layouts (keymap->xkb_keymap);
 
-  g_free (keymap->direction);
-  keymap->direction = g_new0 (PangoDirection, num_layouts);
+  keymap->direction = g_renew (PangoDirection, keymap->direction, num_layouts);
+  rtl = g_newa (gint, num_layouts);
+  for (i = 0; i < num_layouts; i++)
+    rtl[i] = 0;
 
-  rtl = g_new0 (gint, num_layouts);
-
-  for (key = 8; key < 255; key++) /* FIXME: min/max keycode */
+  min_keycode = xkb_keymap_min_keycode (keymap->xkb_keymap);
+  max_keycode = xkb_keymap_max_keycode (keymap->xkb_keymap);
+  for (key = min_keycode; key < max_keycode; key++)
     {
-       gint layouts;
-       gint layout;
+       gint layouts, layout;
 
        layouts = xkb_keymap_num_layouts_for_key (keymap->xkb_keymap, key);
        for (layout = 0; layout < layouts; layout++)
@@ -419,6 +498,7 @@ update_direction (GdkWaylandKeymap *keymap)
            for (sym = 0; sym < num_syms; sym++)
              {
                PangoDirection dir;
+
                dir = pango_unichar_direction (xkb_keysym_to_utf32 (syms[sym]));
                switch (dir)
                  {
@@ -452,8 +532,6 @@ update_direction (GdkWaylandKeymap *keymap)
 
   if (have_rtl && have_ltr)
     keymap->bidi = TRUE;
-
-  g_free (rtl);
 }
 
 GdkKeymap *
@@ -481,6 +559,46 @@ _gdk_wayland_keymap_new (void)
   return GDK_KEYMAP (keymap);
 }
 
+#ifdef G_ENABLE_DEBUG
+static void
+print_modifiers (struct xkb_keymap *keymap)
+{
+  int i, j;
+  uint32_t real;
+  struct xkb_state *state;
+
+  g_print ("modifiers:\n");
+  for (i = 0; i < xkb_keymap_num_mods (keymap); i++)
+    g_print ("%s ", xkb_keymap_mod_get_name (keymap, i));
+  g_print ("\n\n");
+
+  g_print ("modifier mapping\n");
+  state = xkb_state_new (keymap);
+  for (i = 0; i < 8; i++)
+    {
+      gboolean need_arrow = TRUE;
+      g_print ("%s ", xkb_keymap_mod_get_name (keymap, i));
+      for (j = 8; j < xkb_keymap_num_mods (keymap); j++)
+        {
+          xkb_state_update_mask (state, 1 << j, 0, 0, 0, 0, 0);
+          real = xkb_state_serialize_mods (state, XKB_STATE_MODS_EFFECTIVE);
+          if (real & (1 << i))
+            {
+              if (need_arrow)
+                {
+                  g_print ("-> ");
+                  need_arrow = FALSE;
+                }
+              g_print ("%s ", xkb_keymap_mod_get_name (keymap, j));
+            }
+        }
+      g_print ("\n");
+    }
+
+  xkb_state_unref (state);
+}
+#endif
+
 void
 _gdk_wayland_keymap_update_from_fd (GdkKeymap *keymap,
                                     uint32_t   format,
@@ -501,6 +619,8 @@ _gdk_wayland_keymap_update_from_fd (GdkKeymap *keymap,
       return;
     }
 
+  GDK_NOTE(INPUT, g_print ("keymap:\n%s\n", map_str));
+
   xkb_keymap = xkb_keymap_new_from_string (context, map_str, format, 0);
   munmap (map_str, size);
   close (fd);
@@ -511,6 +631,8 @@ _gdk_wayland_keymap_update_from_fd (GdkKeymap *keymap,
       xkb_context_unref (context);
       return;
     }
+
+  GDK_NOTE(INPUT, print_modifiers (xkb_keymap));
 
   xkb_keymap_unref (keymap_wayland->xkb_keymap);
   keymap_wayland->xkb_keymap = xkb_keymap;

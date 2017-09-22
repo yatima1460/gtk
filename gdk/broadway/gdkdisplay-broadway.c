@@ -28,6 +28,7 @@
 #include "gdkeventsource.h"
 #include "gdkscreen.h"
 #include "gdkscreen-broadway.h"
+#include "gdkmonitor-broadway.h"
 #include "gdkinternals.h"
 #include "gdkdeviceprivate.h"
 #include "gdkdevicemanager-broadway.h"
@@ -55,6 +56,12 @@ static void
 gdk_broadway_display_init (GdkBroadwayDisplay *display)
 {
   display->id_ht = g_hash_table_new (NULL, NULL);
+
+  display->monitor = g_object_new (GDK_TYPE_BROADWAY_MONITOR,
+                                   "display", display,
+                                   NULL);
+  gdk_monitor_set_manufacturer (display->monitor, "browser");
+  gdk_monitor_set_model (display->monitor, "0");
 }
 
 static void
@@ -64,58 +71,6 @@ gdk_event_init (GdkDisplay *display)
 
   broadway_display = GDK_BROADWAY_DISPLAY (display);
   broadway_display->event_source = _gdk_broadway_event_source_new (display);
-}
-
-static void
-gdk_broadway_display_init_input (GdkDisplay *display)
-{
-  GdkBroadwayDisplay *broadway_display;
-  GdkDeviceManager *device_manager;
-  GdkDevice *device;
-  GList *list, *l;
-
-  broadway_display = GDK_BROADWAY_DISPLAY (display);
-  device_manager = gdk_display_get_device_manager (display);
-
-  /* For backwards compatibility, just add
-   * floating devices that are not keyboards.
-   */
-  list = gdk_device_manager_list_devices (device_manager, GDK_DEVICE_TYPE_FLOATING);
-
-  for (l = list; l; l = l->next)
-    {
-      device = l->data;
-
-      if (gdk_device_get_source (device) == GDK_SOURCE_KEYBOARD)
-        continue;
-
-      broadway_display->input_devices = g_list_prepend (broadway_display->input_devices,
-                                                   g_object_ref (l->data));
-    }
-
-  g_list_free (list);
-
-  /* Now set "core" pointer to the first
-   * master device that is a pointer.
-   */
-  list = gdk_device_manager_list_devices (device_manager, GDK_DEVICE_TYPE_MASTER);
-
-  for (l = list; l; l = l->next)
-    {
-      device = l->data;
-
-      if (gdk_device_get_source (device) != GDK_SOURCE_MOUSE)
-        continue;
-
-      display->core_pointer = device;
-      break;
-    }
-
-  /* Add the core pointer to the devices list */
-  broadway_display->input_devices = g_list_prepend (broadway_display->input_devices,
-                                               g_object_ref (display->core_pointer));
-
-  g_list_free (list);
 }
 
 GdkDisplay *
@@ -144,7 +99,6 @@ _gdk_broadway_display_open (const gchar *display_name)
 
   gdk_event_init (display);
 
-  gdk_broadway_display_init_input (display);
   _gdk_broadway_display_init_dnd (display);
 
   _gdk_broadway_screen_setup (broadway_display->screens[0]);
@@ -226,8 +180,6 @@ gdk_broadway_display_dispose (GObject *object)
 {
   GdkBroadwayDisplay *broadway_display = GDK_BROADWAY_DISPLAY (object);
 
-  g_list_foreach (broadway_display->input_devices, (GFunc) g_object_run_dispose, NULL);
-
   _gdk_screen_close (broadway_display->screens[0]);
 
   if (broadway_display->event_source)
@@ -251,11 +203,11 @@ gdk_broadway_display_finalize (GObject *object)
 
   _gdk_broadway_cursor_display_finalize (GDK_DISPLAY_OBJECT(broadway_display));
 
-  /* input GdkDevice list */
-  g_list_free_full (broadway_display->input_devices, g_object_unref);
   /* Free all GdkScreens */
   g_object_unref (broadway_display->screens[0]);
   g_free (broadway_display->screens);
+
+  g_object_unref (broadway_display->monitor);
 
   G_OBJECT_CLASS (gdk_broadway_display_parent_class)->finalize (object);
 }
@@ -313,14 +265,6 @@ gdk_broadway_display_supports_composite (GdkDisplay *display)
   return FALSE;
 }
 
-static GList *
-gdk_broadway_display_list_devices (GdkDisplay *display)
-{
-  g_return_val_if_fail (GDK_IS_DISPLAY (display), NULL);
-
-  return GDK_BROADWAY_DISPLAY (display)->input_devices;
-}
-
 static gulong
 gdk_broadway_display_get_next_serial (GdkDisplay *display)
 {
@@ -344,6 +288,32 @@ gdk_broadway_display_hide_keyboard (GdkBroadwayDisplay *display)
   g_return_if_fail (GDK_IS_BROADWAY_DISPLAY (display));
 
   _gdk_broadway_server_set_show_keyboard (display->server, FALSE);
+}
+
+static int
+gdk_broadway_display_get_n_monitors (GdkDisplay *display)
+{
+  return 1;
+}
+
+static GdkMonitor *
+gdk_broadway_display_get_monitor (GdkDisplay *display,
+                                  int         monitor_num)
+{
+  GdkBroadwayDisplay *broadway_display = GDK_BROADWAY_DISPLAY (display);
+
+  if (monitor_num == 0)
+    return broadway_display->monitor;
+
+  return NULL;
+}
+
+static GdkMonitor *
+gdk_broadway_display_get_primary_monitor (GdkDisplay *display)
+{
+  GdkBroadwayDisplay *broadway_display = GDK_BROADWAY_DISPLAY (display);
+
+  return broadway_display->monitor;
 }
 
 static void
@@ -372,7 +342,6 @@ gdk_broadway_display_class_init (GdkBroadwayDisplayClass * class)
   display_class->supports_shapes = gdk_broadway_display_supports_shapes;
   display_class->supports_input_shapes = gdk_broadway_display_supports_input_shapes;
   display_class->supports_composite = gdk_broadway_display_supports_composite;
-  display_class->list_devices = gdk_broadway_display_list_devices;
   display_class->get_cursor_for_type = _gdk_broadway_display_get_cursor_for_type;
   display_class->get_cursor_for_name = _gdk_broadway_display_get_cursor_for_name;
   display_class->get_cursor_for_surface = _gdk_broadway_display_get_cursor_for_surface;
@@ -394,5 +363,9 @@ gdk_broadway_display_class_init (GdkBroadwayDisplayClass * class)
   display_class->convert_selection = _gdk_broadway_display_convert_selection;
   display_class->text_property_to_utf8_list = _gdk_broadway_display_text_property_to_utf8_list;
   display_class->utf8_to_string_target = _gdk_broadway_display_utf8_to_string_target;
+
+  display_class->get_n_monitors = gdk_broadway_display_get_n_monitors;
+  display_class->get_monitor = gdk_broadway_display_get_monitor;
+  display_class->get_primary_monitor = gdk_broadway_display_get_primary_monitor;
 }
 

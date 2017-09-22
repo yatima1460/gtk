@@ -23,6 +23,7 @@
 
 #include "gtkactionobservable.h"
 #include "gtkactionobserver.h"
+#include "gtkintl.h"
 
 #include <string.h>
 
@@ -137,7 +138,7 @@ gtk_action_muxer_list_actions (GActionGroup *action_group)
                             actions);
     }
 
-  return (gchar **) g_array_free (actions, FALSE);
+  return (gchar **)(void *) g_array_free (actions, FALSE);
 }
 
 static Group *
@@ -632,7 +633,7 @@ gtk_action_muxer_class_init (GObjectClass *class)
   class->finalize = gtk_action_muxer_finalize;
   class->dispose = gtk_action_muxer_dispose;
 
-  accel_signal = g_signal_new ("primary-accel-changed", GTK_TYPE_ACTION_MUXER, G_SIGNAL_RUN_LAST,
+  accel_signal = g_signal_new (I_("primary-accel-changed"), GTK_TYPE_ACTION_MUXER, G_SIGNAL_RUN_LAST,
                                0, NULL, NULL, NULL, G_TYPE_NONE, 2, G_TYPE_STRING, G_TYPE_STRING);
 
   properties[PROP_PARENT] = g_param_spec_object ("parent", "Parent",
@@ -929,3 +930,23 @@ gtk_print_action_and_target (const gchar *action_namespace,
   return g_string_free (result, FALSE);
 }
 
+gchar *
+gtk_normalise_detailed_action_name (const gchar *detailed_action_name)
+{
+  GError *error = NULL;
+  gchar *action_and_target;
+  gchar *action_name;
+  GVariant *target;
+
+  g_action_parse_detailed_name (detailed_action_name, &action_name, &target, &error);
+  g_assert_no_error (error);
+
+  action_and_target = gtk_print_action_and_target (NULL, action_name, target);
+
+  if (target)
+    g_variant_unref (target);
+
+  g_free (action_name);
+
+  return action_and_target;
+}

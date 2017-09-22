@@ -72,6 +72,13 @@ GDK_AVAILABLE_IN_ALL
 void                gtk_widget_path_iter_set_object_type  (GtkWidgetPath       *path,
                                                            gint                 pos,
                                                            GType                type);
+GDK_AVAILABLE_IN_3_20
+const char *        gtk_widget_path_iter_get_object_name  (const GtkWidgetPath *path,
+                                                           gint                 pos);
+GDK_AVAILABLE_IN_3_20
+void                gtk_widget_path_iter_set_object_name  (GtkWidgetPath       *path,
+                                                           gint                 pos,
+                                                           const char          *name);
 GDK_AVAILABLE_IN_ALL
 const GtkWidgetPath *
                     gtk_widget_path_iter_get_siblings     (const GtkWidgetPath *path,
@@ -163,6 +170,7 @@ gboolean        gtk_widget_path_is_type    (const GtkWidgetPath *path,
 GDK_AVAILABLE_IN_ALL
 gboolean        gtk_widget_path_has_parent (const GtkWidgetPath *path,
                                             GType                type);
+
 
 G_END_DECLS
 

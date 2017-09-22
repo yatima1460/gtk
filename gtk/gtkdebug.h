@@ -54,17 +54,22 @@ typedef enum {
   GTK_DEBUG_NO_PIXEL_CACHE  = 1 << 16,
   GTK_DEBUG_INTERACTIVE     = 1 << 17,
   GTK_DEBUG_TOUCHSCREEN     = 1 << 18,
-  GTK_DEBUG_ACTIONS         = 1 << 19
+  GTK_DEBUG_ACTIONS         = 1 << 19,
+  GTK_DEBUG_RESIZE          = 1 << 20,
+  GTK_DEBUG_LAYOUT          = 1 << 21
 } GtkDebugFlag;
 
 #ifdef G_ENABLE_DEBUG
 
-#define GTK_NOTE(type,action)                G_STMT_START { \
-    if (gtk_get_debug_flags () & GTK_DEBUG_##type)		    \
+#define GTK_DEBUG_CHECK(type) G_UNLIKELY (gtk_get_debug_flags () & GTK_DEBUG_##type)
+
+#define GTK_NOTE(type,action)                G_STMT_START {     \
+    if (GTK_DEBUG_CHECK (type))		                        \
        { action; };                          } G_STMT_END
 
 #else /* !G_ENABLE_DEBUG */
 
+#define GTK_DEBUG_CHECK(type) 0
 #define GTK_NOTE(type, action)
 
 #endif /* G_ENABLE_DEBUG */

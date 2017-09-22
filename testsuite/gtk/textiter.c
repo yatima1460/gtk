@@ -186,6 +186,12 @@ test_search (void)
   check_found_backward ("This is some \303\240 text", "some \303\240", 0, 8, 14, "some \303\240");
   check_found_backward ("This is some \303\240 text", "\303\240 text", 0, 13, 19, "\303\240 text");
   check_found_backward ("This is some \303\240 text", "some \303\240 text", 0, 8, 19, "some \303\240 text");
+
+  /* multi-byte characters outside the needle */
+  check_found_forward ("\303\200 aa", "aa", 0, 2, 4, "aa");
+  check_found_forward ("aa \303\200", "aa", 0, 0, 2, "aa");
+  check_found_backward ("\303\200 aa", "aa", 0, 2, 4, "aa");
+  check_found_backward ("aa \303\200", "aa", 0, 0, 2, "aa");
 }
 
 static void
@@ -265,6 +271,12 @@ test_search_caseless (void)
   check_found_backward ("This is some Foo\nFoo text", "foo\nfoo", flags, 13, 20, "Foo\nFoo");
   check_found_backward ("This is some \303\200\n\303\200 text", "\303\240\n\303\240", flags, 13, 16, "\303\200\n\303\200");
   check_found_backward ("This is some \303\200\n\303\200 text", "a\314\200\na\314\200", flags, 13, 16, "\303\200\n\303\200");
+
+  /* multi-byte characters outside the needle */
+  check_found_forward ("\303\200 aa", "aa", flags, 2, 4, "aa");
+  check_found_forward ("aa \303\200", "aa", flags, 0, 2, "aa");
+  check_found_backward ("\303\200 aa", "aa", flags, 2, 4, "aa");
+  check_found_backward ("aa \303\200", "aa", flags, 0, 2, "aa");
 }
 
 static void
@@ -316,6 +328,38 @@ test_forward_to_tag_toggle (void)
   g_assert (!gtk_text_iter_forward_to_tag_toggle (&iter, editable_tag));
 
   g_object_unref (buffer);
+}
+
+static void
+check_forward_line_end (const gchar *buffer_text,
+                        gint         initial_offset,
+                        gint         result_offset,
+                        gboolean     ret)
+{
+  GtkTextBuffer *buffer;
+  GtkTextIter iter;
+
+  buffer = gtk_text_buffer_new (NULL);
+  gtk_text_buffer_set_text (buffer, buffer_text, -1);
+
+  gtk_text_buffer_get_iter_at_offset (buffer, &iter, initial_offset);
+
+  g_assert_cmpint (ret, ==, gtk_text_iter_forward_to_line_end (&iter));
+  g_assert_cmpint (result_offset, ==, gtk_text_iter_get_offset (&iter));
+
+  g_object_unref (buffer);
+}
+
+static void
+test_forward_to_line_end (void)
+{
+  check_forward_line_end("a", 0, 1, FALSE);
+  check_forward_line_end("a\n", 0, 1, TRUE);
+  check_forward_line_end("a\r\n", 0, 1, TRUE);
+  check_forward_line_end("a\na\n", 1, 3, TRUE);
+  check_forward_line_end("a\na\n\n", 1, 3, TRUE);
+  check_forward_line_end("a\r\na\n", 1, 4, TRUE);
+  check_forward_line_end("a\r\na\r\n\r\n", 1, 4, TRUE);
 }
 
 static void
@@ -699,6 +743,43 @@ test_sentence_boundaries (void)
   check_backward_sentence_start (" Hi.", 0, 0, FALSE);
 }
 
+static void
+test_backward_line (void)
+{
+  GtkTextBuffer *buffer;
+  GtkTextIter iter, start, end;
+  gboolean ret;
+  gint offset;
+
+  buffer = gtk_text_buffer_new (NULL);
+  gtk_text_buffer_get_start_iter (buffer, &iter);
+  gtk_text_buffer_insert (buffer, &iter, "Hi line 1\nHi line 2", -1);
+
+  /* Go to middle of first line */
+  gtk_text_iter_backward_line (&iter);
+  gtk_text_iter_set_line_offset (&iter, 4);
+
+  /* Now insert some chars with gtk_text_buffer_insert_range() */
+  gtk_text_buffer_get_end_iter (buffer, &end);
+  start = end;
+  gtk_text_iter_backward_cursor_positions (&start, 5);
+  gtk_text_buffer_insert_range (buffer, &iter, &start, &end);
+
+  /* Check we are still at the first line */
+  g_assert_cmpint (gtk_text_iter_get_line (&iter), ==, 0);
+
+  /* Now a call to gtk_text_iter_backward_line() should return TRUE
+     and move &iter to start of the line, or return FALSE if &iter
+     was already at start of the line, so in both cases &iter should
+     be at the start of the line, so check that */
+  ret = gtk_text_iter_backward_line (&iter);
+  g_assert_true (ret);
+  offset = gtk_text_iter_get_line_offset (&iter);
+  g_assert_cmpint (offset, ==, 0);
+
+  g_object_unref (buffer);
+}
+
 int
 main (int argc, char** argv)
 {
@@ -709,11 +790,13 @@ main (int argc, char** argv)
   g_test_add_func ("/TextIter/Search", test_search);
   g_test_add_func ("/TextIter/Search Caseless", test_search_caseless);
   g_test_add_func ("/TextIter/Forward To Tag Toggle", test_forward_to_tag_toggle);
+  g_test_add_func ("/TextIter/Forward To Line End", test_forward_to_line_end);
   g_test_add_func ("/TextIter/Word Boundaries", test_word_boundaries);
   g_test_add_func ("/TextIter/Visible Word Boundaries", test_visible_word_boundaries);
   g_test_add_func ("/TextIter/Cursor Positions", test_cursor_positions);
   g_test_add_func ("/TextIter/Visible Cursor Positions", test_visible_cursor_positions);
   g_test_add_func ("/TextIter/Sentence Boundaries", test_sentence_boundaries);
+  g_test_add_func ("/TextIter/Backward line", test_backward_line);
 
   return g_test_run();
 }

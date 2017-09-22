@@ -19,8 +19,10 @@
 #define __GDK_DEVICE_PRIVATE_H__
 
 #include "gdkdevice.h"
+#include "gdkdevicetool.h"
 #include "gdkdevicemanager.h"
 #include "gdkevents.h"
+#include "gdkseat.h"
 
 G_BEGIN_DECLS
 
@@ -46,6 +48,7 @@ struct _GdkDevice
   GdkInputMode mode;
   gboolean has_cursor;
   gint num_keys;
+  GdkAxisFlags axis_flags;
   GdkDeviceKey *keys;
   GdkDeviceManager *manager;
   GdkDisplay *display;
@@ -56,9 +59,13 @@ struct _GdkDevice
   GList *slaves;
   GdkDeviceType type;
   GArray *axes;
+  guint num_touches;
 
   gchar *vendor_id;
   gchar *product_id;
+
+  GdkSeat *seat;
+  GdkDeviceTool *last_tool;
 };
 
 struct _GdkDeviceClass
@@ -175,6 +182,14 @@ GdkWindow * _gdk_device_window_at_position    (GdkDevice        *device,
                                                gdouble          *win_y,
                                                GdkModifierType  *mask,
                                                gboolean          get_toplevel);
+
+void  gdk_device_set_seat  (GdkDevice *device,
+                            GdkSeat   *seat);
+
+void           gdk_device_update_tool (GdkDevice     *device,
+                                       GdkDeviceTool *tool);
+
+GdkInputMode gdk_device_get_input_mode (GdkDevice *device);
 
 G_END_DECLS
 

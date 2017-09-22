@@ -50,21 +50,42 @@ gtk_css_value_rgba_equal (const GtkCssValue *rgba1,
   return gdk_rgba_equal (&rgba1->rgba, &rgba2->rgba);
 }
 
+static inline double
+transition (double start,
+            double end,
+            double progress)
+{
+  return start + (end - start) * progress;
+}
+
 static GtkCssValue *
 gtk_css_value_rgba_transition (GtkCssValue *start,
                                GtkCssValue *end,
                                guint        property_id,
                                double       progress)
 {
-  GdkRGBA transition;
+  GdkRGBA result;
 
   progress = CLAMP (progress, 0, 1);
-  transition.red = start->rgba.red + (end->rgba.red - start->rgba.red) * progress;
-  transition.green = start->rgba.green + (end->rgba.green - start->rgba.green) * progress;
-  transition.blue = start->rgba.blue + (end->rgba.blue - start->rgba.blue) * progress;
-  transition.alpha = start->rgba.alpha + (end->rgba.alpha - start->rgba.alpha) * progress;
+  result.alpha = transition (start->rgba.alpha, end->rgba.alpha, progress);
+  if (result.alpha <= 0.0)
+    {
+      result.red = result.green = result.blue = 0.0;
+    }
+  else
+    {
+      result.red = transition (start->rgba.red * start->rgba.alpha,
+                               end->rgba.red * end->rgba.alpha,
+                               progress) / result.alpha;
+      result.green = transition (start->rgba.green * start->rgba.alpha,
+                                 end->rgba.green * end->rgba.alpha,
+                                 progress) / result.alpha;
+      result.blue = transition (start->rgba.blue * start->rgba.alpha,
+                                end->rgba.blue * end->rgba.alpha,
+                                progress) / result.alpha;
+    }
 
-  return _gtk_css_rgba_value_new_from_rgba (&transition);
+  return _gtk_css_rgba_value_new_from_rgba (&result);
 }
 
 static void

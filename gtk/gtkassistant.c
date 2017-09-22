@@ -50,6 +50,10 @@
  * To add pages to an assistant in #GtkBuilder, simply add it as a
  * child to the GtkAssistant object, and set its child properties
  * as necessary.
+ *
+ * # CSS nodes
+ *
+ * GtkAssistant has a single CSS node with the name assistant.
  */
 
 #include "config.h"
@@ -84,9 +88,11 @@ struct _GtkAssistantPage
   GtkAssistantPageType type;
   guint      complete     : 1;
   guint      complete_set : 1;
+  guint      has_padding  : 1;
 
   gchar *title;
 
+  GtkWidget *box;
   GtkWidget *page;
   GtkWidget *regular_title;
   GtkWidget *current_title;
@@ -104,7 +110,6 @@ struct _GtkAssistantPrivate
   GtkWidget *last;
 
   GtkWidget *sidebar;
-  GtkWidget *sidebar_frame;
   GtkWidget *content;
   GtkWidget *action_area;
   GtkWidget *headerbar;
@@ -183,7 +188,7 @@ static void       on_assistant_cancel                        (GtkWidget     *wid
 							      GtkAssistant  *assistant);
 static void       on_assistant_last                          (GtkWidget     *widget,
 							      GtkAssistant  *assistant);
-static void       assistant_remove_page_cb                   (GtkNotebook   *notebook,
+static void       assistant_remove_page_cb                   (GtkContainer  *container,
 							      GtkWidget     *page,
 							      GtkAssistant  *assistant);
 
@@ -196,7 +201,8 @@ enum
   CHILD_PROP_PAGE_TITLE,
   CHILD_PROP_PAGE_HEADER_IMAGE,
   CHILD_PROP_PAGE_SIDEBAR_IMAGE,
-  CHILD_PROP_PAGE_COMPLETE
+  CHILD_PROP_PAGE_COMPLETE,
+  CHILD_PROP_HAS_PADDING
 };
 
 enum
@@ -297,7 +303,7 @@ apply_use_header_bar (GtkAssistant *assistant)
   gtk_widget_set_visible (priv->headerbar, priv->use_header_bar);
   if (!priv->use_header_bar)
     gtk_window_set_titlebar (GTK_WINDOW (assistant), NULL);
-  if (priv->use_header_bar)
+  else
     g_signal_connect (priv->action_area, "add", G_CALLBACK (add_cb), assistant);
 }
 
@@ -522,6 +528,13 @@ gtk_assistant_class_init (GtkAssistantClass *class)
                                                      -1, 1, -1,
                                                      GTK_PARAM_READWRITE|G_PARAM_CONSTRUCT_ONLY));
 
+  /**
+   * GtkAssistant:header-padding:
+   *
+   * Number of pixels around the header.
+   *
+   * Deprecated:3.20: This style property is ignored.
+   */
   gtk_widget_class_install_style_property (widget_class,
                                            g_param_spec_int ("header-padding",
                                                              P_("Header Padding"),
@@ -529,7 +542,15 @@ gtk_assistant_class_init (GtkAssistantClass *class)
                                                              0,
                                                              G_MAXINT,
                                                              6,
-                                                             GTK_PARAM_READABLE));
+                                                             GTK_PARAM_READABLE | G_PARAM_DEPRECATED));
+
+  /**
+   * GtkAssistant:content-padding:
+   *
+   * Number of pixels around the content.
+   *
+   * Deprecated:3.20: This style property is ignored.
+   */
   gtk_widget_class_install_style_property (widget_class,
                                            g_param_spec_int ("content-padding",
                                                              P_("Content Padding"),
@@ -537,7 +558,7 @@ gtk_assistant_class_init (GtkAssistantClass *class)
                                                              0,
                                                              G_MAXINT,
                                                              1,
-                                                             GTK_PARAM_READABLE));
+                                                             GTK_PARAM_READABLE | G_PARAM_DEPRECATED));
 
   /**
    * GtkAssistant:page-type:
@@ -622,6 +643,10 @@ gtk_assistant_class_init (GtkAssistantClass *class)
                                                                     FALSE,
                                                                     G_PARAM_READWRITE));
 
+  gtk_container_class_install_child_property (container_class, CHILD_PROP_HAS_PADDING,
+      g_param_spec_boolean ("has-padding", P_("Has padding"), P_("Whether the assistant adds padding around the page"),
+                            TRUE, G_PARAM_READWRITE));
+
   /* Bind class to template
    */
   gtk_widget_class_set_template_from_resource (widget_class,
@@ -637,7 +662,6 @@ gtk_assistant_class_init (GtkAssistantClass *class)
   gtk_widget_class_bind_template_child_private (widget_class, GtkAssistant, close);
   gtk_widget_class_bind_template_child_private (widget_class, GtkAssistant, last);
   gtk_widget_class_bind_template_child_private (widget_class, GtkAssistant, sidebar);
-  gtk_widget_class_bind_template_child_private (widget_class, GtkAssistant, sidebar_frame);
   gtk_widget_class_bind_template_child_private (widget_class, GtkAssistant, button_size_group);
   gtk_widget_class_bind_template_child_private (widget_class, GtkAssistant, title_size_group);
 
@@ -648,6 +672,8 @@ gtk_assistant_class_init (GtkAssistantClass *class)
   gtk_widget_class_bind_template_callback (widget_class, on_assistant_back);
   gtk_widget_class_bind_template_callback (widget_class, on_assistant_cancel);
   gtk_widget_class_bind_template_callback (widget_class, on_assistant_last);
+
+  gtk_widget_class_set_css_name (widget_class, "assistant");
 }
 
 static gint
@@ -944,7 +970,7 @@ update_title_state (GtkAssistant *assistant)
         show_titles = TRUE;
     }
 
-  gtk_widget_set_visible (priv->sidebar_frame, show_titles);
+  gtk_widget_set_visible (priv->sidebar, show_titles);
 }
 
 static void
@@ -993,8 +1019,6 @@ set_current_page (GtkAssistant *assistant,
             }
         }
     }
-
-  gtk_widget_queue_resize (GTK_WIDGET (assistant));
 }
 
 static gint
@@ -1095,9 +1119,9 @@ alternative_button_order (GtkAssistant *assistant)
 }
 
 static void
-on_page_notify_visibility (GtkWidget  *widget,
-                           GParamSpec *arg,
-                           gpointer    data)
+on_page_notify (GtkWidget  *widget,
+                GParamSpec *arg,
+                gpointer    data)
 {
   GtkAssistant *assistant = GTK_ASSISTANT (data);
 
@@ -1109,8 +1133,8 @@ on_page_notify_visibility (GtkWidget  *widget,
 }
 
 static void
-assistant_remove_page_cb (GtkNotebook *notebook,
-                          GtkWidget *page,
+assistant_remove_page_cb (GtkContainer *container,
+                          GtkWidget    *page,
                           GtkAssistant *assistant)
 {
   GtkAssistantPrivate *priv = assistant->priv;
@@ -1148,7 +1172,7 @@ assistant_remove_page_cb (GtkNotebook *notebook,
         }
     }
 
-  g_signal_handlers_disconnect_by_func (page_info->page, on_page_notify_visibility, assistant);
+  g_signal_handlers_disconnect_by_func (page_info->page, on_page_notify, assistant);
 
   gtk_size_group_remove_widget (priv->title_size_group, page_info->regular_title);
   gtk_size_group_remove_widget (priv->title_size_group, page_info->current_title);
@@ -1236,6 +1260,10 @@ gtk_assistant_set_child_property (GtkContainer *container,
       gtk_assistant_set_page_complete (GTK_ASSISTANT (container), child,
                                        g_value_get_boolean (value));
       break;
+    case CHILD_PROP_HAS_PADDING:
+      gtk_assistant_set_page_has_padding (GTK_ASSISTANT (container), child,
+                                          g_value_get_boolean (value));
+      break;
     default:
       GTK_CONTAINER_WARN_INVALID_CHILD_PROPERTY_ID (container, property_id, pspec);
       break;
@@ -1276,6 +1304,10 @@ G_GNUC_END_IGNORE_DEPRECATIONS
     case CHILD_PROP_PAGE_COMPLETE:
       g_value_set_boolean (value,
                            gtk_assistant_get_page_complete (assistant, child));
+      break;
+    case CHILD_PROP_HAS_PADDING:
+      g_value_set_boolean (value,
+                           gtk_assistant_get_page_has_padding (assistant, child));
       break;
     default:
       GTK_CONTAINER_WARN_INVALID_CHILD_PROPERTY_ID (container, property_id, pspec);
@@ -1333,6 +1365,7 @@ gtk_assistant_destroy (GtkWidget *widget)
       priv->visited_pages = NULL;
     }
 
+  gtk_window_set_titlebar (GTK_WINDOW (widget), NULL);
   GTK_WIDGET_CLASS (gtk_assistant_parent_class)->destroy (widget);
 }
 
@@ -1346,7 +1379,7 @@ find_page (GtkAssistant  *assistant,
   while (child)
     {
       GtkAssistantPage *page_info = child->data;
-      if (page_info->page == page)
+      if (page_info->page == page || page_info->box == page)
         return child;
 
       child = child->next;
@@ -1445,12 +1478,16 @@ gtk_assistant_remove (GtkContainer *container,
                       GtkWidget    *page)
 {
   GtkAssistant *assistant = (GtkAssistant*) container;
+  GtkWidget *box;
 
   /* Forward this removal to the content notebook */
-  if (gtk_widget_get_parent (page) == assistant->priv->content)
+  box = gtk_widget_get_parent (page);
+  if (GTK_IS_BOX (box) &&
+      assistant->priv->content != NULL &&
+      gtk_widget_get_parent (box) == assistant->priv->content)
     {
-      container = (GtkContainer *) assistant->priv->content;
-      gtk_container_remove (container, page);
+      gtk_container_remove (GTK_CONTAINER (box), page);
+      gtk_container_remove (GTK_CONTAINER (assistant->priv->content), box);
     }
 }
 
@@ -1648,7 +1685,7 @@ gtk_assistant_get_n_pages (GtkAssistant *assistant)
  *
  * Returns the child widget contained in page number @page_num.
  *
- * Returns: (transfer none): the child widget, or %NULL
+ * Returns: (nullable) (transfer none): the child widget, or %NULL
  *     if @page_num is out of bounds
  *
  * Since: 2.10
@@ -1743,6 +1780,7 @@ gtk_assistant_insert_page (GtkAssistant *assistant,
   GtkAssistantPage *page_info;
   gint n_pages;
   GtkStyleContext *context;
+  GtkWidget *box;
 
   g_return_val_if_fail (GTK_IS_ASSISTANT (assistant), 0);
   g_return_val_if_fail (GTK_IS_WIDGET (page), 0);
@@ -1754,6 +1792,7 @@ gtk_assistant_insert_page (GtkAssistant *assistant,
   page_info = g_slice_new0 (GtkAssistantPage);
   page_info->page  = page;
   page_info->regular_title = gtk_label_new (NULL);
+  page_info->has_padding = TRUE;
   gtk_widget_set_no_show_all (page_info->regular_title, TRUE);
   page_info->current_title = gtk_label_new (NULL);
   gtk_widget_set_no_show_all (page_info->current_title, TRUE);
@@ -1771,7 +1810,13 @@ gtk_assistant_insert_page (GtkAssistant *assistant,
   gtk_size_group_add_widget (priv->title_size_group, page_info->current_title);
 
   g_signal_connect (G_OBJECT (page), "notify::visible",
-                    G_CALLBACK (on_page_notify_visibility), assistant);
+                    G_CALLBACK (on_page_notify), assistant);
+
+  g_signal_connect (G_OBJECT (page), "child-notify::page-title",
+                    G_CALLBACK (on_page_notify), assistant);
+
+  g_signal_connect (G_OBJECT (page), "child-notify::page-type",
+                    G_CALLBACK (on_page_notify), assistant);
 
   n_pages = g_list_length (priv->pages);
 
@@ -1785,7 +1830,15 @@ gtk_assistant_insert_page (GtkAssistant *assistant,
   gtk_box_reorder_child (GTK_BOX (priv->sidebar), page_info->regular_title, 2 * position);
   gtk_box_reorder_child (GTK_BOX (priv->sidebar), page_info->current_title, 2 * position + 1);
 
-  gtk_notebook_insert_page (GTK_NOTEBOOK (priv->content), page, NULL, position);
+  box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 0);
+  gtk_widget_show (box);
+  gtk_box_pack_start (GTK_BOX (box), page, TRUE, TRUE, 0);
+  g_object_set (box, "margin", 12, NULL);
+  g_signal_connect (box, "remove", G_CALLBACK (assistant_remove_page_cb), assistant);
+
+  gtk_notebook_insert_page (GTK_NOTEBOOK (priv->content), box, NULL, position);
+
+  page_info->box = box;
 
   if (gtk_widget_get_mapped (GTK_WIDGET (assistant)))
     {
@@ -1986,7 +2039,8 @@ gtk_assistant_set_page_title (GtkAssistant *assistant,
   gtk_label_set_text ((GtkLabel*) page_info->regular_title, title);
   gtk_label_set_text ((GtkLabel*) page_info->current_title, title);
 
-  gtk_widget_queue_resize (GTK_WIDGET (assistant));
+  update_title_state (assistant);
+
   gtk_container_child_notify (GTK_CONTAINER (assistant), page, "title");
 }
 
@@ -2350,6 +2404,75 @@ gtk_assistant_get_page_complete (GtkAssistant *assistant,
   page_info = (GtkAssistantPage*) child->data;
 
   return page_info->complete;
+}
+
+/**
+ * gtk_assistant_set_page_has_padding:
+ * @assistant: a #GtkAssistant
+ * @page: a page of @assistant
+ * @has_padding: whether this page has padding
+ *
+ * Sets whether the assistant is adding padding around
+ * the page.
+ *
+ * Since: 3.18
+ */
+void
+gtk_assistant_set_page_has_padding (GtkAssistant *assistant,
+                                    GtkWidget    *page,
+                                    gboolean      has_padding)
+{
+  GtkAssistantPage *page_info;
+  GList *child;
+
+  g_return_if_fail (GTK_IS_ASSISTANT (assistant));
+  g_return_if_fail (GTK_IS_WIDGET (page));
+
+  child = find_page (assistant, page);
+
+  g_return_if_fail (child != NULL);
+
+  page_info = (GtkAssistantPage*) child->data;
+
+  if (page_info->has_padding != has_padding)
+    {
+      page_info->has_padding = has_padding;
+
+      g_object_set (page_info->box,
+                    "margin", has_padding ? 12 : 0,
+                    NULL);
+
+      gtk_container_child_notify (GTK_CONTAINER (assistant), page, "has-padding");
+    }
+}
+
+/**
+ * gtk_assistant_get_page_has_padding:
+ * @assistant: a #GtkAssistant
+ * @page: a page of @assistant
+ *
+ * Gets whether page has padding.
+ *
+ * Returns: %TRUE if @page has padding
+ * Since: 3.18
+ */
+gboolean
+gtk_assistant_get_page_has_padding (GtkAssistant *assistant,
+                                    GtkWidget    *page)
+{
+  GtkAssistantPage *page_info;
+  GList *child;
+
+  g_return_val_if_fail (GTK_IS_ASSISTANT (assistant), FALSE);
+  g_return_val_if_fail (GTK_IS_WIDGET (page), FALSE);
+
+  child = find_page (assistant, page);
+
+  g_return_val_if_fail (child != NULL, TRUE);
+
+  page_info = (GtkAssistantPage*) child->data;
+
+  return page_info->has_padding;
 }
 
 /**

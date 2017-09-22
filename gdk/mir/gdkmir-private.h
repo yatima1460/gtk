@@ -83,15 +83,21 @@ GdkCursor *_gdk_mir_cursor_new_for_name (GdkDisplay *display, const gchar *name)
 
 const gchar *_gdk_mir_cursor_get_name (GdkCursor *cursor);
 
-GdkWindowImpl *_gdk_mir_window_impl_new (void);
+MirWindow *_gdk_mir_window_get_mir_window (GdkWindow *window);
 
-void _gdk_mir_window_impl_set_surface_state (GdkMirWindowImpl *impl, MirSurfaceState state);
+GdkWindowImpl *_gdk_mir_window_impl_new (GdkDisplay *display, GdkWindow *window, GdkWindowAttr *attributes, gint attributes_mask);
 
-void _gdk_mir_window_impl_set_surface_type (GdkMirWindowImpl *impl, MirSurfaceType type);
+void _gdk_mir_window_impl_set_window_state (GdkMirWindowImpl *impl, MirWindowState state);
 
-void _gdk_mir_window_impl_set_cursor_state (GdkMirWindowImpl *impl, gdouble x, gdouble y, gboolean cursor_inside, MirMotionButton button_state);
+void _gdk_mir_window_impl_set_window_type (GdkMirWindowImpl *impl, MirWindowType type);
 
-void _gdk_mir_window_impl_get_cursor_state (GdkMirWindowImpl *impl, gdouble *x, gdouble *y, gboolean *cursor_inside, MirMotionButton *button_state);
+void _gdk_mir_window_set_scale (GdkWindow *window, gdouble scale);
+
+void _gdk_mir_window_set_final_rect (GdkWindow *window, MirRectangle rect);
+
+void _gdk_mir_window_impl_set_cursor_state (GdkMirWindowImpl *impl, gdouble x, gdouble y, gboolean cursor_inside, guint button_state);
+
+void _gdk_mir_window_impl_get_cursor_state (GdkMirWindowImpl *impl, gdouble *x, gdouble *y, gboolean *cursor_inside, guint *button_state);
 
 GdkMirEventSource *_gdk_mir_display_get_event_source (GdkDisplay *display);
 
@@ -104,6 +110,15 @@ void _gdk_mir_window_reference_unref (GdkMirWindowReference *ref);
 void _gdk_mir_event_source_queue (GdkMirWindowReference *window_ref, const MirEvent *event);
 
 MirPixelFormat _gdk_mir_display_get_pixel_format (GdkDisplay *display, MirBufferUsage usage);
+
+void _gdk_mir_display_focus_window (GdkDisplay *display, GdkWindow *window);
+
+void _gdk_mir_display_unfocus_window (GdkDisplay *display, GdkWindow *window);
+
+void _gdk_mir_display_create_paste (GdkDisplay          *display,
+                                    const gchar * const *paste_formats,
+                                    gconstpointer        paste_data,
+                                    gsize                paste_size);
 
 gboolean _gdk_mir_display_init_egl_display (GdkDisplay *display);
 
@@ -121,28 +136,6 @@ EGLSurface _gdk_mir_window_get_egl_surface (GdkWindow *window, EGLConfig config)
 
 EGLSurface _gdk_mir_window_get_dummy_egl_surface (GdkWindow *window, EGLConfig config);
 
-void _gdk_mir_print_modifiers (unsigned int modifiers);
-
-void _gdk_mir_print_key_event (const MirKeyEvent *event);
-
-void _gdk_mir_print_motion_event (const MirMotionEvent *event);
-
-void _gdk_mir_print_surface_event (const MirSurfaceEvent *event);
-
-void _gdk_mir_print_resize_event (const MirResizeEvent *event);
-
 void _gdk_mir_print_event (const MirEvent *event);
-
-/* TODO: Remove once we have proper transient window support. */
-GdkWindow * _gdk_mir_window_get_visible_transient_child (GdkWindow *window,
-                                                         gdouble    x,
-                                                         gdouble    y,
-                                                         gdouble   *out_x,
-                                                         gdouble   *out_y);
-
-/* TODO: Remove once we have proper transient window support. */
-void _gdk_mir_window_transient_children_foreach (GdkWindow  *window,
-                                                 void      (*func) (GdkWindow *, gpointer),
-                                                 gpointer    user_data);
 
 #endif /* __GDK_PRIVATE_MIR_H__ */

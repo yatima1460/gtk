@@ -290,10 +290,8 @@ void gtk_clipboard_set_can_store (GtkClipboard         *clipboard,
 GDK_AVAILABLE_IN_ALL
 void gtk_clipboard_store         (GtkClipboard   *clipboard);
 
-/* private */
-void     _gtk_clipboard_handle_event    (GdkEventOwnerChange *event);
-
-void     _gtk_clipboard_store_all       (void);
+GDK_AVAILABLE_IN_3_22
+GdkAtom gtk_clipboard_get_selection (GtkClipboard *clipboard);
 
 G_END_DECLS
 

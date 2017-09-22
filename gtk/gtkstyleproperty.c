@@ -41,7 +41,7 @@ gtk_style_property_finalize (GObject *object)
 {
   GtkStyleProperty *property = GTK_STYLE_PROPERTY (object);
 
-  g_warning ("finalizing %s `%s', how could this happen?", G_OBJECT_TYPE_NAME (object), property->name);
+  g_warning ("finalizing %s '%s', how could this happen?", G_OBJECT_TYPE_NAME (object), property->name);
 
   G_OBJECT_CLASS (_gtk_style_property_parent_class)->finalize (object);
 }
@@ -233,6 +233,26 @@ _gtk_style_property_init_properties (void)
   _gtk_css_shorthand_property_init_properties ();
 }
 
+void
+_gtk_style_property_add_alias (const gchar *name,
+                               const gchar *alias)
+{
+  GtkStylePropertyClass *klass;
+  GtkStyleProperty *property;
+
+  g_return_if_fail (name != NULL);
+  g_return_if_fail (alias != NULL);
+
+  klass = g_type_class_peek (GTK_TYPE_STYLE_PROPERTY);
+
+  property = g_hash_table_lookup (klass->properties, name);
+
+  g_assert (property != NULL);
+  g_assert (g_hash_table_lookup (klass->properties, alias) == NULL);
+
+  g_hash_table_insert (klass->properties, (gpointer)alias, property);
+}
+
 /**
  * _gtk_style_property_lookup:
  * @name: name of the property to lookup
@@ -240,7 +260,7 @@ _gtk_style_property_init_properties (void)
  * Looks up the CSS property with the given @name. If no such
  * property exists, %NULL is returned.
  *
- * Returns: (transfer none): The property or %NULL if no
+ * Returns: (nullable) (transfer none): The property or %NULL if no
  *     property with the given name exists.
  **/
 GtkStyleProperty *

@@ -38,6 +38,8 @@
 #include "gtkcheckmenuitem.h"
 #include "gtkclipboard.h"
 #include "gtkcomboboxtext.h"
+#include "gtkcssiconthemevalueprivate.h"
+#include "gtkdragsource.h"
 #include "gtkentry.h"
 #include "gtkeventbox.h"
 #include "gtkexpander.h"
@@ -53,6 +55,7 @@
 #include "gtkseparatormenuitem.h"
 #include "gtksizegroup.h"
 #include "gtksizerequest.h"
+#include "gtkstylecontextprivate.h"
 #include "gtktreemodelsort.h"
 #include "gtktreemodelfilter.h"
 #include "gtktreeselection.h"
@@ -591,8 +594,7 @@ gtk_recent_chooser_default_dispose (GObject *object)
 
   if (impl->priv->filters)
     {
-      g_slist_foreach (impl->priv->filters, (GFunc) g_object_unref, NULL);
-      g_slist_free (impl->priv->filters);
+      g_slist_free_full (impl->priv->filters, g_object_unref);
       impl->priv->filters = NULL;
     }
   
@@ -684,7 +686,7 @@ error_message (GtkRecentChooserDefault *impl,
 
 static void
 set_busy_cursor (GtkRecentChooserDefault *impl,
-		 gboolean                 show_busy_cursor)
+		 gboolean                 busy)
 {
   GtkWindow *toplevel;
   GdkDisplay *display;
@@ -693,15 +695,15 @@ set_busy_cursor (GtkRecentChooserDefault *impl,
   toplevel = get_toplevel (GTK_WIDGET (impl));
   if (!toplevel || !gtk_widget_get_realized (GTK_WIDGET (toplevel)))
     return;
-  
-  display = gtk_widget_get_display (GTK_WIDGET (toplevel));
-  
-  cursor = NULL;
-  if (show_busy_cursor)
-    cursor = gdk_cursor_new_for_display (display, GDK_WATCH);
 
-  gdk_window_set_cursor (gtk_widget_get_window (GTK_WIDGET (toplevel)),
-                         cursor);
+  display = gtk_widget_get_display (GTK_WIDGET (toplevel));
+
+  if (busy)
+    cursor = gdk_cursor_new_from_name (display, "progress");
+  else
+    cursor = NULL;
+
+  gdk_window_set_cursor (gtk_widget_get_window (GTK_WIDGET (toplevel)), cursor);
   gdk_display_flush (display);
 
   if (cursor)
@@ -871,19 +873,17 @@ set_default_size (GtkRecentChooserDefault *impl)
   GtkWidget *widget;
   gint width, height;
   double font_size;
-  GdkScreen *screen;
-  gint monitor_num;
+  GdkDisplay *display;
+  GdkMonitor *monitor;
   GtkRequisition req;
-  GdkRectangle monitor;
+  GdkRectangle workarea;
   GtkStyleContext *context;
-  GtkStateFlags state;
 
   widget = GTK_WIDGET (impl);
   context = gtk_widget_get_style_context (widget);
-  state = gtk_widget_get_state_flags (widget);
 
   /* Size based on characters and the icon size */
-  gtk_style_context_get (context, state, "font-size", &font_size, NULL);
+  gtk_style_context_get (context, gtk_style_context_get_state (context), "font-size", &font_size, NULL);
 
   width = impl->priv->icon_size + font_size * NUM_CHARS + 0.5;
   height = (impl->priv->icon_size + font_size) * NUM_LINES + 0.5;
@@ -894,14 +894,12 @@ set_default_size (GtkRecentChooserDefault *impl)
   height = MAX (height, req.height);
 
   /* ... but no larger than the monitor */
-  screen = gtk_widget_get_screen (widget);
-  monitor_num = gdk_screen_get_monitor_at_window (screen,
-                                                  gtk_widget_get_window (widget));
+  display = gtk_widget_get_display (widget);
+  monitor = gdk_display_get_monitor_at_window (display, gtk_widget_get_window (widget));
+  gdk_monitor_get_workarea (monitor, &workarea);
 
-  gdk_screen_get_monitor_workarea (screen, monitor_num, &monitor);
-
-  width = MIN (width, monitor.width * 3 / 4);
-  height = MIN (height, monitor.height * 3 / 4);
+  width = MIN (width, workarea.width * 3 / 4);
+  height = MIN (height, workarea.height * 3 / 4);
 
   /* Set size */
   scrollw = GTK_SCROLLED_WINDOW (gtk_widget_get_parent (impl->priv->recent_view));
@@ -1228,7 +1226,7 @@ gtk_recent_chooser_default_add_filter (GtkRecentChooser *chooser,
   
   if (g_slist_find (impl->priv->filters, filter))
     {
-      g_warning ("gtk_recent_chooser_add_filter() called on filter already in list\n");
+      g_warning ("gtk_recent_chooser_add_filter() called on filter already in list");
       return;
     }
   
@@ -1261,7 +1259,7 @@ gtk_recent_chooser_default_remove_filter (GtkRecentChooser *chooser,
   
   if (filter_idx < 0)
     {
-      g_warning ("gtk_recent_chooser_remove_filter() called on filter not in list\n");
+      g_warning ("gtk_recent_chooser_remove_filter() called on filter not in list");
       return;  
     }
   
@@ -1342,10 +1340,9 @@ chooser_set_sort_type (GtkRecentChooserDefault *impl,
 static GtkIconTheme *
 get_icon_theme_for_widget (GtkWidget *widget)
 {
-  if (gtk_widget_has_screen (widget))
-    return gtk_icon_theme_get_for_screen (gtk_widget_get_screen (widget));
-
-  return gtk_icon_theme_get_default ();
+  return gtk_css_icon_theme_value_get_icon_theme
+    (_gtk_style_context_peek_property (gtk_widget_get_style_context (widget),
+                                       GTK_CSS_PROPERTY_ICON_THEME));
 }
 
 static gint
@@ -1730,63 +1727,23 @@ recent_view_menu_build (GtkRecentChooserDefault *impl)
   recent_view_menu_ensure_state (impl);
 }
 
-/* taken from gtkfilechooserdefault.c */
-static void
-popup_position_func (GtkMenu   *menu,
-                     gint      *x,
-                     gint      *y,
-                     gboolean  *push_in,
-                     gpointer	user_data)
-{
-  GtkAllocation allocation;
-  GtkWidget *widget = GTK_WIDGET (user_data);
-  GdkScreen *screen = gtk_widget_get_screen (widget);
-  GtkRequisition req;
-  gint monitor_num;
-  GdkRectangle monitor;
-
-  if (G_UNLIKELY (!gtk_widget_get_realized (widget)))
-    return;
-
-  gdk_window_get_origin (gtk_widget_get_window (widget),
-                         x, y);
-
-  gtk_widget_get_preferred_size (GTK_WIDGET (menu),
-                                 &req, NULL);
-
-  gtk_widget_get_allocation (widget, &allocation);
-  *x += (allocation.width - req.width) / 2;
-  *y += (allocation.height - req.height) / 2;
-
-  monitor_num = gdk_screen_get_monitor_at_point (screen, *x, *y);
-  gtk_menu_set_monitor (menu, monitor_num);
-  gdk_screen_get_monitor_workarea (screen, monitor_num, &monitor);
-
-  *x = CLAMP (*x, monitor.x, monitor.x + MAX (0, monitor.width - req.width));
-  *y = CLAMP (*y, monitor.y, monitor.y + MAX (0, monitor.height - req.height));
-
-  *push_in = FALSE;
-}
-
-
 static void
 recent_view_menu_popup (GtkRecentChooserDefault *impl,
 			GdkEventButton          *event)
 {
   recent_view_menu_build (impl);
   
-  if (event)
-    gtk_menu_popup (GTK_MENU (impl->priv->recent_popup_menu),
-    		    NULL, NULL, NULL, NULL,
-    		    event->button, event->time);
+  if (event && gdk_event_triggers_context_menu ((GdkEvent *) event))
+    gtk_menu_popup_at_pointer (GTK_MENU (impl->priv->recent_popup_menu), (GdkEvent *) event);
   else
     {
-      gtk_menu_popup (GTK_MENU (impl->priv->recent_popup_menu),
-      		      NULL, NULL,
-      		      popup_position_func, impl->priv->recent_view,
-      		      0, GDK_CURRENT_TIME);
-      gtk_menu_shell_select_first (GTK_MENU_SHELL (impl->priv->recent_popup_menu),
-      				   FALSE);
+      gtk_menu_popup_at_widget (GTK_MENU (impl->priv->recent_popup_menu),
+                                impl->priv->recent_view,
+                                GDK_GRAVITY_CENTER,
+                                GDK_GRAVITY_CENTER,
+                                (GdkEvent *) event);
+
+      gtk_menu_shell_select_first (GTK_MENU_SHELL (impl->priv->recent_popup_menu), FALSE);
     }
 }
 

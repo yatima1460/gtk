@@ -18,7 +18,8 @@
 
 #ifndef _MSC_VER
 #ifndef _WIN32_WINNT
-#define _WIN32_WINNT 0x0500
+/* Vista or newer */
+#define _WIN32_WINNT 0x0600
 #endif
 #ifndef WINVER
 #define WINVER _WIN32_WINNT
@@ -1349,7 +1350,7 @@ plug_grab_notify (GtkWidget        *widget,
 }
 
 
-static BOOL CALLBACK
+static INT_PTR CALLBACK
 pageDlgProc (HWND wnd, UINT message, WPARAM wparam, LPARAM lparam)
 {
   GtkPrintOperation *op;
@@ -1675,7 +1676,7 @@ gtk_print_operation_run_with_dialog (GtkPrintOperation *op,
 
       initialized = InitCommonControlsEx (&icc);
       if (!initialized)
-        g_warning ("Failed to InitCommonControlsEx: %lu\n", GetLastError ());
+        g_warning ("Failed to InitCommonControlsEx: %lu", GetLastError ());
 
       _gtk_load_dll_with_libgtk3_manifest ("comdlg32.dll");
 

@@ -24,7 +24,6 @@
 #include <cairo.h>
 
 #include "gtkcsstypesprivate.h"
-#include "gtkcssimagebuiltinprivate.h"
 #include "gtktypes.h"
 
 G_BEGIN_DECLS
@@ -42,6 +41,13 @@ void    gtk_css_style_render_icon_surface       (GtkCssStyle            *style,
                                                  cairo_surface_t        *surface,
                                                  double                  x,
                                                  double                  y);
+
+void    gtk_css_style_render_icon_get_extents   (GtkCssStyle            *style,
+                                                 GdkRectangle           *extents,
+                                                 gint                    x,
+                                                 gint                    y,
+                                                 gint                    width,
+                                                 gint                    height);
 
 G_END_DECLS
 

@@ -28,10 +28,6 @@
 /* widgets for special casing go here */
 #include "gtkbox.h"
 
-/* When these change we do a full restyling. Otherwise we try to figure out
- * if we need to change things. */
-#define GTK_CSS_RADICAL_CHANGE (GTK_CSS_CHANGE_NAME | GTK_CSS_CHANGE_CLASS | GTK_CSS_CHANGE_SOURCE | GTK_CSS_CHANGE_PARENT_STYLE)
-
 G_DEFINE_TYPE (GtkCssWidgetNode, gtk_css_widget_node, GTK_TYPE_CSS_NODE)
 
 static void
@@ -39,29 +35,23 @@ gtk_css_widget_node_finalize (GObject *object)
 {
   GtkCssWidgetNode *node = GTK_CSS_WIDGET_NODE (object);
 
-  _gtk_bitmask_free (node->accumulated_changes);
+  g_object_unref (node->last_updated_style);
 
   G_OBJECT_CLASS (gtk_css_widget_node_parent_class)->finalize (object);
 }
 
 static void
-gtk_css_widget_node_style_changed (GtkCssNode   *cssnode,
-                                   GtkCssStyle  *old_style,
-                                   GtkCssStyle  *new_style)
+gtk_css_widget_node_style_changed (GtkCssNode        *cssnode,
+                                   GtkCssStyleChange *change)
 {
   GtkCssWidgetNode *node;
-  GtkBitmask *diff;
 
   node = GTK_CSS_WIDGET_NODE (cssnode);
 
   if (node->widget)
     gtk_widget_clear_path (node->widget);
 
-  GTK_CSS_NODE_CLASS (gtk_css_widget_node_parent_class)->style_changed (cssnode, old_style, new_style);
-
-  diff = gtk_css_style_get_difference (new_style, old_style);
-  node->accumulated_changes = _gtk_bitmask_union (node->accumulated_changes, diff);
-  _gtk_bitmask_free (diff);
+  GTK_CSS_NODE_CLASS (gtk_css_widget_node_parent_class)->style_changed (cssnode, change);
 }
 
 static gboolean
@@ -70,11 +60,29 @@ gtk_css_widget_node_queue_callback (GtkWidget     *widget,
                                     gpointer       user_data)
 {
   GtkCssNode *node = user_data;
-  
+
   gtk_css_node_invalidate_frame_clock (node, TRUE);
   _gtk_container_queue_restyle (GTK_CONTAINER (widget));
 
   return G_SOURCE_CONTINUE;
+}
+
+static GtkCssStyle *
+gtk_css_widget_node_update_style (GtkCssNode   *cssnode,
+                                  GtkCssChange  change,
+                                  gint64        timestamp,
+                                  GtkCssStyle  *style)
+{
+  GtkCssWidgetNode *widget_node = GTK_CSS_WIDGET_NODE (cssnode);
+
+  if (widget_node->widget != NULL)
+    {
+      GtkStyleContext *context = _gtk_widget_peek_style_context (widget_node->widget);
+      if (context)
+        gtk_style_context_clear_property_cache (context);
+    }
+
+  return GTK_CSS_NODE_CLASS (gtk_css_widget_node_parent_class)->update_style (cssnode, change, timestamp, style);
 }
 
 static void
@@ -107,18 +115,27 @@ static void
 gtk_css_widget_node_validate (GtkCssNode *node)
 {
   GtkCssWidgetNode *widget_node = GTK_CSS_WIDGET_NODE (node);
-  GtkStyleContext *context;
+  GtkCssStyleChange change;
+  GtkCssStyle *style;
 
   if (widget_node->widget == NULL)
     return;
 
-  context = _gtk_widget_peek_style_context (widget_node->widget);
-  if (context)
-    gtk_style_context_validate (context, widget_node->accumulated_changes);
-  else
-    _gtk_widget_style_context_invalidated (widget_node->widget);
-  _gtk_bitmask_free (widget_node->accumulated_changes);
-  widget_node->accumulated_changes = _gtk_bitmask_new ();
+  style = gtk_css_node_get_style (node);
+
+  gtk_css_style_change_init (&change, widget_node->last_updated_style, style);
+  if (gtk_css_style_change_has_change (&change))
+    {
+      GtkStyleContext *context;
+
+      context = _gtk_widget_peek_style_context (widget_node->widget);
+      if (context)
+        gtk_style_context_validate (context, &change);
+      else
+        _gtk_widget_style_context_invalidated (widget_node->widget);
+      g_set_object (&widget_node->last_updated_style, style);
+    }
+  gtk_css_style_change_finish (&change);
 }
 
 typedef GtkWidgetPath * (* GetPathForChildFunc) (GtkContainer *, GtkWidget *);
@@ -127,6 +144,7 @@ static gboolean
 widget_needs_widget_path (GtkWidget *widget)
 {
   static GetPathForChildFunc funcs[2];
+  GtkContainerClass *class;
   GtkWidget *parent;
   GetPathForChildFunc parent_func;
   guint i;
@@ -134,13 +152,19 @@ widget_needs_widget_path (GtkWidget *widget)
   if (G_UNLIKELY (funcs[0] == NULL))
     {
       i = 0;
-      funcs[i++] = GTK_CONTAINER_CLASS (g_type_class_ref (GTK_TYPE_CONTAINER))->get_path_for_child;
-      funcs[i++] = GTK_CONTAINER_CLASS (g_type_class_ref (GTK_TYPE_BOX))->get_path_for_child;
+
+      class = (GtkContainerClass*)g_type_class_ref (GTK_TYPE_CONTAINER);
+      funcs[i++] = class->get_path_for_child;
+      g_type_class_unref (class);
+
+      class = (GtkContainerClass*)g_type_class_ref (GTK_TYPE_BOX);
+      funcs[i++] = class->get_path_for_child;
+      g_type_class_unref (class);
 
       g_assert (i == G_N_ELEMENTS (funcs));
     }
 
-  parent = gtk_widget_get_parent (widget);
+  parent = _gtk_widget_get_parent (widget);
   if (parent == NULL)
     return FALSE;
 
@@ -228,15 +252,11 @@ static GdkFrameClock *
 gtk_css_widget_node_get_frame_clock (GtkCssNode *node)
 {
   GtkCssWidgetNode *widget_node = GTK_CSS_WIDGET_NODE (node);
-  gboolean animate;
 
   if (widget_node->widget == NULL)
     return NULL;
 
-  g_object_get (gtk_widget_get_settings (widget_node->widget),
-                "gtk-enable-animations", &animate,
-                NULL);
-  if (animate == FALSE)
+  if (!gtk_settings_get_enable_animations (gtk_widget_get_settings (widget_node->widget)))
     return NULL;
 
   return gtk_widget_get_frame_clock (widget_node->widget);
@@ -249,6 +269,7 @@ gtk_css_widget_node_class_init (GtkCssWidgetNodeClass *klass)
   GObjectClass *object_class = G_OBJECT_CLASS (klass);
 
   object_class->finalize = gtk_css_widget_node_finalize;
+  node_class->update_style = gtk_css_widget_node_update_style;
   node_class->validate = gtk_css_widget_node_validate;
   node_class->queue_validate = gtk_css_widget_node_queue_validate;
   node_class->dequeue_validate = gtk_css_widget_node_dequeue_validate;
@@ -263,7 +284,7 @@ gtk_css_widget_node_class_init (GtkCssWidgetNodeClass *klass)
 static void
 gtk_css_widget_node_init (GtkCssWidgetNode *node)
 {
-  node->accumulated_changes = _gtk_bitmask_new ();
+  node->last_updated_style = g_object_ref (gtk_css_static_style_get_default ());
 }
 
 GtkCssNode *
@@ -276,7 +297,7 @@ gtk_css_widget_node_new (GtkWidget *widget)
   result = g_object_new (GTK_TYPE_CSS_WIDGET_NODE, NULL);
   result->widget = widget;
   gtk_css_node_set_visible (GTK_CSS_NODE (result),
-                            gtk_widget_get_visible (widget));
+                            _gtk_widget_get_visible (widget));
 
   return GTK_CSS_NODE (result);
 }

@@ -61,7 +61,7 @@ struct _GtkFlowBoxClass
   void (*selected_children_changed)  (GtkFlowBox        *box);
   void (*activate_cursor_child)      (GtkFlowBox        *box);
   void (*toggle_cursor_child)        (GtkFlowBox        *box);
-  void (*move_cursor)                (GtkFlowBox        *box,
+  gboolean (*move_cursor)            (GtkFlowBox        *box,
                                       GtkMovementStep    step,
                                       gint               count);
   void (*select_all)                 (GtkFlowBox        *box);
@@ -99,6 +99,21 @@ struct _GtkFlowBoxChildClass
   void (*_gtk_reserved2) (void);
 };
 
+/**
+ * GtkFlowBoxCreateWidgetFunc:
+ * @item: the item from the model for which to create a widget for
+ * @user_data: user data from gtk_flow_box_bind_model()
+ *
+ * Called for flow boxes that are bound to a #GListModel with
+ * gtk_flow_box_bind_model() for each item that gets added to the model.
+ *
+ * Returns: (transfer full): a #GtkWidget that represents @item
+ *
+ * Since: 3.18
+ */
+typedef GtkWidget * (*GtkFlowBoxCreateWidgetFunc) (gpointer item,
+                                                   gpointer  user_data);
+
 GDK_AVAILABLE_IN_3_12
 GType                 gtk_flow_box_child_get_type            (void) G_GNUC_CONST;
 GDK_AVAILABLE_IN_3_12
@@ -116,6 +131,14 @@ GType                 gtk_flow_box_get_type                  (void) G_GNUC_CONST
 
 GDK_AVAILABLE_IN_3_12
 GtkWidget            *gtk_flow_box_new                       (void);
+
+GDK_AVAILABLE_IN_3_18
+void                  gtk_flow_box_bind_model                (GtkFlowBox                 *box,
+                                                              GListModel                 *model,
+                                                              GtkFlowBoxCreateWidgetFunc  create_widget_func,
+                                                              gpointer                    user_data,
+                                                              GDestroyNotify              user_data_free_func);
+
 GDK_AVAILABLE_IN_3_12
 void                  gtk_flow_box_set_homogeneous           (GtkFlowBox           *box,
                                                               gboolean              homogeneous);
@@ -157,6 +180,11 @@ void                  gtk_flow_box_insert                       (GtkFlowBox     
 GDK_AVAILABLE_IN_3_12
 GtkFlowBoxChild      *gtk_flow_box_get_child_at_index           (GtkFlowBox        *box,
                                                                  gint               idx);
+
+GDK_AVAILABLE_IN_3_22
+GtkFlowBoxChild      *gtk_flow_box_get_child_at_pos             (GtkFlowBox        *box,
+                                                                 gint               x,
+                                                                 gint               y);
 
 typedef void (* GtkFlowBoxForeachFunc) (GtkFlowBox      *box,
                                         GtkFlowBoxChild *child,

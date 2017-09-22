@@ -83,9 +83,15 @@ testdata = \
 	animation-direction.css \
 	animation-direction.ref.ui \
 	animation-direction.ui \
+	animation-fill-mode-iteration-count.css \
+	animation-fill-mode-iteration-count.ref.ui \
+	animation-fill-mode-iteration-count.ui \
 	background-area.css \
 	background-area.ref.ui \
 	background-area.ui \
+	background-blend-mode-clip-interaction.css \
+	background-blend-mode-clip-interaction.ref.ui \
+	background-blend-mode-clip-interaction.ui \
 	background-color-transparent.css \
 	background-color-transparent.ref.ui \
 	background-color-transparent.ui \
@@ -174,20 +180,38 @@ testdata = \
 	box-pseudo-classes.css \
 	box-pseudo-classes.ref.ui \
 	box-pseudo-classes.ui \
+	box-shadow-changes-modify-clip.css \
+	box-shadow-changes-modify-clip.ref.ui \
+	box-shadow-changes-modify-clip.ui \
 	box-shadow-spec-inset.css \
 	box-shadow-spec-inset.ref.ui \
 	box-shadow-spec-inset.ui \
 	box-shadow-spread.css \
 	box-shadow-spread.ref.ui \
 	box-shadow-spread.ui \
+	box-shadow-with-blend-mode.css \
+	box-shadow-with-blend-mode.ref.ui \
+	box-shadow-with-blend-mode.ui \
 	button-wrapping.ui \
 	button-wrapping.ref.ui \
 	cellrenderer-pixbuf-stock-rtl.css \
 	cellrenderer-pixbuf-stock-rtl.ui \
 	cellrenderer-pixbuf-stock-rtl.ref.ui \
+	color-transition.css \
+	color-transition.ref.ui \
+	color-transition.ui \
+	css-em-label-size.css \
+	css-em-label-size.ui \
+	css-em-label-size.ref.ui \
 	css-currentcolor-alpha.css \
 	css-currentcolor-alpha.ui \
 	css-currentcolor-alpha.ref.ui \
+	css-image-aspect-ratio.css \
+	css-image-aspect-ratio.ui \
+	css-image-aspect-ratio.ref.ui \
+	css-image-color-aspect-ratio.css \
+	css-image-color-aspect-ratio.ui \
+	css-image-color-aspect-ratio.ref.ui \
 	css-match-class.css \
 	css-match-class.ref.ui \
 	css-match-class.ui \
@@ -210,27 +234,15 @@ testdata = \
 	css-match-name.css \
 	css-match-name.ref.ui \
 	css-match-name.ui \
-	css-match-region-matches-star.css \
-	css-match-region-matches-star.ui \
-	css-match-region-matches-star.ref.ui \
-	css-match-regions.css \
-	css-match-regions.ref.ui \
-	css-match-regions.ui \
 	css-match-siblings.css \
 	css-match-siblings.ref.ui \
 	css-match-siblings.ui \
-	css-match-subtype.css \
-	css-match-subtype.ref.ui \
-	css-match-subtype.ui \
 	css-match-type.css \
 	css-match-type.ref.ui \
 	css-match-type.ui \
 	css-multi-state.css \
 	css-multi-state.ref.ui \
 	css-multi-state.ui \
-	entry-progress-coloring.css \
-	entry-progress-coloring.ref.ui \
-	entry-progress-coloring.ui \
 	fixed-widget-stacking.ref.ui \
 	fixed-widget-stacking.ui \
 	flipping-icons.ref.ui \
@@ -262,6 +274,9 @@ testdata = \
 	gtk-icontheme-sizing.css \
 	gtk-icontheme-sizing.ref.ui \
 	gtk-icontheme-sizing.ui \
+	icon-effect-missing.css \
+	icon-effect-missing.ref.ui \
+	icon-effect-missing.ui \
 	icon-shadow-no-transform.css \
 	icon-shadow-no-transform.ref.ui \
 	icon-shadow-no-transform.ui \
@@ -274,12 +289,16 @@ testdata = \
 	iconview-empty.css \
 	iconview-empty.ui \
 	iconview-empty.ref.ui \
+	image-icon-name-use-fallback.ui \
+	image-icon-name-use-fallback.ref.ui \
 	image-icon-shadow-clipping.css \
 	image-icon-shadow-clipping.ref.ui \
 	image-icon-shadow-clipping.ui \
 	image-load-from-file.css \
 	image-load-from-file.ref.ui \
 	image-load-from-file.ui \
+	image-recording-surface.ref.ui \
+	image-recording-surface.ui \
 	info-bar-message-types.css \
 	info-bar-message-types.ref.ui \
 	info-bar-message-types.ui \
@@ -320,6 +339,9 @@ testdata = \
 	label-width-chars-dont-shrink.ui \
 	label-wrap-justify.ref.ui \
 	label-wrap-justify.ui \
+	letter-spacing.css \
+	letter-spacing.ui \
+	letter-spacing.ref.ui \
 	linear-gradient.css \
 	linear-gradient.ref.ui \
 	linear-gradient.ui \
@@ -379,6 +401,7 @@ testdata = \
 	revealer-wrappable-contents.ui \
 	rotated-layout.ref.ui \
 	rotated-layout.ui \
+	separator-size.css \
 	separator-size.ref.ui \
 	separator-size.ui \
 	set-default-direction.ui \
@@ -449,8 +472,25 @@ EXTRA_DIST += 			\
 	$(testdata)		\
 	reftests-dark.test.in	\
 	reftests-hc.test.in	\
+	reftests-hci.test.in	\
 	reftests.test.in	\
 	$(NULL)
+
+GTK_GSETTINGS_SCHEMAS = \
+	$(top_srcdir)/gtk/org.gtk.Settings.ColorChooser.gschema.xml \
+	$(top_srcdir)/gtk/org.gtk.Settings.FileChooser.gschema.xml \
+	$(NULL)
+
+BUILT_SOURCES = gschemas.compiled
+
+CLEANFILES = gschemas.compiled
+
+gschemas.compiled: $(GTK_GSETTINGS_SCHEMAS)
+	$(AM_V_GEN) $(GLIB_COMPILE_SCHEMAS) \
+		$(addprefix --schema-file=,$(GTK_GSETTINGS_SCHEMAS)) \
+		--targetdir=$(builddir)
+
+all-am: gschemas.compiled
 
 if BUILDOPT_INSTALL_TESTS
 insttestdir=$(libexecdir)/installed-tests/$(PACKAGE)
@@ -474,7 +514,9 @@ substitutions = \
 built_tests = 			\
 	reftests.test		\
 	reftests-dark.test	\
-	reftests-hc.test
+	reftests-hc.test	\
+	reftests-hci.test	\
+	$(NULL)
 
 DISTCLEANFILES = $(built_tests)
 
@@ -494,11 +536,14 @@ libreftest_la_CFLAGS = $(gtk_reftest_CFLAGS)
 libreftest_la_LIBADD = $(gtk_reftest_LDADD)
 libreftest_la_SOURCES =			\
 	expand-expander.c		\
-	label-text-shadow-changes-modify-clip.c	\
+	frame-inhibitor.c	\
+	image-recording-surface.c	\
+	letter-spacing.c		\
 	set-default-direction.c		\
 	statusbar-remove-all.c		\
 	textview-border-windows.c	\
 	textview-tags.c			\
+	animation-direction.c		\
 	$(NULL)
 
 -include $(top_srcdir)/git.mk

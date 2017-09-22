@@ -23,17 +23,17 @@
 #include "gtkgesturelongpress.h"
 #include "gtkcolorutils.h"
 #include "gtkorientable.h"
+#include "gtkrangeprivate.h"
 #include "gtkstylecontext.h"
 #include "gtkaccessible.h"
 #include "gtkprivate.h"
 #include "gtkintl.h"
+#include "gtkrenderprivate.h"
 
 #include <math.h>
 
 struct _GtkColorScalePrivate
 {
-  cairo_surface_t *surface;
-  gint width, height;
   GdkRGBA color;
   GtkColorScaleType type;
 
@@ -53,91 +53,35 @@ static void hold_action (GtkGestureLongPress *gesture,
 
 G_DEFINE_TYPE_WITH_PRIVATE (GtkColorScale, gtk_color_scale, GTK_TYPE_SCALE)
 
-static void
-gtk_color_scale_get_trough_size (GtkColorScale *scale,
-                                 gint *x_offset_out,
-                                 gint *y_offset_out,
-                                 gint *width_out,
-                                 gint *height_out)
+void
+gtk_color_scale_draw_trough (GtkColorScale  *scale,
+                             cairo_t        *cr,
+                             int             x,
+                             int             y,
+                             int             width,
+                             int             height)
 {
-  GtkWidget *widget = GTK_WIDGET (scale);
-  gint width, height;
-  gint x_offset, y_offset;
-  gint slider_width, slider_height;
+  GtkWidget *widget;
 
-  gtk_widget_style_get (widget,
-                        "slider-width", &slider_width,
-                        "slider-length", &slider_height,
-                        NULL);
-
-  width = gtk_widget_get_allocated_width (widget);
-  height = gtk_widget_get_allocated_height (widget);
-
-  x_offset = 0;
-  y_offset = 0;
-
-  /* if the slider has a vertical shape, draw the trough asymmetric */
-  if (slider_width > slider_height)
-    {
-      if (gtk_orientable_get_orientation (GTK_ORIENTABLE (widget)) == GTK_ORIENTATION_VERTICAL)
-        {
-          if (gtk_widget_get_direction (widget) == GTK_TEXT_DIR_LTR)
-            x_offset += (gint) floor (slider_width / 2.0);
-
-          width = (gint) floor (slider_width / 2.0);
-        }
-      else
-        {
-          height = (gint) floor (slider_width / 2.0);
-        }
-    }
-
-  if (width_out)
-    *width_out = width;
-  if (height_out)
-    *height_out = height;
-  if (x_offset_out)
-    *x_offset_out = x_offset;
-  if (y_offset_out)
-    *y_offset_out = y_offset;
-}
-
-static void
-create_surface (GtkColorScale *scale)
-{
-  GtkWidget *widget = GTK_WIDGET (scale);
-  cairo_surface_t *surface;
-  gint width, height;
-
-  if (!gtk_widget_get_realized (widget))
+  if (width <= 1 || height <= 1)
     return;
 
-  gtk_color_scale_get_trough_size (scale,
-                                   NULL, NULL,
-                                   &width, &height);
+  cairo_save (cr);
+  cairo_translate (cr, x, y);
 
-  if (!scale->priv->surface ||
-      width != scale->priv->width ||
-      height != scale->priv->height)
+  widget = GTK_WIDGET (scale);
+  cairo_rectangle (cr, 0, 0, width, height);
+  cairo_clip (cr);
+
+  if (gtk_orientable_get_orientation (GTK_ORIENTABLE (widget)) == GTK_ORIENTATION_HORIZONTAL &&
+      gtk_widget_get_direction (widget) == GTK_TEXT_DIR_RTL)
     {
-      surface = gdk_window_create_similar_surface (gtk_widget_get_window (widget),
-                                                   CAIRO_CONTENT_COLOR,
-                                                   width, height);
-      if (scale->priv->surface)
-        cairo_surface_destroy (scale->priv->surface);
-      scale->priv->surface = surface;
-      scale->priv->width = width;
-      scale->priv->height= height;
+      cairo_translate (cr, width, 0);
+      cairo_scale (cr, -1, 1);
     }
-  else
-    surface = scale->priv->surface;
-
-  if (width == 1 || height == 1)
-    return;
 
   if (scale->priv->type == GTK_COLOR_SCALE_HUE)
     {
-      cairo_t *cr;
       gint stride;
       cairo_surface_t *tmp;
       guint red, green, blue;
@@ -168,23 +112,18 @@ create_surface (GtkColorScale *scale)
 
       tmp = cairo_image_surface_create_for_data ((guchar *)data, CAIRO_FORMAT_RGB24,
                                                  width, height, stride);
-      cr = cairo_create (surface);
 
       cairo_set_source_surface (cr, tmp, 0, 0);
       cairo_paint (cr);
 
-      cairo_destroy (cr);
       cairo_surface_destroy (tmp);
       g_free (data);
     }
   else if (scale->priv->type == GTK_COLOR_SCALE_ALPHA)
     {
-      cairo_t *cr;
       cairo_pattern_t *pattern;
       cairo_matrix_t matrix;
       GdkRGBA *color;
-
-      cr = cairo_create (surface);
 
       cairo_set_source_rgb (cr, 0.33, 0.33, 0.33);
       cairo_paint (cr);
@@ -204,53 +143,16 @@ create_surface (GtkColorScale *scale)
       cairo_set_source (cr, pattern);
       cairo_paint (cr);
       cairo_pattern_destroy (pattern);
-
-      cairo_destroy (cr);
     }
-}
-
-static gboolean
-scale_draw (GtkWidget *widget,
-            cairo_t   *cr)
-{
-  GtkColorScale *scale = GTK_COLOR_SCALE (widget);
-  gint width, height, x_offset, y_offset;
-  cairo_pattern_t *pattern;
-
-  create_surface (scale);
-  gtk_color_scale_get_trough_size (scale,
-                                   &x_offset, &y_offset,
-                                   &width, &height);
-
-  cairo_save (cr);
-  cairo_translate (cr, x_offset, y_offset);
-  cairo_rectangle (cr, 0, 0, width, height);
-
-  pattern = cairo_pattern_create_for_surface (scale->priv->surface);
-  if (gtk_orientable_get_orientation (GTK_ORIENTABLE (widget)) == GTK_ORIENTATION_HORIZONTAL &&
-      gtk_widget_get_direction (widget) == GTK_TEXT_DIR_RTL)
-    {
-      cairo_matrix_t matrix;
-
-      cairo_matrix_init_scale (&matrix, -1, 1);
-      cairo_matrix_translate (&matrix, -width, 0);
-      cairo_pattern_set_matrix (pattern, &matrix);
-    }
-  cairo_set_source (cr, pattern);
-  cairo_fill (cr);
-
-  cairo_pattern_destroy (pattern);
 
   cairo_restore (cr);
-
-  GTK_WIDGET_CLASS (gtk_color_scale_parent_class)->draw (widget, cr);
-
-  return FALSE;
 }
 
 static void
 gtk_color_scale_init (GtkColorScale *scale)
 {
+  GtkStyleContext *context;
+
   scale->priv = gtk_color_scale_get_instance_private (scale);
 
   gtk_widget_add_events (GTK_WIDGET (scale), GDK_TOUCH_MASK);
@@ -260,15 +162,15 @@ gtk_color_scale_init (GtkColorScale *scale)
                     G_CALLBACK (hold_action), scale);
   gtk_event_controller_set_propagation_phase (GTK_EVENT_CONTROLLER (scale->priv->long_press_gesture),
                                               GTK_PHASE_TARGET);
+
+  context = gtk_widget_get_style_context (GTK_WIDGET (scale));
+  gtk_style_context_add_class (context, "color");
 }
 
 static void
 scale_finalize (GObject *object)
 {
   GtkColorScale *scale = GTK_COLOR_SCALE (object);
-
-  if (scale->priv->surface)
-    cairo_surface_destroy (scale->priv->surface);
 
   g_clear_object (&scale->priv->long_press_gesture);
 
@@ -347,13 +249,10 @@ static void
 gtk_color_scale_class_init (GtkColorScaleClass *class)
 {
   GObjectClass *object_class = G_OBJECT_CLASS (class);
-  GtkWidgetClass *widget_class = GTK_WIDGET_CLASS (class);
 
   object_class->finalize = scale_finalize;
   object_class->get_property = scale_get_property;
   object_class->set_property = scale_set_property;
-
-  widget_class->draw = scale_draw;
 
   g_object_class_install_property (object_class, PROP_SCALE_TYPE,
       g_param_spec_int ("scale-type", P_("Scale type"), P_("Scale type"),
@@ -366,8 +265,6 @@ gtk_color_scale_set_rgba (GtkColorScale *scale,
                           const GdkRGBA *color)
 {
   scale->priv->color = *color;
-  scale->priv->width = -1; /* force surface refresh */
-  create_surface (scale);
   gtk_widget_queue_draw (GTK_WIDGET (scale));
 }
 

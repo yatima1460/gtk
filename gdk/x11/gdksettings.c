@@ -65,8 +65,10 @@ static const struct {
   {"Gtk/TitlebarRightClick", "gtk-titlebar-right-click"},
   {"Gtk/DialogsUseHeader",    "gtk-dialogs-use-header"},
   {"Gtk/EnablePrimaryPaste",  "gtk-enable-primary-paste"},
+  {"Gtk/PrimaryButtonWarpsSlider", "gtk-primary-button-warps-slider"},
   {"Gtk/RecentFilesMaxAge",   "gtk-recent-files-max-age"},
   {"Gtk/RecentFilesEnabled",  "gtk-recent-files-enabled"},
+  {"Gtk/KeynavUseCaret",      "gtk-keynav-use-caret"},
 
   /* These are here in order to be recognized, but are not sent to
      gtk as they are handled internally by gdk: */

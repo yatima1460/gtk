@@ -33,58 +33,14 @@
 
 G_DEFINE_TYPE (GtkCssCustomProperty, _gtk_css_custom_property, GTK_TYPE_CSS_STYLE_PROPERTY)
 
-static GType
-gtk_css_custom_property_get_specified_type (GParamSpec *pspec)
-{
-  G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
-
-  if (pspec->value_type == GDK_TYPE_RGBA ||
-      pspec->value_type == GDK_TYPE_COLOR)
-    return GTK_TYPE_SYMBOLIC_COLOR;
-  else
-    return pspec->value_type;
-
-  G_GNUC_END_IGNORE_DEPRECATIONS;
-}
-
 static GtkCssValue *
 gtk_css_custom_property_parse_value (GtkStyleProperty *property,
                                      GtkCssParser     *parser)
 {
-  GtkCssCustomProperty *custom = GTK_CSS_CUSTOM_PROPERTY (property);
-  GValue value = G_VALUE_INIT;
-  gboolean success;
-
-  if (custom->property_parse_func)
-    {
-      GError *error = NULL;
-      char *value_str;
-      
-      g_value_init (&value, _gtk_style_property_get_value_type (property));
-
-      value_str = _gtk_css_parser_read_value (parser);
-      if (value_str != NULL)
-        {
-          success = (* custom->property_parse_func) (value_str, &value, &error);
-          g_free (value_str);
-        }
-      else
-        success = FALSE;
-    }
-  else
-    {
-      g_value_init (&value, gtk_css_custom_property_get_specified_type (custom->pspec));
-
-      success = _gtk_css_style_funcs_parse_value (&value, parser);
-    }
-
-  if (!success)
-    {
-      g_value_unset (&value);
-      return NULL;
-    }
-
-  return _gtk_css_typed_value_new_take (&value);
+  _gtk_css_parser_error_full (parser,
+                              GTK_CSS_PROVIDER_ERROR_NAME,
+                              "Custom CSS properties are no longer supported.");
+  return NULL;
 }
 
 static void
@@ -253,7 +209,7 @@ gtk_theming_engine_register_property (const gchar            *name_space,
 
 /**
  * gtk_style_properties_register_property: (skip)
- * @parse_func: parsing function to use, or %NULL
+ * @parse_func: (nullable): parsing function to use, or %NULL
  * @pspec: the #GParamSpec for the new property
  *
  * Registers a property so it can be used in the CSS file format.

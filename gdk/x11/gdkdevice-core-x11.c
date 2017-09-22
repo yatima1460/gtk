@@ -345,7 +345,7 @@ gdk_x11_device_core_grab (GdkDevice    *device,
     xconfine_to = GDK_WINDOW_XID (confine_to);
 
 #ifdef G_ENABLE_DEBUG
-  if (_gdk_debug_flags & GDK_DEBUG_NOGRABS)
+  if (GDK_DEBUG_CHECK (NOGRABS))
     status = GrabSuccess;
   else
 #endif
@@ -466,16 +466,15 @@ gdk_x11_device_core_window_at_position (GdkDevice       *device,
     {
       gint width, height;
       GList *toplevels, *list;
-      Window pointer_window, root, child;
+      Window pointer_window;
       int rootx = -1, rooty = -1;
       int winx, winy;
-      unsigned int xmask;
 
       /* FIXME: untrusted clients case not multidevice-safe */
       pointer_window = None;
-      screen = gdk_display_get_screen (display, 0);
+      screen = gdk_display_get_default_screen (display);
       toplevels = gdk_screen_get_toplevel_windows (screen);
-      for (list = toplevels; list != NULL; list = g_list_next (list))
+      for (list = toplevels; list != NULL; list = list->next)
         {
           window = GDK_WINDOW (list->data);
           impl = GDK_WINDOW_IMPL_X11 (window->impl);

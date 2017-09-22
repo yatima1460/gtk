@@ -56,6 +56,8 @@
 #include "gtkprivate.h"
 #include "gtktypebuiltins.h"
 #include "gtkdialogprivate.h"
+#include "gtkstylecontextprivate.h"
+#include "gtkwidgetprivate.h"
 
 
 /**
@@ -110,6 +112,10 @@
  *   </child>
  * </object>
  * ]|
+ *
+ * # CSS nodes
+ *
+ * GtkPrintUnixDialog has a single CSS node with name printdialog.
  */
 
 
@@ -551,6 +557,8 @@ gtk_print_unix_dialog_class_init (GtkPrintUnixDialogClass *class)
   gtk_widget_class_bind_template_callback (widget_class, update_number_up_layout);
   gtk_widget_class_bind_template_callback (widget_class, redraw_page_layout_preview);
   gtk_widget_class_bind_template_callback (widget_class, draw_page_cb);
+
+  gtk_widget_class_set_css_name (widget_class, "printdialog");
 }
 
 /* Returns a toplevel GtkWindow, or NULL if none */
@@ -584,7 +592,7 @@ set_busy_cursor (GtkPrintUnixDialog *dialog,
   display = gtk_widget_get_display (widget);
 
   if (busy)
-    cursor = gdk_cursor_new_for_display (display, GDK_WATCH);
+    cursor = gdk_cursor_new_from_name (display, "progress");
   else
     cursor = NULL;
 
@@ -793,6 +801,9 @@ gtk_print_unix_dialog_init (GtkPrintUnixDialog *dialog)
 
   /* Load custom papers */
   _gtk_print_load_custom_papers (priv->custom_paper_list);
+
+  gtk_css_node_set_name (gtk_widget_get_css_node (priv->collate_image), I_("paper"));
+  gtk_css_node_set_name (gtk_widget_get_css_node (priv->page_layout_preview), I_("paper"));
 }
 
 static void
@@ -814,6 +825,8 @@ gtk_print_unix_dialog_constructed (GObject *object)
        gtk_header_bar_pack_end (GTK_HEADER_BAR (parent), button);
        g_object_unref (button);
     }
+
+  update_dialog_from_capabilities (GTK_PRINT_UNIX_DIALOG (object));
 }
 
 static void
@@ -1331,13 +1344,16 @@ add_option_to_extension_point (GtkPrinterOption *option,
     {
       GtkWidget *label, *hbox;
 
+      gtk_widget_set_valign (widget, GTK_ALIGN_BASELINE);
+
       label = gtk_printer_option_widget_get_external_label (GTK_PRINTER_OPTION_WIDGET (widget));
       gtk_widget_show (label);
       gtk_widget_set_halign (label, GTK_ALIGN_START);
-      gtk_widget_set_valign (label, GTK_ALIGN_CENTER);
+      gtk_widget_set_valign (label, GTK_ALIGN_BASELINE);
       gtk_label_set_mnemonic_widget (GTK_LABEL (label), widget);
 
       hbox = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 12);
+      gtk_widget_set_valign (hbox, GTK_ALIGN_BASELINE);
       gtk_box_pack_start (GTK_BOX (hbox), label, FALSE, FALSE, 0);
       gtk_box_pack_start (GTK_BOX (hbox), widget, FALSE, FALSE, 0);
       gtk_widget_show (hbox);
@@ -2223,11 +2239,6 @@ paint_page (GtkWidget *widget,
 
   context = gtk_widget_get_style_context (widget);
 
-  gtk_style_context_save (context);
-  gtk_style_context_add_class (context, GTK_STYLE_CLASS_FRAME);
-  gtk_style_context_add_class (context, GTK_STYLE_CLASS_PAPER);
-  gtk_style_context_add_class (context, GTK_STYLE_CLASS_VIEW);
-
   gtk_render_background (context, cr, x, y, width, height);
   gtk_render_frame (context, cr, x, y, width, height);
 
@@ -2237,8 +2248,6 @@ paint_page (GtkWidget *widget,
   cairo_set_font_size (cr, 9);
   cairo_move_to (cr, x + text_x, y + text_y);
   cairo_show_text (cr, text);
-
-  gtk_style_context_restore (context);
 }
 
 static gboolean
@@ -2288,7 +2297,7 @@ draw_collate_cb (GtkWidget          *widget,
 
       paint_page (widget, cr, x2 + p1, y, reverse ? "1" : "2", text_x);
       paint_page (widget, cr, x2 + p2, y + 10, collate == reverse ? "2" : "1", text_x);
-    }    
+    }
 
   return TRUE;
 }
@@ -2537,8 +2546,29 @@ dialog_set_page_set (GtkPrintUnixDialog *dialog,
 static gint
 dialog_get_n_copies (GtkPrintUnixDialog *dialog)
 {
+  GtkPrintUnixDialogPrivate *priv = dialog->priv;
+  GtkAdjustment *adjustment;
+  const gchar *text;
+  gchar *endptr = NULL;
+  gint n_copies;
+
+  adjustment = gtk_spin_button_get_adjustment (GTK_SPIN_BUTTON (priv->copies_spin));
+
+  text = gtk_entry_get_text (GTK_ENTRY (priv->copies_spin));
+  n_copies = g_ascii_strtoull (text, &endptr, 0);
+
   if (gtk_widget_is_sensitive (dialog->priv->copies_spin))
-    return gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (dialog->priv->copies_spin));
+    {
+      if (n_copies != 0 && endptr != text && (endptr != NULL && endptr[0] == '\0') &&
+          n_copies >= gtk_adjustment_get_lower (adjustment) &&
+          n_copies <= gtk_adjustment_get_upper (adjustment))
+        {
+          return n_copies;
+        }
+
+      return gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (priv->copies_spin));
+    }
+
   return 1;
 }
 
@@ -2671,7 +2701,6 @@ draw_page_cb (GtkWidget          *widget,
   gdouble pos_x, pos_y;
   gint pages_per_sheet;
   gboolean ltr = TRUE;
-  GtkStateFlags state;
 
   orientation = gtk_page_setup_get_orientation (priv->page_setup);
   landscape =
@@ -2681,7 +2710,6 @@ draw_page_cb (GtkWidget          *widget,
   number_up_layout = dialog_get_number_up_layout (dialog);
   width = gtk_widget_get_allocated_width (widget);
   height = gtk_widget_get_allocated_height (widget);
-  state = gtk_widget_get_state_flags (widget);
 
   cairo_save (cr);
 
@@ -2762,10 +2790,7 @@ draw_page_cb (GtkWidget          *widget,
     }
 
   context = gtk_widget_get_style_context (widget);
-
-  gtk_style_context_save (context);
-  gtk_style_context_add_class (context, GTK_STYLE_CLASS_PAPER);
-  gtk_style_context_add_class (context, GTK_STYLE_CLASS_VIEW);
+  gtk_style_context_get_color (context, gtk_style_context_get_state (context), &color);
 
   pos_x = (width - w) / 2;
   pos_y = (height - h) / 2 - 10;
@@ -2773,7 +2798,6 @@ draw_page_cb (GtkWidget          *widget,
 
   shadow_offset = 3;
 
-  gtk_style_context_get_color (context, state, &color);
   cairo_set_source_rgba (cr, color.red, color.green, color.blue, 0.5);
   cairo_rectangle (cr, shadow_offset + 1, shadow_offset + 1, w, h);
   cairo_fill (cr);
@@ -2782,7 +2806,6 @@ draw_page_cb (GtkWidget          *widget,
 
   cairo_set_line_width (cr, 1.0);
   cairo_rectangle (cr, 0.5, 0.5, w + 1, h + 1);
-  gtk_style_context_get_color (context, state, &color);
   gdk_cairo_set_source_rgba (cr, &color);
   cairo_stroke (cr);
 
@@ -2984,7 +3007,6 @@ draw_page_cb (GtkWidget          *widget,
         cairo_translate (cr, pos_x + w + shadow_offset + 2 * RULER_DISTANCE,
                              (height - layout_h / PANGO_SCALE) / 2);
 
-      gtk_style_context_get_color (context, state, &color);
       gdk_cairo_set_source_rgba (cr, &color);
       pango_cairo_show_layout (cr, layout);
 
@@ -3003,7 +3025,6 @@ draw_page_cb (GtkWidget          *widget,
       cairo_translate (cr, (width - layout_w / PANGO_SCALE) / 2,
                            pos_y + h + shadow_offset + 2 * RULER_DISTANCE);
 
-      gtk_style_context_get_color (context, state, &color);
       gdk_cairo_set_source_rgba (cr, &color);
       pango_cairo_show_layout (cr, layout);
 
@@ -3013,7 +3034,6 @@ draw_page_cb (GtkWidget          *widget,
 
       cairo_set_line_width (cr, 1);
 
-      gtk_style_context_get_color (context, state, &color);
       gdk_cairo_set_source_rgba (cr, &color);
 
       if (ltr)
@@ -3057,8 +3077,6 @@ draw_page_cb (GtkWidget          *widget,
       cairo_line_to (cr, pos_x + w + 0.5, pos_y + h + shadow_offset + RULER_DISTANCE + RULER_RADIUS);
       cairo_stroke (cr);
     }
-
-  gtk_style_context_restore (context);
 
   return TRUE;
 }

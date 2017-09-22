@@ -24,125 +24,206 @@
 #include <math.h>
 
 #include "gtkcssenumvalueprivate.h"
-#include "gtkiconhelperprivate.h"
-#include "gtkstylecontextprivate.h"
+#include "gtkcssiconthemevalueprivate.h"
+#include "gtkcssnodeprivate.h"
+#include "gtkcssstyleprivate.h"
+#include "gtkcssstylepropertyprivate.h"
+#include "gtkcsstransientnodeprivate.h"
+#include "gtkiconthemeprivate.h"
+#include "gtkrendericonprivate.h"
+#include "deprecated/gtkiconfactoryprivate.h"
+#include "deprecated/gtkstock.h"
 
 struct _GtkIconHelperPrivate {
-  GtkImageType storage_type;
-
-  GdkWindow *window;
-
-  GdkPixbuf *orig_pixbuf;
-  int orig_pixbuf_scale;
-  GdkPixbufAnimation *animation;
-  GIcon *gicon;
-  GtkIconSet *icon_set;
-  gchar *stock_id;
-  cairo_surface_t *orig_surface;
+  GtkImageDefinition *def;
 
   GtkIconSize icon_size;
   gint pixel_size;
 
   guint use_fallback : 1;
   guint force_scale_pixbuf : 1;
-
-  GdkPixbuf *rendered_pixbuf;
-  GtkStateFlags last_rendered_state;
+  guint rendered_surface_is_symbolic : 1;
 
   cairo_surface_t *rendered_surface;
-  gint rendered_surface_width;
-  gint rendered_surface_height;
-  GtkStateFlags last_surface_state;
-  gint last_surface_scale;
 };
 
-G_DEFINE_TYPE_WITH_PRIVATE (GtkIconHelper, _gtk_icon_helper, G_TYPE_OBJECT)
+G_DEFINE_TYPE_WITH_PRIVATE (GtkIconHelper, gtk_icon_helper, GTK_TYPE_CSS_GADGET)
 
-void
-_gtk_icon_helper_clear (GtkIconHelper *self)
+static void
+gtk_icon_helper_invalidate (GtkIconHelper *self)
 {
-  g_clear_object (&self->priv->gicon);
-  g_clear_object (&self->priv->orig_pixbuf);
-  g_clear_object (&self->priv->animation);
-  g_clear_object (&self->priv->rendered_pixbuf);
-  g_clear_object (&self->priv->window);
-  g_clear_pointer (&self->priv->orig_surface, cairo_surface_destroy);
-  g_clear_pointer (&self->priv->rendered_surface, cairo_surface_destroy);
-
-  if (self->priv->icon_set != NULL)
-    {
-      G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
-      gtk_icon_set_unref (self->priv->icon_set);
-      G_GNUC_END_IGNORE_DEPRECATIONS;
-      self->priv->icon_set = NULL;
-    }
-
-  g_clear_pointer (&self->priv->stock_id, g_free);
-
-  self->priv->storage_type = GTK_IMAGE_EMPTY;
-  self->priv->icon_size = GTK_ICON_SIZE_INVALID;
-  self->priv->last_rendered_state = GTK_STATE_FLAG_NORMAL;
-  self->priv->last_surface_state = GTK_STATE_FLAG_NORMAL;
-  self->priv->last_surface_scale = 0;
-  self->priv->orig_pixbuf_scale = 1;
-}
-
-void
-_gtk_icon_helper_invalidate (GtkIconHelper *self)
-{
-  g_clear_object (&self->priv->rendered_pixbuf);
   if (self->priv->rendered_surface != NULL)
     {
       cairo_surface_destroy (self->priv->rendered_surface);
       self->priv->rendered_surface = NULL;
+      self->priv->rendered_surface_is_symbolic = FALSE;
     }
+
+  if (!GTK_IS_CSS_TRANSIENT_NODE (gtk_css_gadget_get_node (GTK_CSS_GADGET (self))))
+    gtk_widget_queue_resize (gtk_css_gadget_get_owner (GTK_CSS_GADGET (self)));
 }
 
 void
- _gtk_icon_helper_set_window (GtkIconHelper *self,
-			      GdkWindow *window)
+gtk_icon_helper_invalidate_for_change (GtkIconHelper     *self,
+                                       GtkCssStyleChange *change)
 {
-  if (window)
-    g_object_ref (window);
-  g_clear_object (&self->priv->window);
-  self->priv->window = window;
+  GtkIconHelperPrivate *priv = self->priv;
 
+  if (change == NULL ||
+      ((gtk_css_style_change_affects (change, GTK_CSS_AFFECTS_SYMBOLIC_ICON) &&
+        priv->rendered_surface_is_symbolic) ||
+       (gtk_css_style_change_affects (change, GTK_CSS_AFFECTS_ICON) &&
+        !priv->rendered_surface_is_symbolic)))
+    {
+      gtk_icon_helper_invalidate (self);
+    }
+}
+
+static void
+gtk_icon_helper_take_definition (GtkIconHelper      *self,
+                                 GtkImageDefinition *def)
+{
+  _gtk_icon_helper_clear (self);
+
+  if (def == NULL)
+    return;
+
+  gtk_image_definition_unref (self->priv->def);
+  self->priv->def = def;
+
+  gtk_icon_helper_invalidate (self);
+}
+
+void
+_gtk_icon_helper_clear (GtkIconHelper *self)
+{
+  g_clear_pointer (&self->priv->rendered_surface, cairo_surface_destroy);
+
+  gtk_image_definition_unref (self->priv->def);
+  self->priv->def = gtk_image_definition_new_empty ();
+
+  self->priv->icon_size = GTK_ICON_SIZE_INVALID;
+
+  gtk_icon_helper_invalidate (self);
+}
+
+static void
+gtk_icon_helper_get_preferred_size (GtkCssGadget   *gadget,
+                                    GtkOrientation  orientation,
+                                    gint            for_size,
+                                    gint           *minimum,
+                                    gint           *natural,
+                                    gint           *minimum_baseline,
+                                    gint           *natural_baseline)
+{
+  GtkIconHelper *self = GTK_ICON_HELPER (gadget);
+  int icon_width, icon_height;
+
+  _gtk_icon_helper_get_size (self, &icon_width, &icon_height);
+
+  if (orientation == GTK_ORIENTATION_HORIZONTAL)
+    *minimum = *natural = icon_width;
+  else
+    *minimum = *natural = icon_height;
+}
+
+static void
+gtk_icon_helper_allocate (GtkCssGadget        *gadget,
+                          const GtkAllocation *allocation,
+                          int                  baseline,
+                          GtkAllocation       *out_clip)
+{
+  GTK_CSS_GADGET_CLASS (gtk_icon_helper_parent_class)->allocate (gadget, allocation, baseline, out_clip);
+}
+
+static gboolean
+gtk_icon_helper_draw (GtkCssGadget *gadget,
+                      cairo_t      *cr,
+                      int           x,
+                      int           y,
+                      int           width,
+                      int           height)
+{
+  GtkIconHelper *self = GTK_ICON_HELPER (gadget);
+  int icon_width, icon_height;
+
+  _gtk_icon_helper_get_size (self, &icon_width, &icon_height);
+  _gtk_icon_helper_draw (self,
+                         cr,
+                         x + (width - icon_width) / 2,
+                         y + (height - icon_height) / 2);
+
+  return FALSE;
+}
+
+static void
+gtk_icon_helper_style_changed (GtkCssGadget      *gadget,
+                               GtkCssStyleChange *change)
+{
+  gtk_icon_helper_invalidate_for_change (GTK_ICON_HELPER (gadget), change);
+
+  if (!GTK_IS_CSS_TRANSIENT_NODE (gtk_css_gadget_get_node (gadget)))
+    GTK_CSS_GADGET_CLASS (gtk_icon_helper_parent_class)->style_changed (gadget, change);
+}
+
+static void
+gtk_icon_helper_constructed (GObject *object)
+{
+  GtkIconHelper *self = GTK_ICON_HELPER (object);
+  GtkWidget *widget;
+
+  widget = gtk_css_gadget_get_owner (GTK_CSS_GADGET (self));
+
+  g_signal_connect_swapped (widget, "direction-changed", G_CALLBACK (gtk_icon_helper_invalidate), self);
+  g_signal_connect_swapped (widget, "notify::scale-factor", G_CALLBACK (gtk_icon_helper_invalidate), self);
+
+  G_OBJECT_CLASS (gtk_icon_helper_parent_class)->constructed (object);
 }
 
 static void
 gtk_icon_helper_finalize (GObject *object)
 {
   GtkIconHelper *self = GTK_ICON_HELPER (object);
+  GtkWidget *widget;
+
+  widget = gtk_css_gadget_get_owner (GTK_CSS_GADGET (self));
+  g_signal_handlers_disconnect_by_func (widget, G_CALLBACK (gtk_icon_helper_invalidate), self);
 
   _gtk_icon_helper_clear (self);
+  gtk_image_definition_unref (self->priv->def);
   
-  G_OBJECT_CLASS (_gtk_icon_helper_parent_class)->finalize (object);
+  G_OBJECT_CLASS (gtk_icon_helper_parent_class)->finalize (object);
 }
 
 static void
-_gtk_icon_helper_class_init (GtkIconHelperClass *klass)
+gtk_icon_helper_class_init (GtkIconHelperClass *klass)
 {
-  GObjectClass *oclass;
+  GtkCssGadgetClass *gadget_class = GTK_CSS_GADGET_CLASS (klass);
+  GObjectClass *object_class = G_OBJECT_CLASS (klass);
+  
+  gadget_class->get_preferred_size = gtk_icon_helper_get_preferred_size;
+  gadget_class->allocate = gtk_icon_helper_allocate;
+  gadget_class->draw = gtk_icon_helper_draw;
+  gadget_class->style_changed = gtk_icon_helper_style_changed;
 
-  oclass = G_OBJECT_CLASS (klass);
-  oclass->finalize = gtk_icon_helper_finalize;
+  object_class->constructed = gtk_icon_helper_constructed;
+  object_class->finalize = gtk_icon_helper_finalize;
 }
 
 static void
-_gtk_icon_helper_init (GtkIconHelper *self)
+gtk_icon_helper_init (GtkIconHelper *self)
 {
-  self->priv = _gtk_icon_helper_get_instance_private (self);
+  self->priv = gtk_icon_helper_get_instance_private (self);
 
-  self->priv->storage_type = GTK_IMAGE_EMPTY;
+  self->priv->def = gtk_image_definition_new_empty ();
+
   self->priv->icon_size = GTK_ICON_SIZE_INVALID;
   self->priv->pixel_size = -1;
-  self->priv->last_rendered_state = GTK_STATE_FLAG_NORMAL;
-  self->priv->orig_pixbuf_scale = 1;
+  self->priv->rendered_surface_is_symbolic = FALSE;
 }
 
 static void
 ensure_icon_size (GtkIconHelper *self,
-                  GtkStyleContext *context,
 		  gint *width_out,
 		  gint *height_out)
 {
@@ -160,7 +241,7 @@ ensure_icon_size (GtkIconHelper *self,
         }
       else
         {
-          g_warning ("Invalid icon size %d\n", self->priv->icon_size);
+          g_warning ("Invalid icon size %d", self->priv->icon_size);
           width = height = 24;
         }
     }
@@ -169,112 +250,20 @@ ensure_icon_size (GtkIconHelper *self,
   *height_out = height;
 }
 
-static GdkPixbuf *
-ensure_stated_pixbuf_from_pixbuf (GtkIconHelper   *self,
-				  GtkStyleContext *context,
-				  GdkPixbuf       *pixbuf)
-{
-  GdkPixbuf *rendered;
-  GtkIconSource *source;
-
-  G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
-
-  /* FIXME: use gtk_icon_info_load_icon? */
-
-  source = gtk_icon_source_new ();
-  gtk_icon_source_set_pixbuf (source, pixbuf);
-  /* The size here is arbitrary; since size isn't
-   * wildcarded in the source, it isn't supposed to be
-   * scaled by the engine function
-   */
-  gtk_icon_source_set_size (source,
-			    GTK_ICON_SIZE_SMALL_TOOLBAR);
-  gtk_icon_source_set_size_wildcarded (source, FALSE);
-
-  rendered = gtk_render_icon_pixbuf (context, source, (GtkIconSize) -1);
-  gtk_icon_source_free (source);
-
-  G_GNUC_END_IGNORE_DEPRECATIONS;
-
-  return rendered;
-}
-
-static GdkPixbuf *
-ensure_stated_icon_from_info (GtkIconHelper *self,
-                              GtkStyleContext *context,
-			      GtkIconInfo *info)
-{
-  GdkPixbuf *destination = NULL;
-  gboolean symbolic;
-
-  symbolic = FALSE;
-
-  if (info)
-    destination =
-      gtk_icon_info_load_symbolic_for_context (info,
-					       context,
-					       &symbolic,
-					       NULL);
-
-  if (destination == NULL)
-    {
-      GtkIconTheme *icon_theme;
-      int width;
-
-      icon_theme = gtk_icon_theme_get_for_screen (gtk_style_context_get_screen (context));
-      gtk_icon_size_lookup (self->priv->icon_size, &width, NULL);
-      destination = gtk_icon_theme_load_icon (icon_theme,
-                                              "image-missing",
-                                              width,
-                                              GTK_ICON_LOOKUP_GENERIC_FALLBACK,
-                                              NULL);
-    }
-  else if (!symbolic)
-    {
-      GdkPixbuf *rendered;
-
-      rendered = ensure_stated_pixbuf_from_pixbuf (self, context, destination);
-      g_object_unref (destination);
-      destination = rendered;
-    }
-
-  return destination;
-}
-
-static gboolean
-check_invalidate_pixbuf (GtkIconHelper *self,
-                         GtkStyleContext *context)
-{
-  GtkStateFlags state;
-
-  state = gtk_style_context_get_state (context);
-
-  if ((self->priv->rendered_pixbuf != NULL) &&
-      (self->priv->last_rendered_state == state))
-    return FALSE;
-
-  self->priv->last_rendered_state = state;
-  g_clear_object (&self->priv->rendered_pixbuf);
-
-  return TRUE;
-}
-
 static GtkIconLookupFlags
-get_icon_lookup_flags (GtkIconHelper *self, GtkStyleContext *context)
+get_icon_lookup_flags (GtkIconHelper    *self,
+                       GtkCssStyle      *style,
+                       GtkTextDirection  dir)
 {
   GtkIconLookupFlags flags;
   GtkCssIconStyle icon_style;
-  GtkStateFlags state;
 
-  state = gtk_style_context_get_state (context);
   flags = GTK_ICON_LOOKUP_USE_BUILTIN;
 
-  if (self->priv->use_fallback)
-    flags |= GTK_ICON_LOOKUP_GENERIC_FALLBACK;
   if (self->priv->pixel_size != -1 || self->priv->force_scale_pixbuf)
     flags |= GTK_ICON_LOOKUP_FORCE_SIZE;
 
-  icon_style = _gtk_css_icon_style_value_get (_gtk_style_context_peek_property (context, GTK_CSS_PROPERTY_ICON_STYLE));
+  icon_style = _gtk_css_icon_style_value_get (gtk_css_style_get_value (style, GTK_CSS_PROPERTY_ICON_STYLE));
 
   switch (icon_style)
     {
@@ -291,322 +280,90 @@ get_icon_lookup_flags (GtkIconHelper *self, GtkStyleContext *context)
       return 0;
     }
 
-  if (state & GTK_STATE_FLAG_DIR_LTR)
+  if (dir == GTK_TEXT_DIR_LTR)
     flags |= GTK_ICON_LOOKUP_DIR_LTR;
-  else if (state & GTK_STATE_FLAG_DIR_RTL)
+  else if (dir == GTK_TEXT_DIR_RTL)
     flags |= GTK_ICON_LOOKUP_DIR_RTL;
 
   return flags;
 }
 
 static void
-ensure_pixbuf_for_gicon (GtkIconHelper *self,
-                         GtkStyleContext *context)
-{
-  GtkIconTheme *icon_theme;
-  gint width, height;
-  GtkIconInfo *info;
-  GtkIconLookupFlags flags;
-
-  if (!check_invalidate_pixbuf (self, context))
-    return;
-
-  icon_theme = gtk_icon_theme_get_for_screen (gtk_style_context_get_screen (context));
-  flags = get_icon_lookup_flags (self, context);
-
-  ensure_icon_size (self, context, &width, &height);
-
-  if (self->priv->gicon != NULL)
-    {
-      info = gtk_icon_theme_lookup_by_gicon (icon_theme,
-                                             self->priv->gicon,
-                                             MIN (width, height), flags);
-    }
-  else
-    {
-      g_assert_not_reached ();
-      return;
-    }
-
-  self->priv->rendered_pixbuf = ensure_stated_icon_from_info (self, context, info);
-
-  if (info)
-    g_object_unref (info);
-}
-
-static void
-ensure_pixbuf_for_icon_set (GtkIconHelper *self,
-                            GtkStyleContext *context,
-                            GtkIconSet *icon_set)
-{
-  if (!check_invalidate_pixbuf (self, context))
-    return;
-
-  G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
-  self->priv->rendered_pixbuf = 
-    gtk_icon_set_render_icon_pixbuf (icon_set, context, self->priv->icon_size);
-  G_GNUC_END_IGNORE_DEPRECATIONS;
-}
-
-static void
 get_surface_size (GtkIconHelper   *self,
-		  GtkStyleContext *context,
 		  cairo_surface_t *surface,
 		  int *width,
 		  int *height)
 {
-  double x_scale, y_scale;
-
-  if (cairo_surface_get_type (surface) == CAIRO_SURFACE_TYPE_IMAGE)
-    {
-      x_scale = y_scale = 1;
-
-      cairo_surface_get_device_scale (surface, &x_scale, &y_scale);
-
-      /* Assume any set scaling is icon scale */
-      *width =
-	ceil (cairo_image_surface_get_width (surface) / x_scale);
-      *height =
-	ceil (cairo_image_surface_get_height (surface) / y_scale);
-    }
-  else
-    ensure_icon_size (self, context, width, height);
-}
-
-static void
-ensure_pixbuf_from_surface (GtkIconHelper   *self,
-			    GtkStyleContext *context)
-{
-  cairo_surface_t *surface;
-  gint width, height;
+  GdkRectangle clip;
   cairo_t *cr;
 
-
-  if (!check_invalidate_pixbuf (self, context))
-    return;
-
-  if (self->priv->rendered_pixbuf)
-    return;
-
-  get_surface_size (self, context, self->priv->orig_surface, &width, &height);
-
-  surface = cairo_image_surface_create (CAIRO_FORMAT_ARGB32,
-					width, height);
-
   cr = cairo_create (surface);
-  cairo_set_source_surface (cr, self->priv->orig_surface, 0, 0);
-  cairo_paint (cr);
+  if (gdk_cairo_get_clip_rectangle (cr, &clip))
+    {
+      if (clip.x != 0 || clip.y != 0)
+        {
+          g_warning ("origin of surface is %d %d, not supported", clip.x, clip.y);
+        }
+      *width = clip.width;
+      *height = clip.height;
+    }
+  else
+    {
+      g_warning ("infinite surface size not supported");
+      ensure_icon_size (self, width, height);
+    }
+
   cairo_destroy (cr);
-
-  self->priv->rendered_pixbuf =
-    gdk_pixbuf_get_from_surface (surface, 0, 0, width, height);
-
-  cairo_surface_destroy (surface);
 }
 
-static void
-ensure_pixbuf_at_size (GtkIconHelper   *self,
-                       GtkStyleContext *context)
-{
-  gint width, height;
-  GdkPixbuf *stated;
-
-  if (!check_invalidate_pixbuf (self, context))
-    return;
-
-  if (self->priv->rendered_pixbuf)
-    return;
-
-  if (self->priv->force_scale_pixbuf &&
-      (self->priv->pixel_size != -1 ||
-       self->priv->icon_size != GTK_ICON_SIZE_INVALID))
-    {
-      ensure_icon_size (self, context, &width, &height);
-
-      if (self->priv->orig_pixbuf_scale > 1 ||
-	  /* These should divide the orig_pixbuf size by scale, but need not 
-	     due to the above scale > 1 check */
-	  width < gdk_pixbuf_get_width (self->priv->orig_pixbuf) ||
-          height < gdk_pixbuf_get_height (self->priv->orig_pixbuf))
-	{
-	  width = MIN (width, gdk_pixbuf_get_width (self->priv->orig_pixbuf) / self->priv->orig_pixbuf_scale);
-	  height = MIN (height, gdk_pixbuf_get_height (self->priv->orig_pixbuf) / self->priv->orig_pixbuf_scale);
-	  self->priv->rendered_pixbuf =
-	    gdk_pixbuf_scale_simple (self->priv->orig_pixbuf,
-				     width, height,
-				     GDK_INTERP_BILINEAR);
-	}
-    }
-  else if (self->priv->orig_pixbuf_scale > 1)
-    {
-	  width = gdk_pixbuf_get_width (self->priv->orig_pixbuf) / self->priv->orig_pixbuf_scale;
-	  height =gdk_pixbuf_get_height (self->priv->orig_pixbuf) / self->priv->orig_pixbuf_scale;
-	  self->priv->rendered_pixbuf =
-	    gdk_pixbuf_scale_simple (self->priv->orig_pixbuf,
-				     width, height,
-				     GDK_INTERP_BILINEAR);
-    }
-
-  if (!self->priv->rendered_pixbuf)
-    self->priv->rendered_pixbuf = g_object_ref (self->priv->orig_pixbuf);
-
-  stated = ensure_stated_pixbuf_from_pixbuf (self, context, self->priv->rendered_pixbuf);
-  g_object_unref (self->priv->rendered_pixbuf);
-  self->priv->rendered_pixbuf = stated;
-}
-
-GdkPixbuf *
-_gtk_icon_helper_ensure_pixbuf (GtkIconHelper *self,
-                                GtkStyleContext *context)
-{
-  GdkPixbuf *pixbuf = NULL;
-  GtkIconSet *icon_set;
-
-  switch (self->priv->storage_type)
-    {
-    case GTK_IMAGE_SURFACE:
-      ensure_pixbuf_from_surface (self, context);
-      break;
-
-    case GTK_IMAGE_PIXBUF:
-      ensure_pixbuf_at_size (self, context);
-      break;
-
-    case GTK_IMAGE_STOCK:
-      G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
-      icon_set = gtk_icon_factory_lookup_default (self->priv->stock_id);
-      if (icon_set != NULL)
-	ensure_pixbuf_for_icon_set (self, context, icon_set);
-      else
-	pixbuf = NULL;
-      G_GNUC_END_IGNORE_DEPRECATIONS;
-      break;
-
-    case GTK_IMAGE_ICON_SET:
-      icon_set = self->priv->icon_set;
-      ensure_pixbuf_for_icon_set (self, context, icon_set);
-      break;
-
-    case GTK_IMAGE_ICON_NAME:
-    case GTK_IMAGE_GICON:
-      ensure_pixbuf_for_gicon (self, context);
-      break;
-
-    case GTK_IMAGE_ANIMATION:
-    case GTK_IMAGE_EMPTY:
-    default:
-      pixbuf = NULL;
-      break;
-    }
-
-  if (pixbuf == NULL &&
-      self->priv->rendered_pixbuf != NULL)
-    pixbuf = g_object_ref (self->priv->rendered_pixbuf);
-
-  return pixbuf;
-}
-
-static gint
-get_scale_factor (GtkIconHelper *self,
-		  GtkStyleContext *context)
-{
-  GdkScreen *screen;
-
-  if (self->priv->window)
-    return gdk_window_get_scale_factor (self->priv->window);
-
-  screen = gtk_style_context_get_screen (context);
-
-  /* else fall back to something that is more likely to be right than
-   * just returning 1:
-   */
-  return gdk_screen_get_monitor_scale_factor (screen, 0);
-}
-
-static gboolean
-check_invalidate_surface (GtkIconHelper *self,
-			  GtkStyleContext *context)
-{
-  GtkStateFlags state;
-  int scale;
-
-  state = gtk_style_context_get_state (context);
-  scale = get_scale_factor (self, context);
-
-  if ((self->priv->rendered_surface != NULL) &&
-      (self->priv->last_surface_state == state) &&
-      (self->priv->last_surface_scale == scale))
-    return FALSE;
-
-  self->priv->last_surface_state = state;
-  self->priv->last_surface_scale = scale;
-
-  if (self->priv->rendered_surface)
-    cairo_surface_destroy (self->priv->rendered_surface);
-  self->priv->rendered_surface = NULL;
-
-  return TRUE;
-}
-
-static void
+static cairo_surface_t *
 ensure_surface_from_surface (GtkIconHelper   *self,
-			     GtkStyleContext *context)
+                             cairo_surface_t *orig_surface)
 {
-  if (!check_invalidate_surface (self, context))
-    return;
-
-  if (self->priv->rendered_surface)
-    return;
-
-  self->priv->rendered_surface =
-    cairo_surface_reference (self->priv->orig_surface);
-
-  get_surface_size (self, context, self->priv->orig_surface,
-		    &self->priv->rendered_surface_width,
-		    &self->priv->rendered_surface_height);
+  return cairo_surface_reference (orig_surface);
 }
 
 static gboolean
 get_pixbuf_size (GtkIconHelper   *self,
-                 GtkStyleContext *context,
+                 gint             scale,
+                 GdkPixbuf       *orig_pixbuf,
+                 gint             orig_scale,
                  gint *width_out,
                  gint *height_out,
                  gint *scale_out)
 {
   gboolean scale_pixmap;
   gint width, height;
-  int scale;
 
-  scale = get_scale_factor (self, context);
   scale_pixmap = FALSE;
 
   if (self->priv->force_scale_pixbuf &&
       (self->priv->pixel_size != -1 ||
        self->priv->icon_size != GTK_ICON_SIZE_INVALID))
     {
-      ensure_icon_size (self, context, &width, &height);
+      ensure_icon_size (self, &width, &height);
 
-      if (scale != self->priv->orig_pixbuf_scale ||
-	  width < gdk_pixbuf_get_width (self->priv->orig_pixbuf) / self->priv->orig_pixbuf_scale ||
-          height < gdk_pixbuf_get_height (self->priv->orig_pixbuf) / self->priv->orig_pixbuf_scale)
+      if (scale != orig_scale ||
+	  width < gdk_pixbuf_get_width (orig_pixbuf) / orig_scale ||
+          height < gdk_pixbuf_get_height (orig_pixbuf) / orig_scale)
 	{
-	  width = MIN (width * scale, gdk_pixbuf_get_width (self->priv->orig_pixbuf) * scale / self->priv->orig_pixbuf_scale);
-	  height = MIN (height * scale, gdk_pixbuf_get_height (self->priv->orig_pixbuf) * scale / self->priv->orig_pixbuf_scale);
+	  width = MIN (width * scale, gdk_pixbuf_get_width (orig_pixbuf) * scale / orig_scale);
+	  height = MIN (height * scale, gdk_pixbuf_get_height (orig_pixbuf) * scale / orig_scale);
 
           scale_pixmap = TRUE;
 	}
       else
 	{
-	  width = gdk_pixbuf_get_width (self->priv->orig_pixbuf);
-	  height = gdk_pixbuf_get_height (self->priv->orig_pixbuf);
-	  scale = self->priv->orig_pixbuf_scale;
+	  width = gdk_pixbuf_get_width (orig_pixbuf);
+	  height = gdk_pixbuf_get_height (orig_pixbuf);
+	  scale = orig_scale;
 	}
     }
   else
     {
-      width = gdk_pixbuf_get_width (self->priv->orig_pixbuf);
-      height = gdk_pixbuf_get_height (self->priv->orig_pixbuf);
-      scale = self->priv->orig_pixbuf_scale;
+      width = gdk_pixbuf_get_width (orig_pixbuf);
+      height = gdk_pixbuf_get_height (orig_pixbuf);
+      scale = orig_scale;
     }
 
   *width_out = width;
@@ -616,191 +373,208 @@ get_pixbuf_size (GtkIconHelper   *self,
   return scale_pixmap;
 }
 
-static void
-ensure_surface_from_pixbuf (GtkIconHelper   *self,
-			    GtkStyleContext *context)
+static cairo_surface_t *
+ensure_surface_from_pixbuf (GtkIconHelper *self,
+                            GtkCssStyle   *style,
+                            gint           scale,
+                            GdkPixbuf     *orig_pixbuf,
+                            gint           orig_scale)
 {
   gint width, height;
-  GdkPixbuf *pixbuf, *stated;
-  int scale;
+  cairo_surface_t *surface;
+  GdkPixbuf *pixbuf;
+  GtkCssIconEffect icon_effect;
 
-  if (!check_invalidate_surface (self, context))
-    return;
-
-  if (self->priv->rendered_surface)
-    return;
-
-  if (get_pixbuf_size (self, context, &width, &height, &scale))
-    pixbuf = gdk_pixbuf_scale_simple (self->priv->orig_pixbuf,
+  if (get_pixbuf_size (self,
+                       scale,
+                       orig_pixbuf,
+                       orig_scale,
+                       &width, &height, &scale))
+    pixbuf = gdk_pixbuf_scale_simple (orig_pixbuf,
                                       width, height,
                                       GDK_INTERP_BILINEAR);
   else
-    pixbuf = g_object_ref (self->priv->orig_pixbuf);
+    pixbuf = g_object_ref (orig_pixbuf);
 
-  stated = ensure_stated_pixbuf_from_pixbuf (self, context, pixbuf);
+  surface = gdk_cairo_surface_create_from_pixbuf (pixbuf, scale, gtk_widget_get_window (gtk_css_gadget_get_owner (GTK_CSS_GADGET (self))));
+  icon_effect = _gtk_css_icon_effect_value_get (gtk_css_style_get_value (style, GTK_CSS_PROPERTY_ICON_EFFECT));
+  gtk_css_icon_effect_apply (icon_effect, surface);
   g_object_unref (pixbuf);
-  pixbuf = stated;
 
-  self->priv->rendered_surface_width = (width + scale - 1) / scale;
-  self->priv->rendered_surface_height = (height + scale - 1) / scale;
-
-  self->priv->rendered_surface = gdk_cairo_surface_create_from_pixbuf (pixbuf, scale, self->priv->window);
-  g_object_unref (pixbuf);
+  return surface;
 }
 
-static void
-ensure_surface_for_icon_set (GtkIconHelper *self,
-			     GtkStyleContext *context,
-			     GtkIconSet *icon_set)
+static cairo_surface_t *
+ensure_surface_for_icon_set (GtkIconHelper    *self,
+                             GtkCssStyle      *style,
+                             GtkTextDirection  direction,
+                             gint              scale,
+			     GtkIconSet       *icon_set)
 {
-  gint scale;
-
-  if (!check_invalidate_surface (self, context))
-    return;
-
-  scale = get_scale_factor (self, context);
-
-  G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
-  self->priv->rendered_surface =
-    gtk_icon_set_render_icon_surface (icon_set, context, 
-				      self->priv->icon_size,
-				      scale, self->priv->window);
-  G_GNUC_END_IGNORE_DEPRECATIONS;
-
-  if (self->priv->rendered_surface)
-    get_surface_size (self, context, self->priv->rendered_surface, 
-		      &self->priv->rendered_surface_width, 
-		      &self->priv->rendered_surface_height);
-}
-
-static void
-ensure_stated_surface_from_info (GtkIconHelper *self,
-				 GtkStyleContext *context,
-				 GtkIconInfo *info,
-				 int scale)
-{
-  GdkPixbuf *destination = NULL;
   cairo_surface_t *surface;
-  gboolean symbolic;
+  GdkPixbuf *pixbuf;
 
-  symbolic = FALSE;
+  pixbuf = gtk_icon_set_render_icon_pixbuf_for_scale (icon_set,
+                                                      style,
+                                                      direction,
+                                                      self->priv->icon_size,
+                                                      scale);
+  surface = gdk_cairo_surface_create_from_pixbuf (pixbuf,
+                                                  scale,
+                                                  gtk_widget_get_window (gtk_css_gadget_get_owner (GTK_CSS_GADGET (self))));
+  g_object_unref (pixbuf);
 
-  if (info)
-    destination =
-      gtk_icon_info_load_symbolic_for_context (info,
-					       context,
-					       &symbolic,
-					       NULL);
-
-  if (destination == NULL)
-    {
-      GtkIconSet *icon_set;
-
-      G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
-
-      icon_set = gtk_icon_factory_lookup_default (GTK_STOCK_MISSING_IMAGE);
-
-      destination =
-        gtk_icon_set_render_icon_pixbuf (icon_set, context, self->priv->icon_size);
-
-      G_GNUC_END_IGNORE_DEPRECATIONS;
-    }
-  else if (!symbolic)
-    {
-      GdkPixbuf *rendered;
-
-      rendered = ensure_stated_pixbuf_from_pixbuf (self, context, destination);
-      g_object_unref (destination);
-      destination = rendered;
-    }
-
-  surface = NULL;
-  if (destination)
-    {
-      surface = gdk_cairo_surface_create_from_pixbuf (destination, scale, self->priv->window);
-
-      self->priv->rendered_surface_width = 
-	(gdk_pixbuf_get_width (destination) + scale - 1) / scale;
-      self->priv->rendered_surface_height = 
-	(gdk_pixbuf_get_height (destination) + scale - 1) / scale;
-      g_object_unref (destination);
-    }
-
-  self->priv->rendered_surface = surface;
+  return surface;
 }
 
-static void
-ensure_surface_for_gicon (GtkIconHelper   *self,
-                          GtkStyleContext *context)
+static cairo_surface_t *
+ensure_surface_for_gicon (GtkIconHelper    *self,
+                          GtkCssStyle      *style,
+                          GtkTextDirection  dir,
+                          gint              scale,
+                          GIcon            *gicon)
 {
+  GtkIconHelperPrivate *priv = self->priv;
   GtkIconTheme *icon_theme;
-  gint width, height, scale;
+  gint width, height;
   GtkIconInfo *info;
   GtkIconLookupFlags flags;
+  cairo_surface_t *surface;
+  GdkPixbuf *destination;
+  gboolean symbolic;
 
-  if (!check_invalidate_surface (self, context))
-    return;
+  icon_theme = gtk_css_icon_theme_value_get_icon_theme
+    (gtk_css_style_get_value (style, GTK_CSS_PROPERTY_ICON_THEME));
+  flags = get_icon_lookup_flags (self, style, dir);
 
-  icon_theme = gtk_icon_theme_get_for_screen (gtk_style_context_get_screen (context));
-  flags = get_icon_lookup_flags (self, context);
+  ensure_icon_size (self, &width, &height);
 
-  ensure_icon_size (self, context, &width, &height);
-  scale = get_scale_factor (self, context);
-
-  if (self->priv->gicon != NULL)
+  info = gtk_icon_theme_lookup_by_gicon_for_scale (icon_theme,
+                                                   gicon,
+                                                   MIN (width, height),
+                                                   scale, flags);
+  if (info)
     {
-      info = gtk_icon_theme_lookup_by_gicon_for_scale (icon_theme,
-						       self->priv->gicon,
-						       MIN (width, height),
-						       scale, flags);
+      symbolic = gtk_icon_info_is_symbolic (info);
+
+      if (symbolic)
+        {
+          GdkRGBA fg, success_color, warning_color, error_color;
+
+          gtk_icon_theme_lookup_symbolic_colors (style, &fg, &success_color, &warning_color, &error_color);
+
+          destination = gtk_icon_info_load_symbolic (info,
+                                                     &fg, &success_color,
+                                                     &warning_color, &error_color,
+                                                     NULL,
+                                                     NULL);
+        }
+      else
+        {
+          destination = gtk_icon_info_load_icon (info, NULL);
+        }
+
+      g_object_unref (info);
     }
   else
     {
-      g_assert_not_reached ();
-      return;
+      destination = NULL;
     }
 
-  ensure_stated_surface_from_info (self, context, info, scale);
+  if (destination == NULL)
+    {
+      destination = gtk_icon_theme_load_icon (icon_theme,
+                                              "image-missing",
+                                              width,
+                                              flags | GTK_ICON_LOOKUP_USE_BUILTIN | GTK_ICON_LOOKUP_GENERIC_FALLBACK,
+                                              NULL);
+      /* We include this image as resource, so we always have it available or
+       * the icontheme code is broken */
+      g_assert (destination);
+      symbolic = FALSE;
+    }
 
-  if (info)
-    g_object_unref (info);
+  surface = gdk_cairo_surface_create_from_pixbuf (destination, scale, gtk_widget_get_window (gtk_css_gadget_get_owner (GTK_CSS_GADGET (self))));
+
+  if (!symbolic)
+    {
+      GtkCssIconEffect icon_effect;
+
+      icon_effect = _gtk_css_icon_effect_value_get (gtk_css_style_get_value (style, GTK_CSS_PROPERTY_ICON_EFFECT));
+      gtk_css_icon_effect_apply (icon_effect, surface);
+    }
+  else
+    {
+      priv->rendered_surface_is_symbolic = TRUE;
+    }
+
+  g_object_unref (destination);
+
+  return surface;
 }
 
 cairo_surface_t *
-_gtk_icon_helper_ensure_surface (GtkIconHelper *self,
-				 GtkStyleContext *context)
+gtk_icon_helper_load_surface (GtkIconHelper   *self,
+                              int              scale)
 {
-  cairo_surface_t *surface = NULL;
+  cairo_surface_t *surface;
   GtkIconSet *icon_set;
+  GIcon *gicon;
 
-  switch (self->priv->storage_type)
+  switch (gtk_image_definition_get_storage_type (self->priv->def))
     {
     case GTK_IMAGE_SURFACE:
-      ensure_surface_from_surface (self, context);
+      surface = ensure_surface_from_surface (self, gtk_image_definition_get_surface (self->priv->def));
       break;
 
     case GTK_IMAGE_PIXBUF:
-      ensure_surface_from_pixbuf (self, context);
+      surface = ensure_surface_from_pixbuf (self,
+                                            gtk_css_node_get_style (gtk_css_gadget_get_node (GTK_CSS_GADGET (self))),
+                                            scale,
+                                            gtk_image_definition_get_pixbuf (self->priv->def),
+                                            gtk_image_definition_get_scale (self->priv->def));
       break;
 
     case GTK_IMAGE_STOCK:
-      G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
-      icon_set = gtk_icon_factory_lookup_default (self->priv->stock_id);
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
+      icon_set = gtk_icon_factory_lookup_default (gtk_image_definition_get_stock (self->priv->def));
+G_GNUC_END_IGNORE_DEPRECATIONS;
       if (icon_set != NULL)
-	ensure_surface_for_icon_set (self, context, icon_set);
+	surface = ensure_surface_for_icon_set (self,
+                                               gtk_css_node_get_style (gtk_css_gadget_get_node (GTK_CSS_GADGET (self))),
+                                               gtk_widget_get_direction (gtk_css_gadget_get_owner (GTK_CSS_GADGET (self))), 
+                                               scale, icon_set);
       else
 	surface = NULL;
-      G_GNUC_END_IGNORE_DEPRECATIONS;
       break;
 
     case GTK_IMAGE_ICON_SET:
-      icon_set = self->priv->icon_set;
-      ensure_surface_for_icon_set (self, context, icon_set);
+      icon_set = gtk_image_definition_get_icon_set (self->priv->def);
+      surface = ensure_surface_for_icon_set (self,
+                                             gtk_css_node_get_style (gtk_css_gadget_get_node (GTK_CSS_GADGET (self))),
+                                             gtk_widget_get_direction (gtk_css_gadget_get_owner (GTK_CSS_GADGET (self))), 
+                                             scale, icon_set);
       break;
 
     case GTK_IMAGE_ICON_NAME:
+      if (self->priv->use_fallback)
+        gicon = g_themed_icon_new_with_default_fallbacks (gtk_image_definition_get_icon_name (self->priv->def));
+      else
+        gicon = g_themed_icon_new (gtk_image_definition_get_icon_name (self->priv->def));
+      surface = ensure_surface_for_gicon (self,
+                                          gtk_css_node_get_style (gtk_css_gadget_get_node (GTK_CSS_GADGET (self))),
+                                          gtk_widget_get_direction (gtk_css_gadget_get_owner (GTK_CSS_GADGET (self))), 
+                                          scale, 
+                                          gicon);
+      g_object_unref (gicon);
+      break;
+
     case GTK_IMAGE_GICON:
-      ensure_surface_for_gicon (self, context);
+      surface = ensure_surface_for_gicon (self, 
+                                          gtk_css_node_get_style (gtk_css_gadget_get_node (GTK_CSS_GADGET (self))),
+                                          gtk_widget_get_direction (gtk_css_gadget_get_owner (GTK_CSS_GADGET (self))), 
+                                          scale,
+                                          gtk_image_definition_get_gicon (self->priv->def));
       break;
 
     case GTK_IMAGE_ANIMATION:
@@ -810,20 +584,28 @@ _gtk_icon_helper_ensure_surface (GtkIconHelper *self,
       break;
     }
 
-  if (surface == NULL &&
-      self->priv->rendered_surface != NULL)
-    surface = cairo_surface_reference (self->priv->rendered_surface);
-
   return surface;
+
+}
+
+static void
+gtk_icon_helper_ensure_surface (GtkIconHelper *self)
+{
+  int scale;
+
+  if (self->priv->rendered_surface)
+    return;
+
+  scale = gtk_widget_get_scale_factor (gtk_css_gadget_get_owner (GTK_CSS_GADGET (self)));
+
+  self->priv->rendered_surface = gtk_icon_helper_load_surface (self, scale);
 }
 
 void
 _gtk_icon_helper_get_size (GtkIconHelper *self,
-                           GtkStyleContext *context,
                            gint *width_out,
                            gint *height_out)
 {
-  cairo_surface_t *surface;
   gint width, height, scale;
 
   width = height = 0;
@@ -831,30 +613,42 @@ _gtk_icon_helper_get_size (GtkIconHelper *self,
   /* Certain kinds of images are easy to calculate the size for, these
      we do immediately to avoid having to potentially load the image
      data for something that may not yet be visible */
-  switch (self->priv->storage_type)
+  switch (gtk_image_definition_get_storage_type (self->priv->def))
     {
     case GTK_IMAGE_SURFACE:
-      get_surface_size (self, context, self->priv->orig_surface,
+      get_surface_size (self,
+                        gtk_image_definition_get_surface (self->priv->def),
                         &width,
                         &height);
       break;
 
     case GTK_IMAGE_PIXBUF:
-      get_pixbuf_size (self, context, &width, &height, &scale);
+      get_pixbuf_size (self,
+                       gtk_widget_get_scale_factor (gtk_css_gadget_get_owner (GTK_CSS_GADGET (self))),
+                       gtk_image_definition_get_pixbuf (self->priv->def),
+                       gtk_image_definition_get_scale (self->priv->def),
+                       &width, &height, &scale);
       width = (width + scale - 1) / scale;
       height = (height + scale - 1) / scale;
       break;
 
+    case GTK_IMAGE_ANIMATION:
+      {
+        GdkPixbufAnimation *animation = gtk_image_definition_get_animation (self->priv->def);
+        width = gdk_pixbuf_animation_get_width (animation);
+        height = gdk_pixbuf_animation_get_height (animation);
+        break;
+      }
+
     case GTK_IMAGE_ICON_NAME:
     case GTK_IMAGE_GICON:
       if (self->priv->pixel_size != -1 || self->priv->force_scale_pixbuf)
-        ensure_icon_size (self, context, &width, &height);
+        ensure_icon_size (self, &width, &height);
 
       break;
 
     case GTK_IMAGE_STOCK:
     case GTK_IMAGE_ICON_SET:
-    case GTK_IMAGE_ANIMATION:
     case GTK_IMAGE_EMPTY:
     default:
       break;
@@ -863,22 +657,15 @@ _gtk_icon_helper_get_size (GtkIconHelper *self,
   /* Otherwise we load the surface to guarantee we get a size */
   if (width == 0)
     {
-      surface = _gtk_icon_helper_ensure_surface (self, context);
+      gtk_icon_helper_ensure_surface (self);
 
-      if (surface != NULL)
+      if (self->priv->rendered_surface != NULL)
         {
-          width = self->priv->rendered_surface_width;
-          height = self->priv->rendered_surface_height;
-          cairo_surface_destroy (surface);
-        }
-      else if (self->priv->storage_type == GTK_IMAGE_ANIMATION)
-        {
-          width = gdk_pixbuf_animation_get_width (self->priv->animation);
-          height = gdk_pixbuf_animation_get_height (self->priv->animation);
+          get_surface_size (self, self->priv->rendered_surface, &width, &height);
         }
       else if (self->priv->icon_size != GTK_ICON_SIZE_INVALID)
         {
-          ensure_icon_size (self, context, &width, &height);
+          ensure_icon_size (self, &width, &height);
         }
     }
 
@@ -888,19 +675,23 @@ _gtk_icon_helper_get_size (GtkIconHelper *self,
     *height_out = height;
 }
 
+void
+_gtk_icon_helper_set_definition (GtkIconHelper *self,
+                                 GtkImageDefinition *def)
+{
+  if (def)
+    gtk_icon_helper_take_definition (self, gtk_image_definition_ref (def));
+  else
+    _gtk_icon_helper_clear (self);
+}
+
 void 
 _gtk_icon_helper_set_gicon (GtkIconHelper *self,
                             GIcon *gicon,
                             GtkIconSize icon_size)
 {
-  _gtk_icon_helper_clear (self);
-
-  if (gicon != NULL)
-    {
-      self->priv->storage_type = GTK_IMAGE_GICON;
-      self->priv->gicon = g_object_ref (gicon);
-      _gtk_icon_helper_set_icon_size (self, icon_size);
-    }
+  gtk_icon_helper_take_definition (self, gtk_image_definition_new_gicon (gicon));
+  _gtk_icon_helper_set_icon_size (self, icon_size);
 }
 
 void 
@@ -908,15 +699,8 @@ _gtk_icon_helper_set_icon_name (GtkIconHelper *self,
                                 const gchar *icon_name,
                                 GtkIconSize icon_size)
 {
-  _gtk_icon_helper_clear (self);
-
-  if (icon_name != NULL &&
-      icon_name[0] != '\0')
-    {
-      self->priv->storage_type = GTK_IMAGE_ICON_NAME;
-      self->priv->gicon = g_themed_icon_new (icon_name);
-      _gtk_icon_helper_set_icon_size (self, icon_size);
-    }
+  gtk_icon_helper_take_definition (self, gtk_image_definition_new_icon_name (icon_name));
+  _gtk_icon_helper_set_icon_size (self, icon_size);
 }
 
 void 
@@ -924,55 +708,29 @@ _gtk_icon_helper_set_icon_set (GtkIconHelper *self,
                                GtkIconSet *icon_set,
                                GtkIconSize icon_size)
 {
-  _gtk_icon_helper_clear (self);
-
-  if (icon_set != NULL)
-    {
-      self->priv->storage_type = GTK_IMAGE_ICON_SET;
-      G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
-      self->priv->icon_set = gtk_icon_set_ref (icon_set);
-      G_GNUC_END_IGNORE_DEPRECATIONS;
-      _gtk_icon_helper_set_icon_size (self, icon_size);
-    }
+  gtk_icon_helper_take_definition (self, gtk_image_definition_new_icon_set (icon_set));
+  _gtk_icon_helper_set_icon_size (self, icon_size);
 }
 
 void 
 _gtk_icon_helper_set_pixbuf (GtkIconHelper *self,
                              GdkPixbuf *pixbuf)
 {
-  _gtk_icon_helper_clear (self);
-
-  if (pixbuf != NULL)
-    {
-      self->priv->storage_type = GTK_IMAGE_PIXBUF;
-      self->priv->orig_pixbuf = g_object_ref (pixbuf);
-    }
+  gtk_icon_helper_take_definition (self, gtk_image_definition_new_pixbuf (pixbuf, 1));
 }
 
 void 
 _gtk_icon_helper_set_animation (GtkIconHelper *self,
                                 GdkPixbufAnimation *animation)
 {
-  _gtk_icon_helper_clear (self);
-
-  if (animation != NULL)
-    {
-      self->priv->storage_type = GTK_IMAGE_ANIMATION;
-      self->priv->animation = g_object_ref (animation);
-    }
+  gtk_icon_helper_take_definition (self, gtk_image_definition_new_animation (animation, 1));
 }
 
 void 
 _gtk_icon_helper_set_surface (GtkIconHelper *self,
 			      cairo_surface_t *surface)
 {
-  _gtk_icon_helper_clear (self);
-
-  if (surface != NULL)
-    {
-      self->priv->storage_type = GTK_IMAGE_SURFACE;
-      self->priv->orig_surface = cairo_surface_reference (surface);
-    }
+  gtk_icon_helper_take_definition (self, gtk_image_definition_new_surface (surface));
 }
 
 void 
@@ -980,15 +738,8 @@ _gtk_icon_helper_set_stock_id (GtkIconHelper *self,
                                const gchar *stock_id,
                                GtkIconSize icon_size)
 {
-  _gtk_icon_helper_clear (self);
-
-  if (stock_id != NULL &&
-      stock_id[0] != '\0')
-    {
-      self->priv->storage_type = GTK_IMAGE_STOCK;
-      self->priv->stock_id = g_strdup (stock_id);
-      _gtk_icon_helper_set_icon_size (self, icon_size);
-    }
+  gtk_icon_helper_take_definition (self, gtk_image_definition_new_stock (stock_id));
+  _gtk_icon_helper_set_icon_size (self, icon_size);
 }
 
 gboolean
@@ -998,7 +749,7 @@ _gtk_icon_helper_set_icon_size (GtkIconHelper *self,
   if (self->priv->icon_size != icon_size)
     {
       self->priv->icon_size = icon_size;
-      _gtk_icon_helper_invalidate (self);
+      gtk_icon_helper_invalidate (self);
       return TRUE;
     }
   return FALSE;
@@ -1011,7 +762,7 @@ _gtk_icon_helper_set_pixel_size (GtkIconHelper *self,
   if (self->priv->pixel_size != pixel_size)
     {
       self->priv->pixel_size = pixel_size;
-      _gtk_icon_helper_invalidate (self);
+      gtk_icon_helper_invalidate (self);
       return TRUE;
     }
   return FALSE;
@@ -1024,7 +775,7 @@ _gtk_icon_helper_set_use_fallback (GtkIconHelper *self,
   if (self->priv->use_fallback != use_fallback)
     {
       self->priv->use_fallback = use_fallback;
-      _gtk_icon_helper_invalidate (self);
+      gtk_icon_helper_invalidate (self);
       return TRUE;
     }
   return FALSE;
@@ -1033,7 +784,7 @@ _gtk_icon_helper_set_use_fallback (GtkIconHelper *self,
 GtkImageType
 _gtk_icon_helper_get_storage_type (GtkIconHelper *self)
 {
-  return self->priv->storage_type;
+  return gtk_image_definition_get_storage_type (self->priv->def);
 }
 
 gboolean
@@ -1054,78 +805,109 @@ _gtk_icon_helper_get_pixel_size (GtkIconHelper *self)
   return self->priv->pixel_size;
 }
 
+GtkImageDefinition *
+gtk_icon_helper_get_definition (GtkIconHelper *self)
+{
+  return self->priv->def;
+}
+
 GdkPixbuf *
 _gtk_icon_helper_peek_pixbuf (GtkIconHelper *self)
 {
-  return self->priv->orig_pixbuf;
+  return gtk_image_definition_get_pixbuf (self->priv->def);
 }
 
 GIcon *
 _gtk_icon_helper_peek_gicon (GtkIconHelper *self)
 {
-  return self->priv->gicon;
+  return gtk_image_definition_get_gicon (self->priv->def);
 }
 
 GdkPixbufAnimation *
 _gtk_icon_helper_peek_animation (GtkIconHelper *self)
 {
-  return self->priv->animation;
+  return gtk_image_definition_get_animation (self->priv->def);
 }
 
 GtkIconSet *
 _gtk_icon_helper_peek_icon_set (GtkIconHelper *self)
 {
-  return self->priv->icon_set;
+  return gtk_image_definition_get_icon_set (self->priv->def);
 }
 
 cairo_surface_t *
 _gtk_icon_helper_peek_surface (GtkIconHelper *self)
 {
-  return self->priv->orig_surface;
+  return gtk_image_definition_get_surface (self->priv->def);
 }
 
 const gchar *
 _gtk_icon_helper_get_stock_id (GtkIconHelper *self)
 {
-  return self->priv->stock_id;
+  return gtk_image_definition_get_stock (self->priv->def);
 }
 
 const gchar *
 _gtk_icon_helper_get_icon_name (GtkIconHelper *self)
 {
-  if (self->priv->storage_type != GTK_IMAGE_ICON_NAME)
-    return NULL;
-
-  return g_themed_icon_get_names (G_THEMED_ICON (self->priv->gicon))[0];
+  return gtk_image_definition_get_icon_name (self->priv->def);
 }
 
 GtkIconHelper *
-_gtk_icon_helper_new (void)
+gtk_icon_helper_new (GtkCssNode *node,
+                     GtkWidget  *owner)
 {
-  return g_object_new (GTK_TYPE_ICON_HELPER, NULL);
+  g_return_val_if_fail (GTK_IS_CSS_NODE (node), NULL);
+  g_return_val_if_fail (GTK_IS_WIDGET (owner), NULL);
+
+  return g_object_new (GTK_TYPE_ICON_HELPER,
+                       "node", node,
+                       "owner", owner,
+                       NULL);
+}
+
+GtkCssGadget *
+gtk_icon_helper_new_named (const char *name,
+                           GtkWidget  *owner)
+{
+  GtkIconHelper *result;
+  GtkCssNode *node;
+
+  g_return_val_if_fail (name != NULL, NULL);
+  g_return_val_if_fail (GTK_IS_WIDGET (owner), NULL);
+
+  node = gtk_css_node_new ();
+  gtk_css_node_set_name (node, g_intern_string (name));
+
+  result = gtk_icon_helper_new (node, owner);
+
+  g_object_unref (node);
+
+  return GTK_CSS_GADGET (result);
 }
 
 void
 _gtk_icon_helper_draw (GtkIconHelper *self,
-                       GtkStyleContext *context,
                        cairo_t *cr,
                        gdouble x,
                        gdouble y)
 {
-  cairo_surface_t *surface;
+  GtkCssStyle *style = gtk_css_node_get_style (gtk_css_gadget_get_node (GTK_CSS_GADGET (self)));
+  gtk_icon_helper_ensure_surface (self);
 
-  surface = _gtk_icon_helper_ensure_surface (self, context);
-  if (surface != NULL)
+  if (self->priv->rendered_surface != NULL)
     {
-      gtk_render_icon_surface (context, cr, surface, x, y);
-      cairo_surface_destroy (surface);
+      gtk_css_style_render_icon_surface (style,
+                                         cr,
+                                         self->priv->rendered_surface,
+                                         x, y);
     }
 }
 
 gboolean
 _gtk_icon_helper_get_is_empty (GtkIconHelper *self)
 {
-  return (self->priv->storage_type == GTK_IMAGE_EMPTY);
+  return gtk_image_definition_get_storage_type (self->priv->def) == GTK_IMAGE_EMPTY;
 }
 
 gboolean
@@ -1141,7 +923,7 @@ _gtk_icon_helper_set_force_scale_pixbuf (GtkIconHelper *self,
   if (self->priv->force_scale_pixbuf != force_scale)
     {
       self->priv->force_scale_pixbuf = force_scale;
-      _gtk_icon_helper_invalidate (self);
+      gtk_icon_helper_invalidate (self);
     }
 }
 
@@ -1149,15 +931,21 @@ void
 _gtk_icon_helper_set_pixbuf_scale (GtkIconHelper *self,
 				   int scale)
 {
-  if (self->priv->orig_pixbuf_scale != scale)
-    {
-      self->priv->orig_pixbuf_scale = scale;
-      _gtk_icon_helper_invalidate (self);
-    }
-}
+  switch (gtk_image_definition_get_storage_type (self->priv->def))
+  {
+    case GTK_IMAGE_PIXBUF:
+      gtk_icon_helper_take_definition (self,
+                                      gtk_image_definition_new_pixbuf (gtk_image_definition_get_pixbuf (self->priv->def),
+                                                                       scale));
+      break;
 
-int
-_gtk_icon_helper_get_pixbuf_scale (GtkIconHelper *self)
-{
-  return self->priv->orig_pixbuf_scale;
+    case GTK_IMAGE_ANIMATION:
+      gtk_icon_helper_take_definition (self,
+                                      gtk_image_definition_new_animation (gtk_image_definition_get_animation (self->priv->def),
+                                                                          scale));
+      break;
+
+    default:
+      break;
+  }
 }

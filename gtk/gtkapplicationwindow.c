@@ -28,8 +28,9 @@
 #include "gtkmenubar.h"
 #include "gtkintl.h"
 #include "gtksettings.h"
+#include "gtkshortcutswindowprivate.h"
 
-#ifdef HAVE_GIO_UNIX
+#if defined(HAVE_GIO_UNIX) && !defined(__APPLE__)
 #include <gio/gdesktopappinfo.h>
 #endif
 
@@ -38,7 +39,7 @@
  * @title: GtkApplicationWindow
  * @short_description: GtkWindow subclass with GtkApplication support
  *
- * GtkApplicationWindow is a #GtkWindow subclass that offers some
+ * #GtkApplicationWindow is a #GtkWindow subclass that offers some
  * extra functionality for better integration with #GtkApplication
  * features.  Notably, it can handle both the application menu as well
  * as the menubar. See gtk_application_set_app_menu() and
@@ -52,9 +53,9 @@
  * prefix.  Actions must be addressed with the prefixed name when
  * referring to them from a #GMenuModel.
  *
- * Note that widgets that are placed inside a GtkApplicationWindow
+ * Note that widgets that are placed inside a #GtkApplicationWindow
  * can also activate these actions, if they implement the
- * GtkActionable interface.
+ * #GtkActionable interface.
  *
  * As with #GtkApplication, the GDK lock will be acquired when
  * processing actions arriving from other processes and should therefore
@@ -70,13 +71,10 @@
  *
  * If the desktop environment does not display the menubar, then
  * #GtkApplicationWindow will automatically show a #GtkMenuBar for it.
- * (see the #GtkApplication docs for some screenshots of how this
- * looks on different platforms).
  * This behaviour can be overridden with the #GtkApplicationWindow:show-menubar
  * property. If the desktop environment does not display the application
- * menu, then it will automatically be included in the menubar. It can
- * also be shown as part of client-side window decorations, e.g. by
- * using gtk_header_bar_set_show_close_button().
+ * menu, then it will automatically be included in the menubar or in the
+ * windows client-side decorations.
  *
  * ## A GtkApplicationWindow with a menubar
  *
@@ -96,8 +94,7 @@
  *
  * menubar = G_MENU_MODEL (gtk_builder_get_object (builder,
  *                                                 "menubar"));
- * gtk_application_set_menubar (G_APPLICATION (app),
- *                              menubar);
+ * gtk_application_set_menubar (G_APPLICATION (app), menubar);
  * g_object_unref (builder);
  *
  * ...
@@ -113,14 +110,38 @@
  * of a toplevel `<menu>` element, which contains one or more `<item>`
  * elements. Each `<item>` element contains `<attribute>` and `<link>`
  * elements with a mandatory name attribute. `<link>` elements have the
- * same content model as `<menu>`.
+ * same content model as `<menu>`. Instead of `<link name="submenu>` or
+ * `<link name="section">`, you can use `<submenu>` or `<section>`
+ * elements.
  *
  * Attribute values can be translated using gettext, like other #GtkBuilder
  * content. `<attribute>` elements can be marked for translation with a
  * `translatable="yes"` attribute. It is also possible to specify message
- * context and translator comments,using the context and comments attributes.
+ * context and translator comments, using the context and comments attributes.
  * To make use of this, the #GtkBuilder must have been given the gettext
  * domain to use.
+ *
+ * The following attributes are used when constructing menu items:
+ * - "label": a user-visible string to display
+ * - "action": the prefixed name of the action to trigger
+ * - "target": the parameter to use when activating the action
+ * - "icon" and "verb-icon": names of icons that may be displayed
+ * - "submenu-action": name of an action that may be used to determine
+ *      if a submenu can be opened
+ * - "hidden-when": a string used to determine when the item will be hidden.
+ *      Possible values include "action-disabled", "action-missing", "macos-menubar".
+ *
+ * The following attributes are used when constructing sections:
+ * - "label": a user-visible string to use as section heading
+ * - "display-hint": a string used to determine special formatting for the section.
+ *     Possible values include "horizontal-buttons".
+ * - "text-direction": a string used to determine the #GtkTextDirection to use
+ *     when "display-hint" is set to "horizontal-buttons". Possible values
+ *     include "rtl", "ltr", and "none".
+ *
+ * The following attributes are used when constructing submenus:
+ * - "label": a user-visible string to display
+ * - "icon": icon name to display
  */
 
 typedef GSimpleActionGroupClass GtkApplicationWindowActionsClass;
@@ -211,6 +232,8 @@ struct _GtkApplicationWindowPrivate
   GMenu *menubar_section;
 
   guint            id;
+
+  GtkShortcutsWindow *help_overlay;
 };
 
 static void
@@ -255,7 +278,7 @@ gtk_application_window_get_app_desktop_name (void)
 {
   gchar *retval = NULL;
 
-#ifdef HAVE_GIO_UNIX
+#if defined(HAVE_GIO_UNIX) && !defined(__APPLE__)
   GDesktopAppInfo *app_info;
   const gchar *app_name = NULL;
   gchar *desktop_file;
@@ -772,8 +795,13 @@ gtk_application_window_dispose (GObject *object)
   g_clear_object (&window->priv->app_menu_section);
   g_clear_object (&window->priv->menubar_section);
 
-  G_OBJECT_CLASS (gtk_application_window_parent_class)
-    ->dispose (object);
+  if (window->priv->help_overlay)
+    {
+      gtk_widget_destroy (GTK_WIDGET (window->priv->help_overlay));
+      g_clear_object (&window->priv->help_overlay);
+    }
+
+  G_OBJECT_CLASS (gtk_application_window_parent_class)->dispose (object);
 
   /* We do this below the chain-up above to give us a chance to be
    * removed from the GtkApplication (which is done in the dispose
@@ -941,4 +969,79 @@ gtk_application_window_set_id (GtkApplicationWindow *window,
 {
   g_return_if_fail (GTK_IS_APPLICATION_WINDOW (window));
   window->priv->id = id;
+}
+
+static void
+show_help_overlay (GSimpleAction *action,
+                   GVariant      *parameter,
+                   gpointer       user_data)
+{
+  GtkApplicationWindow *window = user_data;
+
+  if (window->priv->help_overlay)
+    gtk_widget_show (GTK_WIDGET (window->priv->help_overlay));
+}
+
+/**
+ * gtk_application_window_set_help_overlay:
+ * @window: a #GtkApplicationWindow
+ * @help_overlay: (nullable): a #GtkShortcutsWindow
+ *
+ * Associates a shortcuts window with the application window, and
+ * sets up an action with the name win.show-help-overlay to present
+ * it.
+ *
+ * @window takes resposibility for destroying @help_overlay.
+ *
+ * Since: 3.20
+ */
+void
+gtk_application_window_set_help_overlay (GtkApplicationWindow *window,
+                                         GtkShortcutsWindow   *help_overlay)
+{
+  g_return_if_fail (GTK_IS_APPLICATION_WINDOW (window));
+  g_return_if_fail (help_overlay == NULL || GTK_IS_SHORTCUTS_WINDOW (help_overlay));
+
+  if (window->priv->help_overlay)
+    gtk_widget_destroy (GTK_WIDGET (window->priv->help_overlay));
+  g_set_object (&window->priv->help_overlay, help_overlay);
+
+  if (!window->priv->help_overlay)
+    return;
+
+  gtk_window_set_modal (GTK_WINDOW (help_overlay), TRUE);
+  gtk_window_set_transient_for (GTK_WINDOW (help_overlay), GTK_WINDOW (window));
+  gtk_shortcuts_window_set_window (help_overlay, GTK_WINDOW (window));
+
+  g_signal_connect (help_overlay, "delete-event",
+                    G_CALLBACK (gtk_widget_hide_on_delete), NULL);
+
+  if (!g_action_map_lookup_action (G_ACTION_MAP (window->priv->actions), "show-help-overlay"))
+    {
+      GSimpleAction *action;
+
+      action = g_simple_action_new ("show-help-overlay", NULL);
+      g_signal_connect (action, "activate", G_CALLBACK (show_help_overlay), window);
+
+      g_action_map_add_action (G_ACTION_MAP (window->priv->actions), G_ACTION (action));
+    }
+}
+
+/**
+ * gtk_application_window_get_help_overlay:
+ * @window: a #GtkApplicationWindow
+ *
+ * Gets the #GtkShortcutsWindow that has been set up with
+ * a prior call to gtk_application_window_set_help_overlay().
+ *
+ * Returns: (transfer none) (nullable): the help overlay associated with @window, or %NULL
+ *
+ * Since: 3.20
+ */
+GtkShortcutsWindow *
+gtk_application_window_get_help_overlay (GtkApplicationWindow *window)
+{
+  g_return_val_if_fail (GTK_IS_APPLICATION_WINDOW (window), NULL);
+
+  return window->priv->help_overlay;
 }

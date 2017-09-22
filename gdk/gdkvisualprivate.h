@@ -40,16 +40,8 @@ struct _GdkVisual
   gint bits_per_rgb;
 
   guint32 red_mask;
-  gint red_shift;
-  gint red_prec;
-
   guint32 green_mask;
-  gint green_shift;
-  gint green_prec;
-
   guint32 blue_mask;
-  gint blue_shift;
-  gint blue_prec;
 
   GdkScreen *screen;
 };

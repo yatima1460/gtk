@@ -273,11 +273,11 @@ static GdkBackend gdk_backends[] = {
 #ifdef GDK_WINDOWING_WAYLAND
   { "wayland",  _gdk_wayland_display_open },
 #endif
+#ifdef GDK_WINDOWING_MIR
+  { "mir",      _gdk_mir_display_open },
+#endif
 #ifdef GDK_WINDOWING_X11
   { "x11",      _gdk_x11_display_open },
-#endif
-#ifdef GDK_WINDOWING_MIR
-  { "mir",  _gdk_mir_display_open },
 #endif
 #ifdef GDK_WINDOWING_BROADWAY
   { "broadway", _gdk_broadway_display_open },
@@ -363,12 +363,12 @@ gdk_display_get_default (void)
 GdkScreen *
 gdk_screen_get_default (void)
 {
-  GdkDisplay *default_display;
+  GdkDisplay *display;
 
-  default_display = gdk_display_get_default ();
+  display = gdk_display_get_default ();
 
-  if (default_display)
-    return gdk_display_get_default_screen (default_display);
+  if (display)
+    return GDK_DISPLAY_GET_CLASS (display)->get_default_screen (display);
   else
     return NULL;
 }
@@ -441,6 +441,15 @@ gdk_display_manager_open_display (GdkDisplayManager *manager,
   backend_list = g_getenv ("GDK_BACKEND");
   if (backend_list == NULL)
     backend_list = allowed_backends;
+  else if (g_strcmp0 (backend_list, "help") == 0)
+    {
+      fprintf (stderr, "Supported GDK backends:");
+      for (i = 0; gdk_backends[i].name != NULL; i++)
+        fprintf (stderr, " %s", gdk_backends[i].name);
+      fprintf (stderr, "\n");
+
+      backend_list = allowed_backends;
+    }
   backends = g_strsplit (backend_list, ",", 0);
 
   display = NULL;

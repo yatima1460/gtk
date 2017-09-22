@@ -50,13 +50,15 @@ typedef struct
   GtkWidget *object_buttons;
   GtkWidget *object_details_button;
   GtkWidget *select_object;
+  GtkWidget *object_start_stack;
+  GtkWidget *object_center_stack;
+  GtkWidget *object_title;
   GtkWidget *prop_list;
   GtkWidget *child_prop_list;
   GtkWidget *selector;
   GtkWidget *signals_list;
   GtkWidget *style_prop_list;
   GtkWidget *classes_list;
-  GtkWidget *widget_css_editor;
   GtkWidget *widget_css_node_tree;
   GtkWidget *object_hierarchy;
   GtkWidget *size_groups;
@@ -101,6 +103,7 @@ void       gtk_inspector_on_inspect         (GtkWidget          *widget,
 
 void       gtk_inspector_window_select_widget_under_pointer (GtkInspectorWindow *iw);
 
+void       gtk_inspector_window_rescan     (GtkWidget          *iw);
 
 G_END_DECLS
 

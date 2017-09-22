@@ -18,6 +18,7 @@
 #include "config.h"
 
 #include "gtktreemodelcssnode.h"
+#include "gtk/gtkcsstransientnodeprivate.h"
 
 struct _GtkTreeModelCssNodePrivate
 {
@@ -449,8 +450,7 @@ notify_cb (GtkCssNode          *node,
 
 static void
 style_changed_cb (GtkCssNode          *node,
-                  GtkCssStyle         *old_style,
-                  GtkCssStyle         *new_style,
+                  GtkCssStyleChange   *change,
                   GtkTreeModelCssNode *model)
 {
   GtkTreeIter iter;
@@ -470,6 +470,9 @@ gtk_tree_model_css_node_connect_node (GtkTreeModelCssNode *model,
                                       gboolean             emit_signal)
 {
   GtkCssNode *child;
+
+  if (GTK_IS_CSS_TRANSIENT_NODE (node))
+    return;
 
   g_object_ref (node);
 
@@ -519,6 +522,9 @@ gtk_tree_model_css_node_disconnect_node (GtkTreeModelCssNode *model,
                                          GtkCssNode          *previous)
 {
   GtkCssNode *child;
+
+  if (GTK_IS_CSS_TRANSIENT_NODE (node))
+    return;
 
   g_signal_handlers_disconnect_by_func (node, G_CALLBACK (child_added_cb), model);
   g_signal_handlers_disconnect_by_func (node, G_CALLBACK (child_removed_cb), model);

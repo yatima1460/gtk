@@ -121,7 +121,7 @@ gtk_print_backend_module_load (GTypeModule *module)
   pb_module->library = g_module_open (pb_module->path, G_MODULE_BIND_LAZY | G_MODULE_BIND_LOCAL);
   if (!pb_module->library)
     {
-      g_warning ("%s", g_module_error());
+      g_warning ("%s", g_module_error ());
       return FALSE;
     }
   
@@ -133,7 +133,7 @@ gtk_print_backend_module_load (GTypeModule *module)
       !g_module_symbol (pb_module->library, "pb_module_create", 
 			&createp))
     {
-      g_warning ("%s", g_module_error());
+      g_warning ("%s", g_module_error ());
       g_module_close (pb_module->library);
       
       return FALSE;
@@ -325,10 +325,7 @@ gtk_print_backend_load_modules (void)
 
   for (i = 0; backends[i]; i++)
     {
-      g_strchug (backends[i]);
-      g_strchomp (backends[i]);
-      backend = _gtk_print_backend_create (backends[i]);
-      
+      backend = _gtk_print_backend_create (g_strstrip (backends[i]));
       if (backend)
         result = g_list_append (result, backend);
     }
@@ -709,24 +706,27 @@ password_dialog_response (GtkWidget       *dialog,
                           GtkPrintBackend *backend)
 {
   GtkPrintBackendPrivate *priv = backend->priv;
-  gint i;
+  gint i, auth_info_len;
 
   if (response_id == GTK_RESPONSE_OK)
     gtk_print_backend_set_password (backend, priv->auth_info_required, priv->auth_info, priv->store_auth_info);
   else
     gtk_print_backend_set_password (backend, priv->auth_info_required, NULL, FALSE);
 
-  for (i = 0; i < g_strv_length (priv->auth_info_required); i++)
-    if (priv->auth_info[i] != NULL)
-      {
-        memset (priv->auth_info[i], 0, strlen (priv->auth_info[i]));
-        g_free (priv->auth_info[i]);
-        priv->auth_info[i] = NULL;
-      }
-  g_free (priv->auth_info);
-  priv->auth_info = NULL;
+  /* We want to clear the data before freeing it */
+  auth_info_len = g_strv_length (priv->auth_info_required);
+  for (i = 0; i < auth_info_len; i++)
+    {
+      if (priv->auth_info[i] != NULL)
+        {
+          memset (priv->auth_info[i], 0, strlen (priv->auth_info[i]));
+          g_free (priv->auth_info[i]);
+          priv->auth_info[i] = NULL;
+        }
+    }
 
-  g_strfreev (priv->auth_info_required);
+  g_clear_pointer (&priv->auth_info, g_free);
+  g_clear_pointer (&priv->auth_info_required, g_strfreev);
 
   gtk_widget_destroy (dialog);
 

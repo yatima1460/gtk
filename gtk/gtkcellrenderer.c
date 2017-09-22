@@ -230,7 +230,7 @@ gtk_cell_renderer_class_init (GtkCellRendererClass *class)
 		  G_SIGNAL_RUN_FIRST,
 		  G_STRUCT_OFFSET (GtkCellRendererClass, editing_canceled),
 		  NULL, NULL,
-		  _gtk_marshal_VOID__VOID,
+		  NULL,
 		  G_TYPE_NONE, 0);
 
   /**
@@ -648,7 +648,7 @@ gtk_cell_renderer_set_property (GObject      *object,
         else if (gdk_rgba_parse (&rgba, g_value_get_string (value)))
           set_cell_bg_color (cell, &rgba);
         else
-          g_warning ("Don't know color `%s'", g_value_get_string (value));
+          g_warning ("Don't know color '%s'", g_value_get_string (value));
 
         g_object_notify (object, "cell-background");
       }
@@ -883,7 +883,7 @@ gtk_cell_renderer_activate (GtkCellRenderer      *cell,
 /**
  * gtk_cell_renderer_start_editing:
  * @cell: a #GtkCellRenderer
- * @event: a #GdkEvent
+ * @event: (nullable): a #GdkEvent
  * @widget: widget that received the event
  * @path: widget-dependent string representation of the event location;
  *    e.g. for #GtkTreeView, a string representation of #GtkTreePath
@@ -893,7 +893,7 @@ gtk_cell_renderer_activate (GtkCellRenderer      *cell,
  *
  * Passes an activate event to the cell renderer for possible processing.
  *
- * Returns: (transfer none): A new #GtkCellEditable, or %NULL
+ * Returns: (nullable) (transfer none): A new #GtkCellEditable, or %NULL
  **/
 GtkCellEditable *
 gtk_cell_renderer_start_editing (GtkCellRenderer      *cell,
@@ -1792,8 +1792,8 @@ gtk_cell_renderer_get_aligned_area (GtkCellRenderer      *cell,
 
 /**
  * gtk_cell_renderer_get_state:
- * @cell: a #GtkCellRenderer, or %NULL
- * @widget: a #GtkWidget, or %NULL
+ * @cell: (nullable): a #GtkCellRenderer, or %NULL
+ * @widget: (nullable): a #GtkWidget, or %NULL
  * @cell_state: cell renderer state
  *
  * Translates the cell renderer state to #GtkStateFlags,
@@ -1817,7 +1817,7 @@ gtk_cell_renderer_get_state (GtkCellRenderer      *cell,
   if (widget)
     state |= gtk_widget_get_state_flags (widget);
 
-  state &= ~(GTK_STATE_FLAG_FOCUSED | GTK_STATE_FLAG_PRELIGHT | GTK_STATE_FLAG_SELECTED);
+  state &= ~(GTK_STATE_FLAG_FOCUSED | GTK_STATE_FLAG_PRELIGHT | GTK_STATE_FLAG_SELECTED | GTK_STATE_FLAG_DROP_ACTIVE);
 
   if ((state & GTK_STATE_FLAG_INSENSITIVE) != 0 ||
       (cell && !gtk_cell_renderer_get_sensitive (cell)) ||

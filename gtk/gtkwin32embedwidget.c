@@ -82,7 +82,9 @@ static void
 gtk_win32_embed_widget_init (GtkWin32EmbedWidget *embed_widget)
 {
   _gtk_widget_set_is_toplevel (GTK_WIDGET (embed_widget), TRUE);
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
   gtk_container_set_resize_mode (GTK_CONTAINER (embed_widget), GTK_RESIZE_QUEUE);
+G_GNUC_END_IGNORE_DEPRECATIONS;
 }
 
 GtkWidget*
@@ -190,7 +192,7 @@ gtk_win32_embed_widget_realize (GtkWidget *widget)
 	}
       gtk_widget_size_allocate (widget, &allocation);
       
-      _gtk_container_queue_resize (GTK_CONTAINER (widget));
+      gtk_widget_queue_resize (widget);
 
       g_return_if_fail (!gtk_widget_get_realized (widget));
     }
@@ -236,8 +238,10 @@ gtk_win32_embed_widget_realize (GtkWidget *widget)
   styles = GetWindowLongPtr(GDK_WINDOW_HWND (gdk_window), GWL_STYLE);
   SetWindowLongPtrW(GDK_WINDOW_HWND (gdk_window), GWL_STYLE, styles | WS_TABSTOP);
 
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
   gtk_style_context_set_background (gtk_widget_get_style_context (widget),
                                     gdk_window);
+G_GNUC_END_IGNORE_DEPRECATIONS;
 }
 
 static void

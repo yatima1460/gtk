@@ -50,6 +50,7 @@ GtkFileSystemModel *_gtk_file_system_model_new_for_directory(GFile *            
                                                              gpointer            get_data,
                                                              guint               n_columns,
                                                              ...);
+GFile *             _gtk_file_system_model_get_directory    (GtkFileSystemModel *model);
 GCancellable *      _gtk_file_system_model_get_cancellable  (GtkFileSystemModel *model);
 gboolean            _gtk_file_system_model_iter_is_visible  (GtkFileSystemModel *model,
 							     GtkTreeIter        *iter);
@@ -66,12 +67,18 @@ const GValue *      _gtk_file_system_model_get_value        (GtkFileSystemModel 
                                                              GtkTreeIter *       iter,
                                                              int                 column);
 
-void                _gtk_file_system_model_add_and_query_file (GtkFileSystemModel *model,
-                                                             GFile              *file,
-                                                             const char         *attributes);
+void                _gtk_file_system_model_add_and_query_file  (GtkFileSystemModel *model,
+                                                                GFile              *file,
+                                                                const char         *attributes);
+void                _gtk_file_system_model_add_and_query_files (GtkFileSystemModel *model,
+                                                                GList              *files,
+                                                                const char         *attributes);
 void                _gtk_file_system_model_update_file      (GtkFileSystemModel *model,
                                                              GFile              *file,
                                                              GFileInfo          *info);
+void                _gtk_file_system_model_update_files     (GtkFileSystemModel *model,
+                                                             GList              *files,
+                                                             GList              *infos);
 
 void                _gtk_file_system_model_set_show_hidden  (GtkFileSystemModel *model,
 							     gboolean            show_hidden);
@@ -86,10 +93,6 @@ void                _gtk_file_system_model_clear_cache      (GtkFileSystemModel 
 
 void                _gtk_file_system_model_set_filter       (GtkFileSystemModel *model,
                                                              GtkFileFilter      *filter);
-
-void _gtk_file_system_model_add_editable    (GtkFileSystemModel *model,
-					     GtkTreeIter        *iter);
-void _gtk_file_system_model_remove_editable (GtkFileSystemModel *model);
 
 G_END_DECLS
 

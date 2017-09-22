@@ -157,6 +157,7 @@ typedef struct {
   gboolean needs_resize;
   gboolean needs_render;
   gboolean auto_render;
+  gboolean use_es;
 } GtkGLAreaPrivate;
 
 enum {
@@ -166,6 +167,7 @@ enum {
   PROP_HAS_ALPHA,
   PROP_HAS_DEPTH_BUFFER,
   PROP_HAS_STENCIL_BUFFER,
+  PROP_USE_ES,
 
   PROP_AUTO_RENDER,
 
@@ -225,6 +227,10 @@ gtk_gl_area_set_property (GObject      *gobject,
       gtk_gl_area_set_has_stencil_buffer (self, g_value_get_boolean (value));
       break;
 
+    case PROP_USE_ES:
+      gtk_gl_area_set_use_es (self, g_value_get_boolean (value));
+      break;
+
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (gobject, prop_id, pspec);
     }
@@ -260,6 +266,10 @@ gtk_gl_area_get_property (GObject    *gobject,
       g_value_set_object (value, priv->context);
       break;
 
+    case PROP_USE_ES:
+      g_value_set_boolean (value, priv->use_es);
+      break;
+
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (gobject, prop_id, pspec);
     }
@@ -284,7 +294,7 @@ gtk_gl_area_realize (GtkWidget *widget)
   attributes.width = allocation.width;
   attributes.height = allocation.height;
   attributes.wclass = GDK_INPUT_ONLY;
-  attributes.event_mask = gtk_widget_get_events (widget) | GDK_EXPOSURE_MASK;
+  attributes.event_mask = gtk_widget_get_events (widget);
 
   attributes_mask = GDK_WA_X | GDK_WA_Y;
 
@@ -338,6 +348,7 @@ gtk_gl_area_real_create_context (GtkGLArea *area)
       return NULL;
     }
 
+  gdk_gl_context_set_use_es (context, priv->use_es);
   gdk_gl_context_set_required_version (context,
                                        priv->required_gl_version / 10,
                                        priv->required_gl_version % 10);
@@ -447,7 +458,11 @@ gtk_gl_area_allocate_buffers (GtkGLArea *area)
       glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
       glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
       glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-      glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+
+      if (gdk_gl_context_get_use_es (priv->context))
+        glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+      else
+        glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
     }
 
   if (priv->render_buffer)
@@ -691,8 +706,8 @@ gtk_gl_area_draw (GtkWidget *widget,
   w = gtk_widget_get_allocated_width (widget) * scale;
   h = gtk_widget_get_allocated_height (widget) * scale;
 
-  status = glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT);
-  if (status ==  GL_FRAMEBUFFER_COMPLETE_EXT)
+  status = glCheckFramebufferStatusEXT (GL_FRAMEBUFFER_EXT);
+  if (status == GL_FRAMEBUFFER_COMPLETE_EXT)
     {
       if (priv->needs_render || priv->auto_render)
         {
@@ -716,7 +731,7 @@ gtk_gl_area_draw (GtkWidget *widget,
     }
   else
     {
-      g_print ("fb setup not supported\n");
+      g_warning ("fb setup not supported");
     }
 
   return TRUE;
@@ -850,6 +865,25 @@ gtk_gl_area_class_init (GtkGLAreaClass *klass)
                           G_PARAM_STATIC_STRINGS |
                           G_PARAM_EXPLICIT_NOTIFY);
 
+  /**
+   * GtkGLArea:use-es:
+   *
+   * If set to %TRUE the widget will try to create a #GdkGLContext using
+   * OpenGL ES instead of OpenGL.
+   *
+   * See also: gdk_gl_context_set_use_es()
+   *
+   * Since: 3.22
+   */
+  obj_props[PROP_USE_ES] =
+    g_param_spec_boolean ("use-es",
+                          P_("Use OpenGL ES"),
+                          P_("Whether the context uses OpenGL or OpenGL ES"),
+                          FALSE,
+                          GTK_PARAM_READWRITE |
+                          G_PARAM_STATIC_STRINGS |
+                          G_PARAM_EXPLICIT_NOTIFY);
+
   gobject_class->set_property = gtk_gl_area_set_property;
   gobject_class->get_property = gtk_gl_area_get_property;
   gobject_class->dispose = gtk_gl_area_dispose;
@@ -884,10 +918,12 @@ gtk_gl_area_class_init (GtkGLAreaClass *klass)
                   GDK_TYPE_GL_CONTEXT);
 
   /**
-   * GtkGLArea::resized:
+   * GtkGLArea::resize:
    * @area: the #GtkGLArea that emitted the signal
+   * @width: the width of the viewport
+   * @height: the height of the viewport
    *
-   * The ::resized signal is emitted once when the widget is realized, and
+   * The ::resize signal is emitted once when the widget is realized, and
    * then each time the widget is changed while realized. This is useful
    * in order to keep GL state up to date with the widget size, like for
    * instance camera properties which may depend on the width/height ratio.
@@ -900,7 +936,7 @@ gtk_gl_area_class_init (GtkGLAreaClass *klass)
    * Since: 3.16
    */
   area_signals[RESIZE] =
-    g_signal_new ("resize",
+    g_signal_new (I_("resize"),
                   G_TYPE_FROM_CLASS (klass),
                   G_SIGNAL_RUN_LAST,
                   G_STRUCT_OFFSET (GtkGLAreaClass, resize),
@@ -929,7 +965,7 @@ gtk_gl_area_class_init (GtkGLAreaClass *klass)
    * Since: 3.16
    */
   area_signals[CREATE_CONTEXT] =
-    g_signal_new ("create-context",
+    g_signal_new (I_("create-context"),
                   G_TYPE_FROM_CLASS (klass),
                   G_SIGNAL_RUN_LAST,
                   G_STRUCT_OFFSET (GtkGLAreaClass, create_context),
@@ -996,7 +1032,7 @@ gtk_gl_area_set_error (GtkGLArea    *area,
  *
  * Gets the current error set on the @area.
  *
- * Returns: (transfer none): the #GError or %NULL
+ * Returns: (nullable) (transfer none): the #GError or %NULL
  *
  * Since: 3.16
  */
@@ -1008,6 +1044,58 @@ gtk_gl_area_get_error (GtkGLArea *area)
   g_return_val_if_fail (GTK_IS_GL_AREA (area), NULL);
 
   return priv->error;
+}
+
+/**
+ * gtk_gl_area_set_use_es:
+ * @area: a #GtkGLArea
+ * @use_es: whether to use OpenGL or OpenGL ES
+ *
+ * Sets whether the @area should create an OpenGL or an OpenGL ES context.
+ *
+ * You should check the capabilities of the #GdkGLContext before drawing
+ * with either API.
+ *
+ * Since: 3.22
+ */
+void
+gtk_gl_area_set_use_es (GtkGLArea *area,
+                        gboolean   use_es)
+{
+  GtkGLAreaPrivate *priv = gtk_gl_area_get_instance_private (area);
+
+  g_return_if_fail (GTK_IS_GL_AREA (area));
+  g_return_if_fail (!gtk_widget_get_realized (GTK_WIDGET (area)));
+
+  use_es = !!use_es;
+
+  if (priv->use_es != use_es)
+    {
+      priv->use_es = use_es;
+
+      g_object_notify_by_pspec (G_OBJECT (area), obj_props[PROP_USE_ES]);
+    }
+}
+
+/**
+ * gtk_gl_area_get_use_es:
+ * @area: a #GtkGLArea
+ *
+ * Retrieves the value set by gtk_gl_area_set_use_es().
+ *
+ * Returns: %TRUE if the #GtkGLArea should create an OpenGL ES context
+ *   and %FALSE otherwise
+ *
+ * Since: 3.22
+ */
+gboolean
+gtk_gl_area_get_use_es (GtkGLArea *area)
+{
+  GtkGLAreaPrivate *priv = gtk_gl_area_get_instance_private (area);
+
+  g_return_val_if_fail (GTK_IS_GL_AREA (area), FALSE);
+
+  return priv->use_es;
 }
 
 /**

@@ -62,6 +62,30 @@ struct _GdkDragContextClass {
                                 gboolean         success,
                                 guint32          time_);
   gboolean    (*drop_status)   (GdkDragContext  *context);
+  GdkWindow*  (*get_drag_window) (GdkDragContext *context);
+  void        (*set_hotspot)   (GdkDragContext  *context,
+                                gint             hot_x,
+                                gint             hot_y);
+  void        (*drop_done)     (GdkDragContext   *context,
+                                gboolean          success);
+
+  gboolean    (*manage_dnd)     (GdkDragContext  *context,
+                                 GdkWindow       *ipc_window,
+                                 GdkDragAction    actions);
+  void        (*set_cursor)     (GdkDragContext  *context,
+                                 GdkCursor       *cursor);
+  void        (*cancel)         (GdkDragContext      *context,
+                                 GdkDragCancelReason  reason);
+  void        (*drop_performed) (GdkDragContext  *context,
+                                 guint32          time);
+  void        (*dnd_finished)   (GdkDragContext  *context);
+
+  gboolean    (*handle_event)   (GdkDragContext  *context,
+                                 const GdkEvent  *event);
+  void        (*action_changed) (GdkDragContext  *context,
+                                 GdkDragAction    action);
+
+  void        (*commit_drag_status) (GdkDragContext  *context);
 };
 
 struct _GdkDragContext {
@@ -70,9 +94,12 @@ struct _GdkDragContext {
   /*< private >*/
   GdkDragProtocol protocol;
 
+  GdkDisplay *display;
+
   gboolean is_source;
   GdkWindow *source_window;
   GdkWindow *dest_window;
+  GdkWindow *drag_window;
 
   GList *targets;
   GdkDragAction actions;
@@ -82,7 +109,20 @@ struct _GdkDragContext {
   guint32 start_time;
 
   GdkDevice *device;
+
+  guint drop_done : 1; /* Whether gdk_drag_drop_done() was performed */
 };
+
+GList *  gdk_drag_context_list (void);
+
+void     gdk_drag_context_set_cursor          (GdkDragContext *context,
+                                               GdkCursor      *cursor);
+void     gdk_drag_context_cancel              (GdkDragContext      *context,
+                                               GdkDragCancelReason  reason);
+gboolean gdk_drag_context_handle_source_event (GdkEvent *event);
+gboolean gdk_drag_context_handle_dest_event   (GdkEvent *event);
+GdkCursor * gdk_drag_get_cursor               (GdkDragContext *context,
+                                               GdkDragAction   action);
 
 G_END_DECLS
 

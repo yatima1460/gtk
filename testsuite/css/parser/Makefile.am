@@ -35,6 +35,22 @@ test_data = \
 	animation-crash-3.12.ref.css \
 	animation-shorthand-crash.css \
 	animation-shorthand-crash.ref.css \
+        animation-delay.css \
+        animation-delay.ref.css \
+        animation-direction.css \
+        animation-direction.ref.css \
+        animation-duration.css \
+        animation-duration.ref.css \
+        animation-fill-mode.css \
+        animation-fill-mode.ref.css \
+        animation-iteration-count.css \
+        animation-iteration-count.ref.css \
+        animation-name.css \
+        animation-name.ref.css \
+        animation-play-state.css \
+        animation-play-state.ref.css \
+        animation-timing-function.css \
+        animation-timing-function.ref.css \
 	at-invalid-01.css \
 	at-invalid-01.errors \
 	at-invalid-01.ref.css \
@@ -159,6 +175,14 @@ test_data = \
 	at-valid-21.css \
 	at-valid-21.errors \
 	at-valid-21.ref.css \
+        background-blend-mode.css \
+        background-blend-mode.ref.css \
+        background-clip.css \
+        background-clip.ref.css \
+        background-image.css \
+        background-image.ref.css \
+        background-origin.css \
+        background-origin.ref.css \
 	background-position.css \
 	background-position.errors \
 	background-position.ref.css \
@@ -173,25 +197,51 @@ test_data = \
 	background-shorthand-single.ref.css \
         background-size.css \
         background-size.ref.css \
-	boolean.css \
-	boolean.errors \
-	boolean.ref.css \
+	background-win32-color-is-no-error.css \
+	background-win32-color-is-no-error.ref.css \
 	border.css \
 	border.errors \
 	border.ref.css \
+        border-color.css \
+        border-color.ref.css \
 	border-color-currentcolor.css \
 	border-color-currentcolor.ref.css \
+        border-image-source.css \
+        border-image-source.ref.css \
+        border-image-repeat.css \
+        border-image-repeat.ref.css \
+        border-image-slice.css \
+        border-image-slice.ref.css \
+        border-image-width.css \
+        border-image-width.ref.css \
 	border-infloop-3.12.css \
 	border-infloop-3.12.errors \
 	border-infloop-3.12.ref.css \
-	border-radius.css \
-	border-radius.errors \
-	border-radius.ref.css \
+        border-radius.css \
+        border-radius.ref.css \
+	border-radius-shorthand.css \
+	border-radius-shorthand.errors \
+	border-radius-shorthand.ref.css \
 	border-shorthand.css \
 	border-shorthand.ref.css \
+        border-style.css \
+        border-style.ref.css \
+        border-width.css \
+        border-width.ref.css \
+        box-shadow.css \
+        box-shadow.ref.css \
+	calc.css \
+	calc.ref.css \
+	calc-errors.css \
+	calc-errors.ref.css \
+	calc-errors.errors \
+	calc-simple.css \
+	calc-simple.ref.css \
 	close-at-end-of-file.css \
 	close-at-end-of-file.errors \
 	close-at-end-of-file.ref.css \
+        color.css \
+        color.ref.css \
 	colors-errors.css \
 	colors-errors.errors \
 	colors-errors.ref.css \
@@ -269,7 +319,6 @@ test_data = \
 	declarations-valid-17.css \
 	declarations-valid-17.ref.css \
 	declarations-valid-18.css \
-	declarations-valid-18.errors \
 	declarations-valid-18.ref.css \
 	declarations-valid-19.css \
 	declarations-valid-19.ref.css \
@@ -291,12 +340,18 @@ test_data = \
 	doubled.css \
 	doubled.ref.css \
 	empty.css \
-	enum.css \
-	enum.errors \
-	enum.ref.css \
 	font-family.css \
-	font-family.errors \
 	font-family.ref.css \
+        font-size.css \
+        font-size.ref.css \
+        font-stretch.css \
+        font-stretch.ref.css \
+        font-style.css \
+        font-style.ref.css \
+        font-variant.css \
+        font-variant.ref.css \
+        font-weight.css \
+        font-weight.ref.css \
 	freed-string-in-error-messages.css \
 	freed-string-in-error-messages.errors \
 	freed-string-in-error-messages.ref.css \
@@ -322,22 +377,53 @@ test_data = \
 	keyframes-empty.ref.css \
 	keyframes-ordering.css \
 	keyframes-ordering.ref.css \
+        letter-spacing.css \
+        letter-spacing.ref.css \
 	linear-gradient.css \
 	linear-gradient.ref.css \
+        margin.css \
+        margin.ref.css \
+        min-height.css \
+        min-height.ref.css \
+        min-width.css \
+        min-width.ref.css \
 	no-semicolon.css \
 	no-semicolon.ref.css \
 	not.css \
 	not.ref.css \
 	nth-child.css \
 	nth-child.ref.css \
+        opacity.css \
+        opacity.ref.css \
+        outline-color.css \
+        outline-color.ref.css \
+        outline-offset.css \
+        outline-offset.ref.css \
+        outline-radius.css \
+        outline-radius.ref.css \
+        outline-style.css \
+        outline-style.ref.css \
+        outline-width.css \
+        outline-width.ref.css \
+        padding.css \
+        padding.ref.css \
 	property-name-errors.css \
 	property-name-errors.errors \
 	property-name-errors.ref.css \
 	pseudo-classes-known.css \
+	pseudo-classes-known.errors \
 	pseudo-classes-known.ref.css \
 	pseudo-classes-unknown.css \
 	pseudo-classes-unknown.errors \
 	pseudo-classes-unknown.ref.css \
+        radial.css \
+        radial.ref.css \
+	radial-background-position-error.css \
+	radial-background-position-error.errors \
+	radial-background-position-error.ref.css \
+	radial-positions.css \
+	radial-positions.errors \
+	radial-positions.ref.css \
 	selector.css \
 	selector.ref.css \
 	shadow.css \
@@ -350,16 +436,34 @@ test_data = \
 	single-slash.ref.css \
 	string-values.css \
 	string-values.ref.css \
+        text-decoration-color.css \
+        text-decoration-color.ref.css \
+        text-decoration-line.css \
+        text-decoration-line.ref.css \
+        text-decoration-style.css \
+        text-decoration-style.ref.css \
 	test.png \
+        text-shadow.css \
+        text-shadow.ref.css \
 	text-shadow-invalid-but-worked-in-3.12.css \
 	text-shadow-invalid-but-worked-in-3.12.errors \
 	text-shadow-invalid-but-worked-in-3.12.ref.css \
 	transition.css \
 	transition.ref.css \
+        transition-delay.css \
+        transition-delay.ref.css \
+        transition-duration.css \
+        transition-duration.ref.css \
+        transition-property.css \
+        transition-property.ref.css \
+        transition-timing-function.css \
+        transition-timing-function.ref.css \
 	value-inherit.css \
+	value-inherit.errors \
 	value-inherit-shorthand.css \
 	value-inherit-shorthand.ref.css \
 	value-initial.css \
+	value-initial.errors \
 	value-initial-shorthand.css \
 	value-initial-shorthand.ref.css \
 	value-none.css \

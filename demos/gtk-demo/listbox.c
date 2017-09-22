@@ -89,8 +89,22 @@ GType      gtk_message_row_get_type  (void) G_GNUC_CONST;
 G_DEFINE_TYPE (GtkMessage, gtk_message, G_TYPE_OBJECT);
 
 static void
+gtk_message_finalize (GObject *obj)
+{
+  GtkMessage *msg = GTK_MESSAGE (obj);
+
+  g_free (msg->sender_name);
+  g_free (msg->sender_nick);
+  g_free (msg->message);
+  g_free (msg->resent_by);
+
+  G_OBJECT_CLASS (gtk_message_parent_class)->finalize (obj);
+}
+static void
 gtk_message_class_init (GtkMessageClass *klass)
 {
+  GObjectClass *object_class = G_OBJECT_CLASS (klass);
+  object_class->finalize = gtk_message_finalize;
 }
 
 static void
@@ -164,6 +178,7 @@ gtk_message_row_update (GtkMessageRow *row)
   s = g_date_time_format (t, "%X - %e %b %Y");
   gtk_label_set_text (priv->detailed_time_label, s);
   g_free (s);
+  g_date_time_unref (t);
 
   gtk_widget_set_visible (GTK_WIDGET(priv->n_favorites_label),
                           priv->message->n_favorites != 0);
@@ -247,9 +262,20 @@ gtk_message_row_state_flags_changed (GtkWidget    *widget,
 }
 
 static void
+gtk_message_row_finalize (GObject *obj)
+{
+  GtkMessageRowPrivate *priv = GTK_MESSAGE_ROW (obj)->priv;
+  g_object_unref (priv->message);
+  G_OBJECT_CLASS (gtk_message_row_parent_class)->finalize(obj);
+}
+
+static void
 gtk_message_row_class_init (GtkMessageRowClass *klass)
 {
   GtkWidgetClass *widget_class = GTK_WIDGET_CLASS (klass);
+  GObjectClass *object_class = G_OBJECT_CLASS (klass);
+
+  object_class->finalize = gtk_message_row_finalize;
 
   gtk_widget_class_set_template_from_resource (widget_class, "/listbox/listbox.ui");
   gtk_widget_class_bind_template_child_private (widget_class, GtkMessageRow, content_label);
@@ -295,7 +321,7 @@ gtk_message_row_new (GtkMessage *message)
 static int
 gtk_message_row_sort (GtkMessageRow *a, GtkMessageRow *b, gpointer data)
 {
-  return a->priv->message->time - b->priv->message->time;
+  return b->priv->message->time - a->priv->message->time;
 }
 
 static void
@@ -358,6 +384,7 @@ do_listbox (GtkWidget *do_widget)
         }
 
       g_strfreev (lines);
+      g_bytes_unref (data);
     }
 
   if (!gtk_widget_get_visible (window))

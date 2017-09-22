@@ -292,7 +292,7 @@ gtk_message_dialog_class_init (GtkMessageDialogClass *class)
 				   PROP_MESSAGE_AREA,
 				   g_param_spec_object ("message-area",
 							P_("Message area"),
-							P_("GtkVBox that holds the dialog's primary and secondary labels"),
+							P_("GtkBox that holds the dialog's primary and secondary labels"),
 							GTK_TYPE_WIDGET,
 							GTK_PARAM_READABLE));
 
@@ -301,6 +301,8 @@ gtk_message_dialog_class_init (GtkMessageDialogClass *class)
   gtk_widget_class_bind_template_child_private (widget_class, GtkMessageDialog, label);
   gtk_widget_class_bind_template_child_private (widget_class, GtkMessageDialog, secondary_label);
   gtk_widget_class_bind_template_child_internal_private (widget_class, GtkMessageDialog, message_area);
+
+  gtk_widget_class_set_css_name (widget_class, "messagedialog");
 }
 
 static void
@@ -308,6 +310,8 @@ gtk_message_dialog_init (GtkMessageDialog *dialog)
 {
   GtkMessageDialogPrivate *priv;
   GtkWidget *action_area;
+  GtkSettings *settings;
+  gboolean use_caret;
 
   dialog->priv = gtk_message_dialog_get_instance_private (dialog);
   priv = dialog->priv;
@@ -324,6 +328,11 @@ G_GNUC_BEGIN_IGNORE_DEPRECATIONS
   action_area = gtk_dialog_get_action_area (GTK_DIALOG (dialog));
 G_GNUC_END_IGNORE_DEPRECATIONS
   gtk_button_box_set_layout (GTK_BUTTON_BOX (action_area), GTK_BUTTONBOX_EXPAND);
+
+  settings = gtk_widget_get_settings (GTK_WIDGET (dialog));
+  g_object_get (settings, "gtk-keynav-use-caret", &use_caret, NULL);
+  gtk_label_set_selectable (GTK_LABEL (priv->label), use_caret);
+  gtk_label_set_selectable (GTK_LABEL (priv->secondary_label), use_caret);
 }
 
 static void
@@ -440,6 +449,7 @@ gtk_message_dialog_constructed (GObject *object)
       gtk_widget_show (box);
       gtk_widget_set_size_request (box, -1, 16);
       label = gtk_label_new ("");
+      gtk_widget_set_no_show_all (label, TRUE);
       gtk_widget_set_margin_top (label, 6);
       gtk_widget_set_margin_bottom (label, 6);
       gtk_style_context_add_class (gtk_widget_get_style_context (label), "title");
@@ -580,9 +590,8 @@ gtk_message_dialog_get_property (GObject     *object,
  * @message_format: (allow-none): printf()-style format string, or %NULL
  * @...: arguments for @message_format
  *
- * Creates a new message dialog, which is a simple dialog with an icon
- * indicating the dialog type (error, warning, etc.) and some text the
- * user may want to see. When the user clicks a button a “response”
+ * Creates a new message dialog, which is a simple dialog with some text
+ * the user may want to see. When the user clicks a button a “response”
  * signal is emitted with response IDs from #GtkResponseType. See
  * #GtkDialog for more details.
  *
@@ -642,8 +651,7 @@ gtk_message_dialog_new (GtkWindow     *parent,
  * @message_format: (allow-none): printf()-style format string, or %NULL
  * @...: arguments for @message_format
  *
- * Creates a new message dialog, which is a simple dialog with an icon
- * indicating the dialog type (error, warning, etc.) and some text which
+ * Creates a new message dialog, which is a simple dialog with some text that
  * is marked up with the [Pango text markup language][PangoMarkupFormat].
  * When the user clicks a button a “response” signal is emitted with
  * response IDs from #GtkResponseType. See #GtkDialog for more details.
@@ -906,7 +914,7 @@ gtk_message_dialog_format_secondary_markup (GtkMessageDialog *message_dialog,
  * See gtk_dialog_get_content_area() for the corresponding
  * function in the parent #GtkDialog.
  *
- * Returns: (transfer none): A #GtkVBox corresponding to the
+ * Returns: (transfer none): A #GtkBox corresponding to the
  *     “message area” in the @message_dialog.
  *
  * Since: 2.22

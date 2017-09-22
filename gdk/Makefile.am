@@ -33,9 +33,14 @@ EXTRA_DIST += 			\
 	gdkenumtypes.h.template	\
 	gdkversionmacros.h.in
 
-AM_CPPFLAGS = 				\
+GDK_CFLAGS_DEFINES =	\
 	-DG_LOG_DOMAIN=\"Gdk\"		\
-	-DGDK_COMPILATION		\
+	-DG_LOG_USE_STRUCTURED=1	\
+	-DGDK_COMPILATION
+
+
+AM_CPPFLAGS =				\
+	$(GDK_CFLAGS_DEFINES)		\
 	-I$(top_builddir)		\
 	-I$(top_builddir)/gdk		\
 	-I$(top_srcdir)			\
@@ -66,10 +71,13 @@ gdk_public_h_sources = 				\
 	gdkcairo.h				\
 	gdkcursor.h				\
 	gdkdevice.h				\
+	gdkdevicepad.h				\
+	gdkdevicetool.h				\
 	gdkdevicemanager.h			\
 	gdkdisplay.h				\
 	gdkdisplaymanager.h			\
 	gdkdnd.h				\
+	gdkdrawingcontext.h			\
 	gdkevents.h				\
 	gdkframetimings.h			\
 	gdkglcontext.h				\
@@ -77,6 +85,7 @@ gdk_public_h_sources = 				\
 	gdkkeysyms.h				\
 	gdkkeysyms-compat.h			\
 	gdkmain.h				\
+	gdkmonitor.h				\
 	gdkpango.h				\
 	gdkframeclock.h				\
 	gdkpixbuf.h				\
@@ -85,6 +94,7 @@ gdk_public_h_sources = 				\
 	gdkrectangle.h				\
 	gdkrgba.h				\
 	gdkscreen.h				\
+	gdkseat.h				\
 	gdkselection.h				\
 	gdktestutils.h				\
 	gdkthreads.h				\
@@ -105,13 +115,19 @@ gdk_private_headers = 				\
 	gdkcursorprivate.h			\
 	gdkdevicemanagerprivate.h		\
 	gdkdeviceprivate.h			\
+	gdkdevicepadprivate.h			\
+	gdkdevicetoolprivate.h			\
 	gdkdisplaymanagerprivate.h		\
 	gdkdisplayprivate.h			\
 	gdkdndprivate.h				\
+	gdkdrawingcontextprivate.h		\
 	gdkframeclockidle.h			\
 	gdkframeclockprivate.h			\
 	gdkglcontextprivate.h			\
+	gdkmonitorprivate.h			\
 	gdkscreenprivate.h			\
+	gdkseatprivate.h			\
+	gdkseatdefaultprivate.h			\
 	gdkinternals.h				\
 	gdkintl.h				\
 	gdkkeysprivate.h			\
@@ -130,10 +146,13 @@ gdk_c_sources = 				\
 	gdkcursor.c				\
 	gdkdeprecated.c				\
 	gdkdevice.c				\
+	gdkdevicepad.c				\
+	gdkdevicetool.c				\
 	gdkdevicemanager.c			\
 	gdkdisplay.c				\
 	gdkdisplaymanager.c			\
 	gdkdnd.c				\
+	gdkdrawingcontext.c			\
 	gdkevents.c     			\
 	gdkframetimings.c			\
 	gdkgl.c					\
@@ -141,6 +160,7 @@ gdk_c_sources = 				\
 	gdkglobals.c				\
 	gdkkeys.c				\
 	gdkkeyuni.c				\
+	gdkmonitor.c				\
 	gdkoffscreenwindow.c			\
 	gdkframeclock.c				\
 	gdkframeclockidle.c			\
@@ -150,6 +170,8 @@ gdk_c_sources = 				\
 	gdkrectangle.c				\
 	gdkrgba.c				\
 	gdkscreen.c				\
+	gdkseat.c				\
+	gdkseatdefault.c			\
 	gdkselection.c				\
 	gdkvisual.c				\
 	gdkwindow.c				\
@@ -160,6 +182,8 @@ gdk_built_sources = 				\
 	gdkenumtypes.c				\
 	gdkmarshalers.h 			\
 	gdkmarshalers.c				\
+	gdkresources.h				\
+	gdkresources.c				\
 	gdkversionmacros.h
 
 #
@@ -167,8 +191,8 @@ gdk_built_sources = 				\
 #
 
 gdkincludedir = $(includedir)/gtk-3.0/gdk
-gdkinclude_HEADERS = $(gdk_public_h_sources) gdkenumtypes.h gdkversionmacros.h
-nodist_gdkinclude_HEADERS = gdkconfig.h
+gdkinclude_HEADERS = $(gdk_public_h_sources)
+nodist_gdkinclude_HEADERS = gdkconfig.h gdkenumtypes.h gdkversionmacros.h
 
 deprecatedincludedir = $(includedir)/gtk-3.0/gdk/deprecated
 deprecatedinclude_HEADERS = $(deprecated_h_sources)
@@ -178,11 +202,13 @@ common_sources = 		\
 	$(gdk_c_sources)	\
 	gdkenumtypes.c		\
 	gdkmarshalers.c		\
-	gdkmarshalers.h
+	gdkmarshalers.h		\
+	gdkresources.h		\
+	gdkresources.c
 
 libgdk_3_la_SOURCES = $(common_sources)
 libgdk_3_la_CFLAGS = $(AM_CFLAGS) $(GDK_HIDDEN_VISIBILITY_CFLAGS)
-libgdk_3_la_LIBADD = $(GDK_DEP_LIBS)
+libgdk_3_la_LIBADD = $(GDK_DEP_LIBS) $(SHM_LIBS)
 libgdk_3_la_LDFLAGS = $(LDADD)
 
 if USE_X11
@@ -294,7 +320,6 @@ INTROSPECTION_GIRS += GdkX11-3.0.gir
 
 endif # USE_X11
 
-if OS_WIN32
 w32_introspection_files =		\
 	win32/gdkcursor-win32.c		\
 	win32/gdkdevicemanager-win32.c	\
@@ -307,14 +332,12 @@ w32_introspection_files =		\
 	win32/gdkevents-win32.c		\
 	win32/gdkgeometry-win32.c	\
 	win32/gdkglobals-win32.c	\
-	win32/gdkinput.c		\
 	win32/gdkkeys-win32.c		\
 	win32/gdkmain-win32.c		\
 	win32/gdkproperty-win32.c	\
 	win32/gdkscreen-win32.c		\
 	win32/gdkselection-win32.c	\
 	win32/gdktestutils-win32.c	\
-	win32/gdkvisual-win32.c		\
 	win32/gdkwin32.h		\
 	win32/gdkwin32cursor.h		\
 	win32/gdkwin32display.h		\
@@ -327,7 +350,7 @@ w32_introspection_files =		\
 	win32/gdkwin32window.h		\
 	win32/gdkwindow-win32.c
 
-
+if OS_WIN32
 GdkWin32-3.0.gir: libgdk-3.la Gdk-3.0.gir Makefile
 GdkWin32_3_0_gir_SCANNERFLAGS = \
 	--identifier-prefix=Gdk		\
@@ -369,7 +392,7 @@ endif
 if MS_LIB_AVAILABLE
 noinst_DATA = gdk-win32-$(GTK_API_VERSION).lib
 
-gdk-win32-$(GTK_API_VERSION).lib: libgdk-win32-$(GTK_API_VERSION).la gdk.def
+gdk-win32-$(GTK_API_VERSION).lib: libgdk-3.la gdk.def
 	lib -machine:@LIB_EXE_MACHINE_FLAG@ -name:libgdk-win32-$(GTK_API_VERSION)-@LT_CURRENT_MINUS_AGE@.dll -def:gdk.def -out:$@
 
 install-ms-lib:
@@ -417,12 +440,17 @@ gdkenumtypes.c: $(gdk_h_sources) gdkenumtypes.c.template
 # Marshaller generation
 #
 gdkmarshalers.h: gdkmarshalers.list
-	$(AM_V_GEN) $(GLIB_GENMARSHAL) --prefix=_gdk_marshal $(srcdir)/gdkmarshalers.list --header > gdkmarshalers-h.tmp \
+	$(AM_V_GEN) $(GLIB_GENMARSHAL) \
+		--prefix=_gdk_marshal \
+		--header \
+		$(srcdir)/gdkmarshalers.list > gdkmarshalers-h.tmp \
 	&& mv gdkmarshalers-h.tmp gdkmarshalers.h \
 	|| ( rm -f gdkmarshalers-h.tmp && exit 1)
 gdkmarshalers.c: gdkmarshalers.list
-	$(AM_V_GEN) (echo "#include \"gdkmarshalers.h\""; \
-	 $(GLIB_GENMARSHAL) --prefix=_gdk_marshal $(srcdir)/gdkmarshalers.list --body) > gdkmarshalers-c.tmp	\
+	$(AM_V_GEN) $(GLIB_GENMARSHAL) \
+		--prefix=_gdk_marshal \
+		--body \
+		$(srcdir)/gdkmarshalers.list > gdkmarshalers-c.tmp	\
 	&& mv gdkmarshalers-c.tmp gdkmarshalers.c \
 	|| ( rm -f gdkmarshalers-c.tmp && exit 1 )
 
@@ -433,37 +461,91 @@ stamp-gc-h: $(top_builddir)/config.status
 	$(AM_V_at) cd $(top_builddir) && $(SHELL) ./config.status gdk/gdkconfig.h \
 	&& echo timestamp > gdk/$(@F)
 
-dist-hook: ../build/win32/vs9/gdk.vcproj ../build/win32/vs10/gdk.vcxproj ../build/win32/vs10/gdk.vcxproj.filters
+#
+# Resources
+#
 
-../build/win32/vs9/gdk.vcproj: ../build/win32/vs9/gdk.vcprojin
-	for F in `echo $(libgdk_3_la_SOURCES) | tr '/' '\\'`; do \
-		case $$F in \
-		*.c) echo '   <File RelativePath="..\..\..\gdk\'$$F'" />' \
-		     ;; \
-		esac; \
-	done >libgdk.sourcefiles
-	$(CPP) -P - <$(top_srcdir)/build/win32/vs9/gdk.vcprojin >$@
-	rm libgdk.sourcefiles
+glsl_sources := $(wildcard $(srcdir)/resources/glsl/*.glsl)
 
-../build/win32/vs10/gdk.vcxproj: ../build/win32/vs10/gdk.vcxprojin
-	for F in `echo $(libgdk_3_la_SOURCES) | tr '/' '\\'`; do \
-		case $$F in \
-		*.c) echo '   <ClCompile Include="..\..\..\gdk\'$$F'" />' \
-		     ;; \
-		esac; \
-	done >libgdk.vs10.sourcefiles
-	$(CPP) -P - <$(top_srcdir)/build/win32/vs10/gdk.vcxprojin >$@
-	rm libgdk.vs10.sourcefiles
+gdk.gresource.xml: Makefile.am
+	$(AM_V_GEN) echo "<?xml version='1.0' encoding='UTF-8'?>" > $@; \
+	echo "<gresources>" >> $@; \
+	echo "  <gresource prefix='/org/gtk/libgdk'>" >> $@; \
+	for f in $(glsl_sources); do \
+	  n=`basename $$f`; \
+	  echo "    <file alias='glsl/$$n'>resources/glsl/$$n</file>" >> $@; \
+	done; \
+	echo "  </gresource>" >> $@; \
+	echo "</gresources>" >> $@;
 
-../build/win32/vs10/gdk.vcxproj.filters: ../build/win32/vs10/gdk.vcxproj.filtersin
-	for F in `echo $(libgdk_3_la_SOURCES) | tr '/' '\\'`; do \
-		case $$F in \
-		*.c) echo '   <ClCompile Include="..\..\..\gdk\'$$F'"><Filter>Source Files</Filter></ClCompile>' \
-		     ;; \
-		esac; \
-	done >libgdk.vs10.sourcefiles.filters
-	$(CPP) -P - <$(top_srcdir)/build/win32/vs10/gdk.vcxproj.filtersin >$@
-	rm libgdk.vs10.sourcefiles.filters
+EXTRA_DIST += $(glsl_sources)
+CLEANFILES += gdk.gresource.xml
+
+resource_files = $(shell $(GLIB_COMPILE_RESOURCES) --sourcedir=$(srcdir) --generate-dependencies $(builddir)/gdk.gresource.xml)
+
+gdkresources.h: gdk.gresource.xml
+	$(AM_V_GEN) $(GLIB_COMPILE_RESOURCES) $< --target=$@ \
+		--sourcedir=$(srcdir) --c-name _gdk --generate-header --manual-register
+gdkresources.c: gdk.gresource.xml $(resource_files)
+	$(AM_V_GEN) $(GLIB_COMPILE_RESOURCES) $< --target=$@ \
+		--sourcedir=$(srcdir) --c-name _gdk --generate-source --manual-register
+
+# ------------------- MSVC Build Items ----------------
+MSVCPROJS = gdk-3
+
+gdk_3_FILES = $(libgdk_3_la_SOURCES)
+gdk_3_EXCLUDES = dummy
+gdk_3_HEADERS_DIR = $(gdkincludedir)
+
+gdk_3_HEADERS_INST = \
+	$(gdkinclude_HEADERS)		\
+	$(deprecatedinclude_HEADERS)	\
+	$(nodist_gdkinclude_HEADERS)
+
+gdk_3_HEADERS_EXCLUDES = dummy
+
+include $(top_srcdir)/build/Makefile.msvcproj
+
+if HAVE_INTROSPECTION
+# Introspection Items for MSVC
+MSVC_INTROSPECT_GIRS = Gdk-3.0.gir GdkWin32-3.0.gir
+
+BASE_MSVC_GIR_CFLAGS =			\
+	$(GDK_CFLAGS_DEFINES)		\
+	-I../.. -I../../gdk -I.../../gdk/win32
+
+INTROSPECTION_INTERMEDIATE_ITEMS = \
+	$(top_builddir)/build/win32/Gdk-3.0.gir.msvc.introspect	\
+	$(top_builddir)/build/win32/Gdk_3_0_gir_list			\
+	$(top_builddir)/build/win32/GdkWin32-3.0.gir.msvc.introspect	\
+	$(top_builddir)/build/win32/GdkWin32_3_0_gir_list
+
+Gdk_3_0_gir_MSVC_FILES = $(introspection_files)
+Gdk_3_0_gir_MSVC_EXPORT_PACKAGES = $(Gdk_3_0_gir_EXPORT_PACKAGES)
+Gdk_3_0_gir_MSVC_INCLUDE_GIRS = $(Gdk_3_0_gir_INCLUDES)
+Gdk_3_0_gir_MSVC_LIBS = gdk-3.0
+Gdk_3_0_gir_MSVC_CFLAGS = $(BASE_MSVC_GIR_CFLAGS)
+Gdk_3_0_gir_MSVC_SCANNERFLAGS = $(Gdk_3_0_gir_SCANNERFLAGS)
+
+GdkWin32_3_0_gir_MSVC_FILES = $(w32_introspection_files)
+GdkWin32_3_0_gir_MSVC_INCLUDE_GIRS = $(GdkWin32_3_0_gir_INCLUDES)
+GdkWin32_3_0_gir_MSVC_LIBS = $(Gdk_3_0_gir_MSVC_LIBS)
+GdkWin32_3_0_gir_MSVC_CFLAGS = $(BASE_MSVC_GIR_CFLAGS)
+GdkWin32_3_0_gir_MSVC_SCANNERFLAGS =	\
+	--identifier-prefix=Gdk		\
+	--c-include="gdk/gdkwin32.h"	\
+	--include-uninstalled=./Gdk-3.0.gir
+
+include $(top_srcdir)/build/Makefile.msvc-introspection
+
+else
+INTROSPECTION_INTERMEDIATE_ITEMS =
+endif
+
+dist-hook: \
+	$(top_builddir)/build/win32/vs9/gdk-3.vcproj	\
+	$(top_builddir)/build/win32/vs9/gdk-3.headers	\
+	$(INTROSPECTION_INTERMEDIATE_ITEMS)
 
 DISTCLEANFILES = gdkconfig.h stamp-gc-h
 

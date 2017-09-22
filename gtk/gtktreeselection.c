@@ -153,7 +153,7 @@ gtk_tree_selection_class_init (GtkTreeSelectionClass *class)
 		  G_SIGNAL_RUN_FIRST,
 		  G_STRUCT_OFFSET (GtkTreeSelectionClass, changed),
 		  NULL, NULL,
-		  _gtk_marshal_VOID__VOID,
+		  NULL,
 		  G_TYPE_NONE, 0);
 }
 
@@ -582,8 +582,6 @@ gtk_tree_selection_get_selected_rows (GtkTreeSelection   *selection,
 
       if (gtk_tree_selection_get_selected (selection, NULL, &iter))
         {
-	  GtkTreePath *path;
-
 	  path = gtk_tree_model_get_path (gtk_tree_view_get_model (priv->tree_view), &iter);
 	  list = g_list_append (list, path);
 
@@ -855,7 +853,7 @@ out:
     g_warning ("The model has been modified from within gtk_tree_selection_selected_foreach.\n"
 	       "This function is for observing the selections of the tree only.  If\n"
 	       "you are trying to get all selected items from the tree, try using\n"
-	       "gtk_tree_selection_get_selected_rows instead.\n");
+	       "gtk_tree_selection_get_selected_rows instead.");
 }
 
 /**

@@ -20,15 +20,72 @@
 #include "gtkcssnodeprivate.h"
 
 #include "gtkcssanimatedstyleprivate.h"
-#include "gtkdebug.h"
+#include "gtkcsssectionprivate.h"
+#include "gtkcssstylepropertyprivate.h"
 #include "gtkintl.h"
 #include "gtkmarshalers.h"
 #include "gtksettingsprivate.h"
 #include "gtktypebuiltins.h"
 
+/*
+ * CSS nodes are the backbone of the GtkStyleContext implementation and
+ * replace the role that GtkWidgetPath played in the past. A CSS node has
+ * an element name and a state, and can have an id and style classes, which
+ * is what is needed to determine the matching CSS selectors. CSS nodes have
+ * a 'visible' property, which makes it possible to temporarily 'hide' them
+ * from CSS matching - e.g. an invisible node will not affect :nth-child
+ * matching and so forth.
+ *
+ * The API to manage states, names, ids and classes of CSS nodes is:
+ * - gtk_css_node_get/set_state. States are represented as GtkStateFlags
+ * - gtk_css_node_get/set_name. Names are represented as interned strings
+ * - gtk_css_node_get/set_id. Ids are represented as interned strings
+ * - gtk_css_node_add/remove/has_class and gtk_css_node_list_classes. Style
+ *   classes are represented as quarks.
+ *
+ * CSS nodes are organized in a dom-like tree, and there is API to navigate
+ * and manipulate this tree:
+ * - gtk_css_node_set_parent
+ * - gtk_css_node_insert_before/after
+ * - gtk_css_node_get_parent
+ * - gtk_css_node_get_first/last_child
+ * - gtk_css_node_get_previous/next_sibling
+ * Note that parents keep a reference on their children in this tree.
+ *
+ * Every widget has one or more CSS nodes - the first one gets created
+ * automatically by GtkStyleContext. To set the name of the main node,
+ * call gtk_widget_class_set_css_name() in class_init(). Widget implementations
+ * can and should add subnodes as suitable.
+ *
+ * Best practice is:
+ * - For permanent subnodes, create them in init(), and keep a pointer
+ *   to the node (you don't have to keep a reference, cleanup will be
+ *   automatic by means of the parent node getting cleaned up by the
+ *   style context).
+ * - For transient nodes, create/destroy them when the conditions that
+ *   warrant their existence change.
+ * - Keep the state of all your nodes up-to-date. This probably requires
+ *   a ::state-flags-changed (and possibly ::direction-changed) handler,
+ *   as well as code to update the state in other places. Note that GTK+
+ *   does this automatically for the widget's main CSS node.
+ * - The sibling ordering in the CSS node tree is supposed to correspond
+ *   to the visible order of content: top-to-bottom and left-to-right.
+ *   Reorder your nodes to maintain this correlation. In particular for
+ *   horizontally layed out widgets, this will require listening to
+ *   ::direction-changed.
+ * - The draw function should just use gtk_style_context_save_to_node() to
+ *   'switch' to the right node, not make any other changes to the style
+ *   context.
+ *
+ * A noteworthy difference between gtk_style_context_save() and
+ * gtk_style_context_save_to_node() is that the former inherits all the
+ * style classes from the main CSS node, which often leads to unintended
+ * inheritance.
+ */
+
 /* When these change we do a full restyling. Otherwise we try to figure out
  * if we need to change things. */
-#define GTK_CSS_RADICAL_CHANGE (GTK_CSS_CHANGE_NAME | GTK_CSS_CHANGE_CLASS | GTK_CSS_CHANGE_SOURCE | GTK_CSS_CHANGE_PARENT_STYLE)
+#define GTK_CSS_RADICAL_CHANGE (GTK_CSS_CHANGE_ID | GTK_CSS_CHANGE_NAME | GTK_CSS_CHANGE_CLASS | GTK_CSS_CHANGE_SOURCE | GTK_CSS_CHANGE_PARENT_STYLE)
 
 G_DEFINE_TYPE (GtkCssNode, gtk_css_node, G_TYPE_OBJECT)
 
@@ -43,10 +100,16 @@ enum {
   PROP_0,
   PROP_CLASSES,
   PROP_ID,
+  PROP_NAME,
   PROP_STATE,
   PROP_VISIBLE,
   PROP_WIDGET_TYPE,
   NUM_PROPERTIES
+};
+
+struct _GtkCssNodeStyleChange {
+  GtkCssStyle *old_style;
+  GtkCssStyle *new_style;
 };
 
 static guint cssnode_signals[LAST_SIGNAL] = { 0 };
@@ -67,17 +130,20 @@ gtk_css_node_set_invalid (GtkCssNode *node,
 
   node->invalid = invalid;
 
-  if (node->parent)
+  if (node->visible)
     {
-      if (invalid && node->visible)
-        gtk_css_node_set_invalid (node->parent, TRUE);
-    }
-  else
-    {
-      if (invalid)
-        GTK_CSS_NODE_GET_CLASS (node)->queue_validate (node);
+      if (node->parent)
+        {
+          if (invalid)
+            gtk_css_node_set_invalid (node->parent, TRUE);
+        }
       else
-        GTK_CSS_NODE_GET_CLASS (node)->dequeue_validate (node);
+        {
+          if (invalid)
+            GTK_CSS_NODE_GET_CLASS (node)->queue_validate (node);
+          else
+            GTK_CSS_NODE_GET_CLASS (node)->dequeue_validate (node);
+        }
     }
 }
 
@@ -97,6 +163,10 @@ gtk_css_node_get_property (GObject    *object,
 
     case PROP_ID:
       g_value_set_string (value, gtk_css_node_get_id (cssnode));
+      break;
+
+    case PROP_NAME:
+      g_value_set_string (value, gtk_css_node_get_name (cssnode));
       break;
 
     case PROP_STATE:
@@ -134,6 +204,10 @@ gtk_css_node_set_property (GObject      *object,
       gtk_css_node_set_id (cssnode, g_value_get_string (value));
       break;
 
+    case PROP_NAME:
+      gtk_css_node_set_name (cssnode, g_value_get_string (value));
+      break;
+
     case PROP_STATE:
       gtk_css_node_set_state (cssnode, g_value_get_flags (value));
       break;
@@ -162,6 +236,8 @@ gtk_css_node_dispose (GObject *object)
     }
 
   gtk_css_node_set_invalid (cssnode, FALSE);
+  
+  g_clear_pointer (&cssnode->cache, gtk_css_node_style_cache_unref);
 
   G_OBJECT_CLASS (gtk_css_node_parent_class)->dispose (object);
 }
@@ -176,6 +252,36 @@ gtk_css_node_finalize (GObject *object)
   gtk_css_node_declaration_unref (cssnode->decl);
 
   G_OBJECT_CLASS (gtk_css_node_parent_class)->finalize (object);
+}
+
+static gboolean
+gtk_css_node_is_first_child (GtkCssNode *node)
+{
+  GtkCssNode *iter;
+
+  for (iter = node->previous_sibling;
+       iter != NULL;
+       iter = iter->previous_sibling)
+    {
+      if (iter->visible)
+        return FALSE;
+    }
+  return TRUE;
+}
+
+static gboolean
+gtk_css_node_is_last_child (GtkCssNode *node)
+{
+  GtkCssNode *iter;
+
+  for (iter = node->next_sibling;
+       iter != NULL;
+       iter = iter->next_sibling)
+    {
+      if (iter->visible)
+        return FALSE;
+    }
+  return TRUE;
 }
 
 static gboolean
@@ -197,77 +303,53 @@ may_use_global_parent_cache (GtkCssNode *node)
 
 static GtkCssStyle *
 lookup_in_global_parent_cache (GtkCssNode                  *node,
-                               GtkCssStyle                 *parent,
                                const GtkCssNodeDeclaration *decl)
 {
-  GHashTable *cache;
-  GtkCssStyle *style;
+  GtkCssNode *parent;
+
+  parent = node->parent;
 
   if (parent == NULL ||
       !may_use_global_parent_cache (node))
     return NULL;
 
-  cache = g_object_get_data (G_OBJECT (parent), "gtk-global-cache");
-  if (cache == NULL)
+  if (parent->cache == NULL)
     return NULL;
 
-  style = g_hash_table_lookup (cache, decl);
+  g_assert (node->cache == NULL);
+  node->cache = gtk_css_node_style_cache_lookup (parent->cache,
+                                                 decl,
+                                                 gtk_css_node_is_first_child (node),
+                                                 gtk_css_node_is_last_child (node));
+  if (node->cache == NULL)
+    return NULL;
 
-  return style;
-}
-
-static gboolean
-may_be_stored_in_parent_cache (GtkCssStyle *style)
-{
-  GtkCssChange change;
-
-  change = gtk_css_static_style_get_change (GTK_CSS_STATIC_STYLE (style));
-
-  /* The cache is shared between all children of the parent, so if a
-   * style depends on a sibling it is not independant of the child.
-   */
-  if (change & GTK_CSS_CHANGE_ANY_SIBLING)
-    return FALSE;
-
-  /* Again, the cache is shared between all children of the parent.
-   * If the position is relevant, no child has the same style.
-   */
-  if (change & GTK_CSS_CHANGE_POSITION)
-    return FALSE;
-
-  return TRUE;
+  return gtk_css_node_style_cache_get_style (node->cache);
 }
 
 static void
 store_in_global_parent_cache (GtkCssNode                  *node,
-                              GtkCssStyle                 *parent,
                               const GtkCssNodeDeclaration *decl,
                               GtkCssStyle                 *style)
 {
-  GHashTable *cache;
+  GtkCssNode *parent;
 
   g_assert (GTK_IS_CSS_STATIC_STYLE (style));
+
+  parent = node->parent;
 
   if (parent == NULL ||
       !may_use_global_parent_cache (node))
     return;
 
-  if (!may_be_stored_in_parent_cache (style))
-    return;
+  if (parent->cache == NULL)
+    parent->cache = gtk_css_node_style_cache_new (parent->style);
 
-  cache = g_object_get_data (G_OBJECT (parent), "gtk-global-cache");
-  if (cache == NULL)
-    {
-      cache = g_hash_table_new_full (gtk_css_node_declaration_hash,
-                                     gtk_css_node_declaration_equal,
-                                     (GDestroyNotify) gtk_css_node_declaration_unref,
-                                     g_object_unref);
-      g_object_set_data_full (G_OBJECT (parent), "gtk-global-cache", cache, (GDestroyNotify) g_hash_table_destroy);
-    }
-
-  g_hash_table_insert (cache,
-                       gtk_css_node_declaration_ref ((GtkCssNodeDeclaration *) decl),
-                       g_object_ref (style));
+  node->cache = gtk_css_node_style_cache_insert (parent->cache,
+                                                 (GtkCssNodeDeclaration *) decl,
+                                                 gtk_css_node_is_first_child (node),
+                                                 gtk_css_node_is_last_child (node),
+                                                 style);
 }
 
 static GtkCssStyle *
@@ -281,7 +363,7 @@ gtk_css_node_create_style (GtkCssNode *cssnode)
   decl = gtk_css_node_get_declaration (cssnode);
   parent = cssnode->parent ? cssnode->parent->style : NULL;
 
-  style = lookup_in_global_parent_cache (cssnode, parent, decl);
+  style = lookup_in_global_parent_cache (cssnode, decl);
   if (style)
     return g_object_ref (style);
 
@@ -294,7 +376,7 @@ gtk_css_node_create_style (GtkCssNode *cssnode)
                                               NULL,
                                               parent);
 
-  store_in_global_parent_cache (cssnode, parent, decl, style);
+  store_in_global_parent_cache (cssnode, decl, style);
 
   return style;
 }
@@ -353,7 +435,7 @@ gtk_css_node_real_update_style (GtkCssNode   *cssnode,
                                               gtk_css_node_get_style_provider (cssnode),
                                               should_create_transitions (change) ? style : NULL);
     }
-  else if (GTK_IS_CSS_ANIMATED_STYLE (style) && (change & GTK_CSS_CHANGE_TIMESTAMP))
+  else if (static_style != style && (change & GTK_CSS_CHANGE_TIMESTAMP))
     {
       new_style = gtk_css_animated_style_new_advance (GTK_CSS_ANIMATED_STYLE (style),
                                                       static_style,
@@ -471,14 +553,10 @@ gtk_css_node_real_node_added (GtkCssNode *parent,
 }
 
 static void
-gtk_css_node_real_style_changed (GtkCssNode  *cssnode,
-                                 GtkCssStyle *old_style,
-                                 GtkCssStyle *new_style)
+gtk_css_node_real_style_changed (GtkCssNode        *cssnode,
+                                 GtkCssStyleChange *change)
 {
-  g_object_ref (new_style);
-  g_object_unref (old_style);
-
-  cssnode->style = new_style;
+  g_set_object (&cssnode->style, gtk_css_style_change_get_new_style (change));
 }
 
 static void
@@ -515,6 +593,10 @@ gtk_css_node_class_init (GtkCssNodeClass *klass)
 		  _gtk_marshal_VOID__OBJECT_OBJECT,
 		  G_TYPE_NONE, 2,
 		  GTK_TYPE_CSS_NODE, GTK_TYPE_CSS_NODE);
+  g_signal_set_va_marshaller (cssnode_signals[NODE_ADDED],
+                              G_TYPE_FROM_CLASS (klass),
+                              _gtk_marshal_VOID__OBJECT_OBJECTv);
+
   cssnode_signals[NODE_REMOVED] =
     g_signal_new (I_("node-removed"),
 		  G_TYPE_FROM_CLASS (object_class),
@@ -524,44 +606,48 @@ gtk_css_node_class_init (GtkCssNodeClass *klass)
 		  _gtk_marshal_VOID__OBJECT_OBJECT,
 		  G_TYPE_NONE, 2,
 		  GTK_TYPE_CSS_NODE, GTK_TYPE_CSS_NODE);
+  g_signal_set_va_marshaller (cssnode_signals[NODE_REMOVED],
+                              G_TYPE_FROM_CLASS (klass),
+                              _gtk_marshal_VOID__OBJECT_OBJECTv);
+
   cssnode_signals[STYLE_CHANGED] =
     g_signal_new (I_("style-changed"),
 		  G_TYPE_FROM_CLASS (object_class),
 		  G_SIGNAL_RUN_LAST,
                   G_STRUCT_OFFSET (GtkCssNodeClass, style_changed),
 		  NULL, NULL,
-		  _gtk_marshal_VOID__OBJECT_OBJECT,
-		  G_TYPE_NONE, 2,
-		  GTK_TYPE_CSS_STYLE, GTK_TYPE_CSS_STYLE);
+		  NULL,
+		  G_TYPE_NONE, 1,
+		  G_TYPE_POINTER);
 
   cssnode_properties[PROP_CLASSES] =
-    g_param_spec_boxed ("classes", "Classes",
-                         "List of classes",
+    g_param_spec_boxed ("classes", P_("Style Classes"), P_("List of classes"),
                          G_TYPE_STRV,
                          G_PARAM_READWRITE
                          | G_PARAM_EXPLICIT_NOTIFY | G_PARAM_STATIC_STRINGS);
   cssnode_properties[PROP_ID] =
-    g_param_spec_string ("id", "ID",
-                         "Unique ID",
+    g_param_spec_string ("id", P_("ID"), P_("Unique ID"),
+                         NULL,
+                         G_PARAM_READWRITE
+                         | G_PARAM_EXPLICIT_NOTIFY | G_PARAM_STATIC_STRINGS);
+  cssnode_properties[PROP_NAME] =
+    g_param_spec_string ("name", P_("Name"), "Name identifying the type of node",
                          NULL,
                          G_PARAM_READWRITE
                          | G_PARAM_EXPLICIT_NOTIFY | G_PARAM_STATIC_STRINGS);
   cssnode_properties[PROP_STATE] =
-    g_param_spec_flags ("state", "State",
-                        "State flags",
+    g_param_spec_flags ("state", P_("State"), P_("State flags"),
                         GTK_TYPE_STATE_FLAGS,
                         0,
                         G_PARAM_READWRITE
                         | G_PARAM_EXPLICIT_NOTIFY | G_PARAM_STATIC_STRINGS);
   cssnode_properties[PROP_VISIBLE] =
-    g_param_spec_boolean ("visible", "Visible",
-                          "If other nodes can see this node",
+    g_param_spec_boolean ("visible", P_("Visible"), P_("If other nodes can see this node"),
                           TRUE,
                           G_PARAM_READWRITE
                           | G_PARAM_EXPLICIT_NOTIFY | G_PARAM_STATIC_STRINGS);
   cssnode_properties[PROP_WIDGET_TYPE] =
-    g_param_spec_gtype ("widget-type", "Widget type",
-                        "GType of the widget",
+    g_param_spec_gtype ("widget-type", P_("Widget type"), P_("GType of the widget"),
                         G_TYPE_NONE,
                         G_PARAM_READWRITE
                         | G_PARAM_EXPLICIT_NOTIFY | G_PARAM_STATIC_STRINGS);
@@ -577,6 +663,19 @@ gtk_css_node_init (GtkCssNode *cssnode)
   cssnode->style = g_object_ref (gtk_css_static_style_get_default ());
 
   cssnode->visible = TRUE;
+}
+
+/**
+ * gtk_css_node_new:
+ *
+ * Creates a new CSS node.
+ *
+ * Returns: (transfer full): the new CSS node
+ */
+GtkCssNode *
+gtk_css_node_new (void)
+{
+  return g_object_new (GTK_TYPE_CSS_NODE, NULL);
 }
 
 static GdkFrameClock *
@@ -614,17 +713,6 @@ gtk_css_node_parent_will_be_set (GtkCssNode *node)
     GTK_CSS_NODE_GET_CLASS (node)->dequeue_validate (node);
 }
 
-
-static void
-gtk_css_node_set_children_changed (GtkCssNode *node)
-{
-  if (node->children_changed)
-    return;
-
-  node->children_changed = TRUE;
-  gtk_css_node_set_invalid (node, TRUE);
-}
-
 static void
 gtk_css_node_invalidate_style (GtkCssNode *cssnode)
 {
@@ -654,12 +742,22 @@ gtk_css_node_reposition (GtkCssNode *node,
   /* Take a reference here so the whole function has a reference */
   g_object_ref (node);
 
-  if (node->next_sibling)
-    gtk_css_node_invalidate_style (node->next_sibling);
+  if (node->visible)
+    {
+      if (node->next_sibling)
+        gtk_css_node_invalidate (node->next_sibling,
+                                 GTK_CSS_CHANGE_ANY_SIBLING
+                                 | GTK_CSS_CHANGE_NTH_CHILD
+                                 | (node->previous_sibling ? 0 : GTK_CSS_CHANGE_FIRST_CHILD));
+      else if (node->previous_sibling)
+        gtk_css_node_invalidate (node->previous_sibling, GTK_CSS_CHANGE_LAST_CHILD);
+    }
 
   if (old_parent != NULL)
     {
       g_signal_emit (old_parent, cssnode_signals[NODE_REMOVED], 0, node, node->previous_sibling);
+      if (old_parent->first_child && node->visible)
+        gtk_css_node_invalidate (old_parent->first_child, GTK_CSS_CHANGE_NTH_LAST_CHILD);
     }
 
   if (old_parent != new_parent)
@@ -671,8 +769,6 @@ gtk_css_node_reposition (GtkCssNode *node,
       else
         {
           g_object_unref (node);
-          if (node->visible)
-            gtk_css_node_set_children_changed (old_parent);
         }
 
       if (gtk_css_node_get_style_provider_or_null (node) == NULL)
@@ -681,8 +777,6 @@ gtk_css_node_reposition (GtkCssNode *node,
 
       if (new_parent)
         {
-          if (node->visible)
-            gtk_css_node_set_children_changed (new_parent);
           g_object_ref (node);
 
           if (node->pending_changes)
@@ -699,12 +793,35 @@ gtk_css_node_reposition (GtkCssNode *node,
   if (new_parent)
     {
       g_signal_emit (new_parent, cssnode_signals[NODE_ADDED], 0, node, previous);
+      if (node->visible)
+        gtk_css_node_invalidate (new_parent->first_child, GTK_CSS_CHANGE_NTH_LAST_CHILD);
     }
 
-  if (node->next_sibling)
-    gtk_css_node_invalidate_style (node->next_sibling);
+  if (node->visible)
+    {
+      if (node->next_sibling)
+        {
+          if (node->previous_sibling == NULL)
+            gtk_css_node_invalidate (node->next_sibling, GTK_CSS_CHANGE_FIRST_CHILD);
+          else
+            gtk_css_node_invalidate_style (node->next_sibling);
+        }
+      else if (node->previous_sibling)
+        {
+          gtk_css_node_invalidate (node->previous_sibling, GTK_CSS_CHANGE_LAST_CHILD);
+        }
+    }
+  else
+    {
+      if (node->next_sibling)
+        gtk_css_node_invalidate_style (node->next_sibling);
+    }
 
-  gtk_css_node_invalidate (node, GTK_CSS_CHANGE_ANY_PARENT | GTK_CSS_CHANGE_ANY_SIBLING);
+  gtk_css_node_invalidate (node, GTK_CSS_CHANGE_ANY_PARENT
+                                 | GTK_CSS_CHANGE_ANY_SIBLING
+                                 | GTK_CSS_CHANGE_NTH_CHILD
+                                 | (node->previous_sibling ? 0 : GTK_CSS_CHANGE_FIRST_CHILD)
+                                 | (node->next_sibling ? 0 : GTK_CSS_CHANGE_LAST_CHILD));
 
   g_object_unref (node);
 }
@@ -719,28 +836,55 @@ gtk_css_node_set_parent (GtkCssNode *node,
   gtk_css_node_reposition (node, parent, parent ? parent->last_child : NULL);
 }
 
+/* If previous_sibling is NULL, insert at the beginning */
 void
-gtk_css_node_set_after (GtkCssNode *cssnode,
-                        GtkCssNode *previous_sibling)
+gtk_css_node_insert_after (GtkCssNode *parent,
+                           GtkCssNode *cssnode,
+                           GtkCssNode *previous_sibling)
 {
-  if (cssnode->previous_sibling == previous_sibling)
+  g_return_if_fail (previous_sibling == NULL || previous_sibling->parent == parent);
+  g_return_if_fail (cssnode != previous_sibling);
+
+  if (cssnode->previous_sibling == previous_sibling &&
+      cssnode->parent == parent)
     return;
 
   gtk_css_node_reposition (cssnode,
-                           previous_sibling->parent,
+                           parent,
                            previous_sibling);
 }
 
+/* If next_sibling is NULL, insert at the end */
 void
-gtk_css_node_set_before (GtkCssNode *cssnode,
-                         GtkCssNode *next_sibling)
+gtk_css_node_insert_before (GtkCssNode *parent,
+                            GtkCssNode *cssnode,
+                            GtkCssNode *next_sibling)
 {
-  if (cssnode->next_sibling == next_sibling)
+  g_return_if_fail (next_sibling == NULL || next_sibling->parent == parent);
+  g_return_if_fail (cssnode != next_sibling);
+
+  if (cssnode->next_sibling == next_sibling && 
+      cssnode->parent == parent)
     return;
 
   gtk_css_node_reposition (cssnode,
-                           next_sibling->parent,
-                           next_sibling->previous_sibling);
+                           parent,
+                           next_sibling ? next_sibling->previous_sibling : parent->last_child);
+}
+
+void
+gtk_css_node_reverse_children (GtkCssNode *cssnode)
+{
+  GtkCssNode *end;
+
+  end = cssnode->last_child;
+  while (cssnode->first_child != end)
+    {
+      gtk_css_node_reposition (cssnode->first_child,
+                               cssnode,
+                               end);
+    }
+
 }
 
 GtkCssNode *
@@ -777,11 +921,29 @@ static gboolean
 gtk_css_node_set_style (GtkCssNode  *cssnode,
                         GtkCssStyle *style)
 {
+  GtkCssStyleChange change;
+  gboolean style_changed;
+
   if (cssnode->style == style)
     return FALSE;
 
-  g_signal_emit (cssnode, cssnode_signals[STYLE_CHANGED], 0, cssnode->style, style);
-  return TRUE;
+  gtk_css_style_change_init (&change, cssnode->style, style);
+
+  style_changed = gtk_css_style_change_has_change (&change);
+  if (style_changed)
+    {
+      g_signal_emit (cssnode, cssnode_signals[STYLE_CHANGED], 0, &change);
+    }
+  else if (cssnode->style != style &&
+           (GTK_IS_CSS_ANIMATED_STYLE (cssnode->style) || GTK_IS_CSS_ANIMATED_STYLE (style)))
+    {
+      /* This is when animations are starting/stopping but they didn't change any CSS this frame */
+      g_set_object (&cssnode->style, style);
+    }
+
+  gtk_css_style_change_finish (&change);
+
+  return style_changed;
 }
 
 static void
@@ -792,11 +954,6 @@ gtk_css_node_propagate_pending_changes (GtkCssNode *cssnode,
   GtkCssNode *child;
 
   change = _gtk_css_change_for_child (cssnode->pending_changes);
-  if (cssnode->children_changed)
-    {
-      change |= GTK_CSS_CHANGE_POSITION | GTK_CSS_CHANGE_ANY_SIBLING;
-      cssnode->children_changed = FALSE;
-    }
   if (style_changed)
     change |= GTK_CSS_CHANGE_PARENT_STYLE;
 
@@ -841,6 +998,8 @@ gtk_css_node_ensure_style (GtkCssNode *cssnode,
       if (cssnode->previous_sibling)
         gtk_css_node_ensure_style (cssnode->previous_sibling, current_time);
 
+      g_clear_pointer (&cssnode->cache, gtk_css_node_style_cache_unref);
+
       new_style = GTK_CSS_NODE_GET_CLASS (cssnode)->update_style (cssnode,
                                                                   cssnode->pending_changes,
                                                                   current_time,
@@ -877,20 +1036,84 @@ void
 gtk_css_node_set_visible (GtkCssNode *cssnode,
                           gboolean    visible)
 {
+  GtkCssNode *iter;
+
   if (cssnode->visible == visible)
     return;
 
   cssnode->visible = visible;
   g_object_notify_by_pspec (G_OBJECT (cssnode), cssnode_properties[PROP_VISIBLE]);
 
-  if (cssnode->parent)
-    gtk_css_node_set_children_changed (cssnode->parent);
+  if (cssnode->invalid)
+    {
+      if (cssnode->visible)
+        {
+          if (cssnode->parent)
+            gtk_css_node_set_invalid (cssnode->parent, TRUE);
+          else
+            GTK_CSS_NODE_GET_CLASS (cssnode)->queue_validate (cssnode);
+        }
+      else
+        {
+          if (cssnode->parent == NULL)
+            GTK_CSS_NODE_GET_CLASS (cssnode)->dequeue_validate (cssnode);
+        }
+    }
+
+  if (cssnode->next_sibling)
+    {
+      gtk_css_node_invalidate (cssnode->next_sibling, GTK_CSS_CHANGE_ANY_SIBLING | GTK_CSS_CHANGE_NTH_CHILD);
+      if (gtk_css_node_is_first_child (cssnode))
+        {
+          for (iter = cssnode->next_sibling;
+               iter != NULL;
+               iter = iter->next_sibling)
+            {
+              gtk_css_node_invalidate (iter, GTK_CSS_CHANGE_FIRST_CHILD);
+              if (iter->visible)
+                break;
+            }
+        }
+    }
+               
+  if (cssnode->previous_sibling)
+    {
+      if (gtk_css_node_is_last_child (cssnode))
+        {
+          for (iter = cssnode->previous_sibling;
+               iter != NULL;
+               iter = iter->previous_sibling)
+            {
+              gtk_css_node_invalidate (iter, GTK_CSS_CHANGE_LAST_CHILD);
+              if (iter->visible)
+                break;
+            }
+        }
+      gtk_css_node_invalidate (cssnode->parent->first_child, GTK_CSS_CHANGE_NTH_LAST_CHILD);
+    }
 }
 
 gboolean
 gtk_css_node_get_visible (GtkCssNode *cssnode)
 {
   return cssnode->visible;
+}
+
+void
+gtk_css_node_set_name (GtkCssNode              *cssnode,
+                       /*interned*/ const char *name)
+{
+  if (gtk_css_node_declaration_set_name (&cssnode->decl, name))
+    {
+      gtk_css_node_invalidate (cssnode, GTK_CSS_CHANGE_NAME);
+      g_object_notify_by_pspec (G_OBJECT (cssnode), cssnode_properties[PROP_NAME]);
+    }
+}
+
+/* interned */ const char *
+gtk_css_node_get_name (GtkCssNode *cssnode)
+{
+  return gtk_css_node_declaration_get_name (cssnode->decl);
 }
 
 void
@@ -911,8 +1134,8 @@ gtk_css_node_get_widget_type (GtkCssNode *cssnode)
 }
 
 void
-gtk_css_node_set_id (GtkCssNode *cssnode,
-                     const char *id)
+gtk_css_node_set_id (GtkCssNode                *cssnode,
+                     /* interned */ const char *id)
 {
   if (gtk_css_node_declaration_set_id (&cssnode->decl, id))
     {
@@ -921,7 +1144,7 @@ gtk_css_node_set_id (GtkCssNode *cssnode,
     }
 }
 
-const char *
+/* interned */ const char *
 gtk_css_node_get_id (GtkCssNode *cssnode)
 {
   return gtk_css_node_declaration_get_id (cssnode->decl);
@@ -960,16 +1183,11 @@ gtk_css_node_get_junction_sides (GtkCssNode *cssnode)
 static void
 gtk_css_node_clear_classes (GtkCssNode *cssnode)
 {
-  GList *list, *l;
-  
-  list = gtk_css_node_declaration_list_classes (cssnode->decl);
-
-  for (l = list; l; l = l->next)
+  if (gtk_css_node_declaration_clear_classes (&cssnode->decl))
     {
-      gtk_css_node_remove_class (cssnode, GPOINTER_TO_UINT (l->data));
+      gtk_css_node_invalidate (cssnode, GTK_CSS_CHANGE_CLASS);
+      g_object_notify_by_pspec (G_OBJECT (cssnode), cssnode_properties[PROP_CLASSES]);
     }
-
-  g_list_free (list);
 }
 
 void
@@ -996,22 +1214,20 @@ gtk_css_node_set_classes (GtkCssNode  *cssnode,
 char **
 gtk_css_node_get_classes (GtkCssNode *cssnode)
 {
-  GList *list, *l;
-  GPtrArray *result;
-  
-  list = gtk_css_node_declaration_list_classes (cssnode->decl);
-  result = g_ptr_array_new ();
+  const GQuark *classes;
+  char **result;
+  guint n_classes, i, j;
 
-  for (l = list; l; l = l->next)
+  classes = gtk_css_node_declaration_get_classes (cssnode->decl, &n_classes);
+  result = g_new (char *, n_classes + 1);
+
+  for (i = n_classes, j = 0; i-- > 0; ++j)
     {
-      g_ptr_array_add (result, g_strdup (g_quark_to_string (GPOINTER_TO_UINT (l->data))));
+      result[j] = g_strdup (g_quark_to_string (classes[i]));
     }
 
-  g_ptr_array_add (result, NULL);
-
-  g_list_free (list);
-
-  return (char **) g_ptr_array_free (result, FALSE);
+  result[n_classes] = NULL;
+  return result;
 }
 
 void
@@ -1043,10 +1259,11 @@ gtk_css_node_has_class (GtkCssNode *cssnode,
   return gtk_css_node_declaration_has_class (cssnode->decl, style_class);
 }
 
-GList *
-gtk_css_node_list_classes (GtkCssNode *cssnode)
+const GQuark *
+gtk_css_node_list_classes (GtkCssNode *cssnode,
+                           guint      *n_classes)
 {
-  return gtk_css_node_declaration_list_classes (cssnode->decl);
+  return gtk_css_node_declaration_get_classes (cssnode->decl, n_classes);
 }
 
 void
@@ -1054,16 +1271,14 @@ gtk_css_node_add_region (GtkCssNode     *cssnode,
                          GQuark          region,
                          GtkRegionFlags  flags)
 {
-  if (gtk_css_node_declaration_add_region (&cssnode->decl, region, flags))
-    gtk_css_node_invalidate (cssnode, GTK_CSS_CHANGE_REGION);
+  gtk_css_node_declaration_add_region (&cssnode->decl, region, flags);
 }
 
 void
 gtk_css_node_remove_region (GtkCssNode *cssnode,
                             GQuark      region)
 {
-  if (gtk_css_node_declaration_remove_region (&cssnode->decl, region))
-    gtk_css_node_invalidate (cssnode, GTK_CSS_CHANGE_REGION);
+  gtk_css_node_declaration_remove_region (&cssnode->decl, region);
 }
 
 gboolean
@@ -1159,21 +1374,6 @@ gtk_css_node_validate_internal (GtkCssNode *cssnode,
 {
   GtkCssNode *child;
 
-  /* If you run your application with
-   *   GTK_DEBUG=no-css-cache
-   * every invalidation will purge the cache and completely query
-   * everything anew form the cache. This is slow (in particular
-   * when animating), but useful for figuring out bugs.
-   *
-   * We achieve that by pretending that everything that could have
-   * changed has and so we of course totally need to redo everything.
-   *
-   * Note that this also completely revalidates child widgets all
-   * the time.
-   */
-  if (G_UNLIKELY (gtk_get_debug_flags () & GTK_DEBUG_NO_CSS_CACHE))
-    cssnode->pending_changes |= GTK_CSS_CHANGE_ANY;
-
   if (!cssnode->invalid)
     return;
 
@@ -1228,7 +1428,7 @@ GtkStyleProviderPrivate *
 gtk_css_node_get_style_provider (GtkCssNode *cssnode)
 {
   GtkStyleProviderPrivate *result;
-  
+
   result = gtk_css_node_get_style_provider_or_null (cssnode);
   if (result)
     return result;
@@ -1237,4 +1437,39 @@ gtk_css_node_get_style_provider (GtkCssNode *cssnode)
     return gtk_css_node_get_style_provider (cssnode->parent);
 
   return GTK_STYLE_PROVIDER_PRIVATE (_gtk_settings_get_style_cascade (gtk_settings_get_default (), 1));
+}
+
+void
+gtk_css_node_print (GtkCssNode                *cssnode,
+                    GtkStyleContextPrintFlags  flags,
+                    GString                   *string,
+                    guint                      indent)
+{
+  gboolean need_newline = FALSE;
+
+  g_string_append_printf (string, "%*s", indent, "");
+
+  if (!cssnode->visible)
+    g_string_append_c (string, '[');
+
+  gtk_css_node_declaration_print (cssnode->decl, string);
+
+  if (!cssnode->visible)
+    g_string_append_c (string, ']');
+
+  g_string_append_c (string, '\n');
+
+  if (flags & GTK_STYLE_CONTEXT_PRINT_SHOW_STYLE)
+    need_newline = gtk_css_style_print (gtk_css_node_get_style (cssnode), string, indent + 2, TRUE);
+
+  if (flags & GTK_STYLE_CONTEXT_PRINT_RECURSE)
+    {
+      GtkCssNode *node;
+
+      if (need_newline && gtk_css_node_get_first_child (cssnode))
+        g_string_append_c (string, '\n');
+
+      for (node = gtk_css_node_get_first_child (cssnode); node; node = gtk_css_node_get_next_sibling (node))
+        gtk_css_node_print (node, flags, string, indent + 2);
+    }
 }

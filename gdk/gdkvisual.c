@@ -88,6 +88,8 @@ gdk_visual_class_init (GdkVisualClass *visual_class)
  *
  * Returns: (transfer container) (element-type GdkVisual):
  *     a list of visuals; the list must be freed, but not its contents
+ * 
+ * Deprecated: 3.22: Use gdk_screen_list_visuals (gdk_screen_get_default ()).
  */
 GList*
 gdk_list_visuals (void)
@@ -103,6 +105,8 @@ gdk_list_visuals (void)
  * The return value should not be freed.
  *
  * Returns: (transfer none): system visual
+ *
+ * Deprecated: 3.22: Use gdk_screen_get_system_visual (gdk_screen_get_default ()).
  */
 GdkVisual*
 gdk_visual_get_system (void)
@@ -118,6 +122,9 @@ gdk_visual_get_system (void)
  * per pixel.
  *
  * Returns: best available depth
+ *
+ * Deprecated: 3.22: Visual selection should be done using
+ *     gdk_screen_get_system_visual() and gdk_screen_get_rgba_visual()
  */
 gint
 gdk_visual_get_best_depth (void)
@@ -133,6 +140,9 @@ gdk_visual_get_best_depth (void)
  * Return the best available visual type for the default GDK screen.
  *
  * Returns: best visual type
+ *
+ * Deprecated: 3.22: Visual selection should be done using
+ *     gdk_screen_get_system_visual() and gdk_screen_get_rgba_visual()
  */
 GdkVisualType
 gdk_visual_get_best_type (void)
@@ -149,6 +159,9 @@ gdk_visual_get_best_type (void)
  * GDK screen. The return value should not be freed.
  *
  * Returns: (transfer none): best visual
+ *
+ * Deprecated: 3.22: Visual selection should be done using
+ *     gdk_screen_get_system_visual() and gdk_screen_get_rgba_visual()
  */
 GdkVisual*
 gdk_visual_get_best (void)
@@ -168,6 +181,9 @@ gdk_visual_get_best (void)
  * not be freed. %NULL may be returned if no visual supports @depth.
  *
  * Returns: (transfer none): best visual for the given depth
+ *
+ * Deprecated: 3.22: Visual selection should be done using
+ *     gdk_screen_get_system_visual() and gdk_screen_get_rgba_visual()
  */
 GdkVisual*
 gdk_visual_get_best_with_depth (gint depth)
@@ -187,6 +203,9 @@ gdk_visual_get_best_with_depth (gint depth)
  * @visual_type.
  *
  * Returns: (transfer none): best visual of the given type
+ *
+ * Deprecated: 3.22: Visual selection should be done using
+ *     gdk_screen_get_system_visual() and gdk_screen_get_rgba_visual()
  */
 GdkVisual*
 gdk_visual_get_best_with_type (GdkVisualType visual_type)
@@ -207,6 +226,9 @@ gdk_visual_get_best_with_type (GdkVisualType visual_type)
  *
  * Returns: (nullable) (transfer none): best visual with both @depth
  *     and @visual_type, or %NULL if none
+ *
+ * Deprecated: 3.22: Visual selection should be done using
+ *     gdk_screen_get_system_visual() and gdk_screen_get_rgba_visual()
  */
 GdkVisual*
 gdk_visual_get_best_with_both (gint          depth,
@@ -229,6 +251,9 @@ gdk_visual_get_best_with_both (gint          depth,
  * visual, removing duplicates.
  *
  * The array returned by this function should not be freed.
+ *
+ * Deprecated: 3.22: Visual selection should be done using
+ *     gdk_screen_get_system_visual() and gdk_screen_get_rgba_visual()
  */
 void
 gdk_query_depths (gint **depths,
@@ -251,6 +276,9 @@ gdk_query_depths (gint **depths,
  * visual, removing duplicates.
  *
  * The array returned by this function should not be freed.
+ *
+ * Deprecated: 3.22: Visual selection should be done using
+ *     gdk_screen_get_system_visual() and gdk_screen_get_rgba_visual()
  */
 void
 gdk_query_visual_types (GdkVisualType **visual_types,
@@ -303,9 +331,15 @@ gdk_visual_get_depth (GdkVisual *visual)
  *
  * Returns the byte order of this visual.
  *
+ * The information returned by this function is only relevant
+ * when working with XImages, and not all backends return
+ * meaningful information for this.
+ *
  * Returns: A #GdkByteOrder stating the byte order of @visual.
  *
  * Since: 2.22
+ *
+ * Deprecated: 3.22: This information is not useful
  */
 GdkByteOrder
 gdk_visual_get_byte_order (GdkVisual *visual)
@@ -321,9 +355,14 @@ gdk_visual_get_byte_order (GdkVisual *visual)
  *
  * Returns the size of a colormap for this visual.
  *
+ * You have to use platform-specific APIs to manipulate colormaps.
+ *
  * Returns: The size of a colormap that is suitable for @visual.
  *
  * Since: 2.22
+ *
+ * Deprecated: 3.22: This information is not useful, since GDK does not
+ *     provide APIs to operate on colormaps.
  */
 gint
 gdk_visual_get_colormap_size (GdkVisual *visual)
@@ -339,9 +378,14 @@ gdk_visual_get_colormap_size (GdkVisual *visual)
  *
  * Returns the number of significant bits per red, green and blue value.
  *
+ * Not all GDK backend provide a meaningful value for this function.
+ *
  * Returns: The number of significant bits per color value for @visual.
  *
  * Since: 2.22
+ *
+ * Deprecated: 3.22. Use gdk_visual_get_red_pixel_details() and its variants to
+ *     learn about the pixel layout of TrueColor and DirectColor visuals
  */
 gint
 gdk_visual_get_bits_per_rgb (GdkVisual *visual)
@@ -349,6 +393,43 @@ gdk_visual_get_bits_per_rgb (GdkVisual *visual)
   g_return_val_if_fail (GDK_IS_VISUAL (visual), 0);
 
   return visual->bits_per_rgb;
+}
+
+static void
+gdk_visual_get_pixel_details (GdkVisual *visual,
+                              gulong     pixel_mask,
+                              guint32   *mask,
+                              gint      *shift,
+                              gint      *precision)
+{
+  gulong m = 0;
+  gint s = 0;
+  gint p = 0;
+
+  if (pixel_mask != 0)
+    {
+      m = pixel_mask;
+      while (!(m & 0x1))
+        {
+          s++;
+          m >>= 1;
+        }
+
+      while (m & 0x1)
+        {
+          p++;
+          m >>= 1;
+        }
+    }
+
+  if (mask)
+    *mask = pixel_mask;
+
+  if (shift)
+    *shift = s;
+
+  if (precision)
+    *precision = p;
 }
 
 /**
@@ -374,14 +455,7 @@ gdk_visual_get_red_pixel_details (GdkVisual *visual,
 {
   g_return_if_fail (GDK_IS_VISUAL (visual));
 
-  if (mask)
-    *mask = visual->red_mask;
-
-  if (shift)
-    *shift = visual->red_shift;
-
-  if (precision)
-    *precision = visual->red_prec;
+  gdk_visual_get_pixel_details (visual, visual->red_mask, mask, shift, precision);
 }
 
 /**
@@ -407,14 +481,7 @@ gdk_visual_get_green_pixel_details (GdkVisual *visual,
 {
   g_return_if_fail (GDK_IS_VISUAL (visual));
 
-  if (mask)
-    *mask = visual->green_mask;
-
-  if (shift)
-    *shift = visual->green_shift;
-
-  if (precision)
-    *precision = visual->green_prec;
+  gdk_visual_get_pixel_details (visual, visual->green_mask, mask, shift, precision);
 }
 
 /**
@@ -440,14 +507,7 @@ gdk_visual_get_blue_pixel_details (GdkVisual *visual,
 {
   g_return_if_fail (GDK_IS_VISUAL (visual));
 
-  if (mask)
-    *mask = visual->blue_mask;
-
-  if (shift)
-    *shift = visual->blue_shift;
-
-  if (precision)
-    *precision = visual->blue_prec;
+  gdk_visual_get_pixel_details (visual, visual->blue_mask, mask, shift, precision);
 }
 
 /**

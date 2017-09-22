@@ -6,6 +6,18 @@
     <property name="step-increment">1</property>
     <property name="page-increment">1</property>
   </object>
+  <object class="GtkAdjustment" id="font_scale_adjustment">
+    <property name="lower">0.5</property>
+    <property name="upper">2</property>
+    <property name="step-increment">0.01</property>
+    <property name="page-increment">0.01</property>
+  </object>
+  <object class="GtkAdjustment" id="slowdown_adjustment">
+    <property name="lower">-3</property>
+    <property name="upper">3</property>
+    <property name="step-increment">1</property>
+    <property name="page-increment">1</property>
+  </object>
   <object class="GtkAdjustment" id="cursor_size_adjustment">
     <property name="lower">24</property>
     <property name="upper">64</property>
@@ -156,6 +168,8 @@
                             <property name="visible">True</property>
                             <property name="halign">end</property>
                             <property name="valign">baseline</property>
+                            <property name="max-width-chars">2</property>
+                            <property name="width-chars">2</property>
                             <property name="adjustment">cursor_size_adjustment</property>
                             <property name="snap-to-ticks">True</property>
                           </object>
@@ -228,6 +242,52 @@
                           <packing>
                             <property name="expand">True</property>
                           </packing>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkListBoxRow">
+                    <property name="visible">True</property>
+                    <property name="activatable">False</property>
+                    <child>
+                      <object class="GtkBox">
+                        <property name="visible">True</property>
+                        <property name="orientation">horizontal</property>
+                        <property name="margin">10</property>
+                        <property name="spacing">20</property>
+                        <child>
+                          <object class="GtkLabel" id="font_scale_label">
+                            <property name="visible">True</property>
+                            <property name="label" translatable="yes">Font Scale</property>
+                            <property name="halign">start</property>
+                            <property name="valign">baseline</property>
+                            <property name="xalign">0.0</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkScale" id="font_scale_scale">
+                            <property name="visible">True</property>
+                            <property name="valign">baseline</property>
+                            <property name="adjustment">font_scale_adjustment</property>
+                            <property name="draw_value">0</property>
+                            <marks>
+                              <mark value="1.0" position="top"/>
+                            </marks>
+                          </object>
+                          <packing>
+                            <property name="expand">True</property>
+                          </packing>
+                        </child>
+                        <child>
+                          <object class="GtkEntry" id="font_scale_entry">
+                            <property name="visible">True</property>
+                            <property name="halign">end</property>
+                            <property name="valign">baseline</property>
+                            <property name="width-chars">4</property>
+                            <property name="input-purpose">number</property>
+                          </object>
                         </child>
                       </object>
                     </child>
@@ -334,6 +394,53 @@
                           <packing>
                             <property name="expand">True</property>
                           </packing>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkListBoxRow">
+                    <property name="visible">True</property>
+                    <property name="activatable">False</property>
+                    <child>
+                      <object class="GtkBox">
+                        <property name="visible">True</property>
+                        <property name="orientation">horizontal</property>
+                        <property name="margin">10</property>
+                        <property name="spacing">20</property>
+                        <child>
+                          <object class="GtkLabel" id="slowdown_label">
+                            <property name="visible">True</property>
+                            <property name="label" translatable="yes">Slowdown</property>
+                            <property name="halign">start</property>
+                            <property name="valign">baseline</property>
+                            <property name="xalign">0.0</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkScale" id="slowdown_scale">
+                            <property name="visible">1</property>
+                            <property name="can_focus">1</property>
+                            <property name="adjustment">slowdown_adjustment</property>
+                            <property name="valign">baseline</property>
+                            <property name="draw_value">0</property>
+                            <marks>
+                              <mark value="0.0" position="top"/>
+                            </marks>
+                          </object>
+                          <packing>
+                            <property name="expand">True</property>
+                          </packing>
+                        </child>
+                        <child>
+                          <object class="GtkEntry" id="slowdown_entry">
+                            <property name="visible">True</property>
+                            <property name="halign">end</property>
+                            <property name="valign">baseline</property>
+                            <property name="width-chars">4</property>
+                            <property name="input-purpose">number</property>
+                          </object>
                         </child>
                       </object>
                     </child>
@@ -469,6 +576,40 @@
                         <property name="margin">10</property>
                         <property name="spacing">40</property>
                         <child>
+                          <object class="GtkLabel" id="layout_label">
+                            <property name="visible">True</property>
+                            <property name="label" translatable="yes">Show Layout Borders</property>
+                            <property name="halign">start</property>
+                            <property name="valign">baseline</property>
+                            <property name="xalign">0.0</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkSwitch" id="layout_switch">
+                            <property name="visible">True</property>
+                            <property name="halign">end</property>
+                            <property name="valign">baseline</property>
+                            <signal name="notify::active" handler="layout_activate"/>
+                          </object>
+                          <packing>
+                            <property name="expand">True</property>
+                          </packing>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkListBoxRow">
+                    <property name="visible">True</property>
+                    <property name="activatable">False</property>
+                    <child>
+                      <object class="GtkBox">
+                        <property name="visible">True</property>
+                        <property name="orientation">horizontal</property>
+                        <property name="margin">10</property>
+                        <property name="spacing">40</property>
+                        <child>
                           <object class="GtkLabel" id="pixelcache_label">
                             <property name="visible">True</property>
                             <property name="label" translatable="yes">Show Pixel Cache</property>
@@ -483,6 +624,40 @@
                             <property name="halign">end</property>
                             <property name="valign">baseline</property>
                             <signal name="notify::active" handler="pixelcache_activate"/>
+                          </object>
+                          <packing>
+                            <property name="expand">True</property>
+                          </packing>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkListBoxRow">
+                    <property name="visible">True</property>
+                    <property name="activatable">False</property>
+                    <child>
+                      <object class="GtkBox">
+                        <property name="visible">True</property>
+                        <property name="orientation">horizontal</property>
+                        <property name="margin">10</property>
+                        <property name="spacing">40</property>
+                        <child>
+                          <object class="GtkLabel">
+                            <property name="visible">True</property>
+                            <property name="label" translatable="yes">Show Widget Resizes</property>
+                            <property name="halign">start</property>
+                            <property name="valign">baseline</property>
+                            <property name="xalign">0.0</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkSwitch" id="widget_resize_switch">
+                            <property name="visible">True</property>
+                            <property name="halign">end</property>
+                            <property name="valign">baseline</property>
+                            <signal name="notify::active" handler="widget_resize_activate"/>
                           </object>
                           <packing>
                             <property name="expand">True</property>
@@ -699,6 +874,7 @@
       <widget name="rendering_mode_label"/>
       <widget name="updates_label"/>
       <widget name="baselines_label"/>
+      <widget name="layout_label"/>
       <widget name="pixelcache_label"/>
       <widget name="touchscreen_label"/>
       <widget name="gl_label"/>

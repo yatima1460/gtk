@@ -83,8 +83,63 @@ _gdk_wayland_display_finalize_cursors (GdkWaylandDisplay *display)
   g_hash_table_destroy (display->cursor_cache);
 }
 
+static const struct {
+  const gchar *css_name, *traditional_name;
+} name_map[] = {
+  { "default",      "left_ptr" },
+  { "help",         "left_ptr" },
+  { "context-menu", "left_ptr" },
+  { "pointer",      "hand" },
+  { "progress",     "left_ptr_watch" },
+  { "wait",         "watch" },
+  { "cell",         "crosshair" },
+  { "crosshair",    "cross" },
+  { "text",         "xterm" },
+  { "vertical-text","xterm" },
+  { "alias",        "dnd-link" },
+  { "copy",         "dnd-copy" },
+  { "move",         "dnd-move" },
+  { "no-drop",      "dnd-none" },
+  { "dnd-ask",      "dnd-copy" }, /* not CSS, but we want to guarantee it anyway */
+  { "not-allowed",  "crossed_circle" },
+  { "grab",         "hand2" },
+  { "grabbing",     "hand2" },
+  { "all-scroll",   "left_ptr" },
+  { "col-resize",   "h_double_arrow" },
+  { "row-resize",   "v_double_arrow" },
+  { "n-resize",     "top_side" },
+  { "e-resize",     "right_side" },
+  { "s-resize",     "bottom_side" },
+  { "w-resize",     "left_side" },
+  { "ne-resize",    "top_right_corner" },
+  { "nw-resize",    "top_left_corner" },
+  { "se-resize",    "bottom_right_corner" },
+  { "sw-resize",    "bottom_left_corner" },
+  { "ew-resize",    "h_double_arrow" },
+  { "ns-resize",    "v_double_arrow" },
+  { "nesw-resize",  "fd_double_arrow" },
+  { "nwse-resize",  "bd_double_arrow" },
+  { "zoom-in",      "left_ptr" },
+  { "zoom-out",     "left_ptr" },
+  { NULL, NULL }
+};
+
+static const gchar *
+name_fallback (const gchar *name)
+{
+  gint i;
+
+  for (i = 0; name_map[i].css_name; i++)
+    {
+      if (g_str_equal (name_map[i].css_name, name))
+        return name_map[i].traditional_name;
+    }
+
+  return NULL;
+}
+
 static gboolean
-_gdk_wayland_cursor_update (GdkWaylandDisplay *wayland_display,
+_gdk_wayland_cursor_update (GdkWaylandDisplay *display_wayland,
                             GdkWaylandCursor  *cursor)
 {
   struct wl_cursor *c;
@@ -94,18 +149,26 @@ _gdk_wayland_cursor_update (GdkWaylandDisplay *wayland_display,
   if (cursor->name == NULL)
     return FALSE;
 
-  theme = _gdk_wayland_display_get_scaled_cursor_theme (wayland_display,
+  theme = _gdk_wayland_display_get_scaled_cursor_theme (display_wayland,
                                                         cursor->scale);
   c = wl_cursor_theme_get_cursor (theme, cursor->name);
   if (!c)
     {
-      g_warning (G_STRLOC ": Unable to load %s from the cursor theme", cursor->name);
+      const char *fallback;
 
-      /* return the left_ptr cursor as a fallback */
-      c = wl_cursor_theme_get_cursor (theme, "left_ptr");
+      fallback = name_fallback (cursor->name);
+      if (fallback)
+        {
+          c = wl_cursor_theme_get_cursor (theme, name_fallback (cursor->name));
+          if (!c)
+            c = wl_cursor_theme_get_cursor (theme, "left_ptr");
+        }
+    }
 
-      if (!c)
-        return FALSE;
+  if (!c)
+    {
+      g_message ("Unable to load %s from the cursor theme", cursor->name);
+      return FALSE;
     }
 
   cursor->wl_cursor = c;
@@ -153,7 +216,7 @@ _gdk_wayland_cursor_get_buffer (GdkCursor *cursor,
                                 int       *hotspot_y,
                                 int       *w,
                                 int       *h,
-				int       *scale)
+                                int       *scale)
 {
   GdkWaylandCursor *wayland_cursor = GDK_WAYLAND_CURSOR (cursor);
 
@@ -171,19 +234,21 @@ _gdk_wayland_cursor_get_buffer (GdkCursor *cursor,
 
       image = wayland_cursor->wl_cursor->images[image_index];
 
-      *hotspot_x = image->hotspot_x;
-      *hotspot_y = image->hotspot_y;
+      *hotspot_x = image->hotspot_x / wayland_cursor->scale;
+      *hotspot_y = image->hotspot_y / wayland_cursor->scale;
 
-      *w = image->width;
-      *h = image->height;
+      *w = image->width / wayland_cursor->scale;
+      *h = image->height / wayland_cursor->scale;
       *scale = wayland_cursor->scale;
 
       return wl_cursor_image_get_buffer (image);
     }
   else if (wayland_cursor->name == NULL) /* From surface */
     {
-      *hotspot_x = wayland_cursor->surface.hotspot_x;
-      *hotspot_y = wayland_cursor->surface.hotspot_y;
+      *hotspot_x =
+        wayland_cursor->surface.hotspot_x / wayland_cursor->surface.scale;
+      *hotspot_y =
+        wayland_cursor->surface.hotspot_y / wayland_cursor->surface.scale;
 
       *w = wayland_cursor->surface.width / wayland_cursor->surface.scale;
       *h = wayland_cursor->surface.height / wayland_cursor->surface.scale;
@@ -228,7 +293,7 @@ void
 _gdk_wayland_cursor_set_scale (GdkCursor *cursor,
                                guint      scale)
 {
-  GdkWaylandDisplay *wayland_display =
+  GdkWaylandDisplay *display_wayland =
     GDK_WAYLAND_DISPLAY (gdk_cursor_get_display (cursor));
   GdkWaylandCursor *wayland_cursor = GDK_WAYLAND_CURSOR (cursor);
 
@@ -243,7 +308,7 @@ _gdk_wayland_cursor_set_scale (GdkCursor *cursor,
 
   wayland_cursor->scale = scale;
 
-  _gdk_wayland_cursor_update (wayland_display, wayland_cursor);
+  _gdk_wayland_cursor_update (display_wayland, wayland_cursor);
 }
 
 static void
@@ -265,7 +330,47 @@ _gdk_wayland_cursor_init (GdkWaylandCursor *cursor)
 static GdkCursor *
 _gdk_wayland_display_get_cursor_for_name_with_scale (GdkDisplay  *display,
                                                      const gchar *name,
-                                                     guint        scale);
+                                                     guint        scale)
+{
+  GdkWaylandCursor *private;
+  GdkWaylandDisplay *display_wayland = GDK_WAYLAND_DISPLAY (display);
+
+  g_return_val_if_fail (GDK_IS_DISPLAY (display), NULL);
+
+  private = g_hash_table_lookup (display_wayland->cursor_cache, name);
+  if (private)
+    return GDK_CURSOR (g_object_ref (private));
+
+  private = g_object_new (GDK_TYPE_WAYLAND_CURSOR,
+                          "cursor-type", GDK_CURSOR_IS_PIXMAP,
+                          "display", display,
+                          NULL);
+  private->name = g_strdup (name);
+  private->scale = scale;
+
+  /* Blank cursor case */
+  if (!name || g_str_equal (name, "none") || g_str_equal (name, "blank_cursor"))
+    return GDK_CURSOR (private);
+
+  if (!_gdk_wayland_cursor_update (display_wayland, private))
+    {
+      g_object_unref (private);
+      return NULL;
+    }
+
+  /* Insert into cache. */
+  g_hash_table_insert (display_wayland->cursor_cache,
+                       private->name,
+                       g_object_ref (private));
+  return GDK_CURSOR (private);
+}
+
+GdkCursor *
+_gdk_wayland_display_get_cursor_for_name (GdkDisplay  *display,
+                                          const gchar *name)
+{
+  return _gdk_wayland_display_get_cursor_for_name_with_scale (display, name, 1);
+}
 
 GdkCursor *
 _gdk_wayland_display_get_cursor_for_type_with_scale (GdkDisplay    *display,
@@ -301,45 +406,18 @@ _gdk_wayland_display_get_cursor_for_type (GdkDisplay    *display,
                                                               1);
 }
 
-static GdkCursor *
-_gdk_wayland_display_get_cursor_for_name_with_scale (GdkDisplay  *display,
-                                                     const gchar *name,
-                                                     guint        scale)
+static void
+buffer_release_callback (void             *_data,
+                         struct wl_buffer *wl_buffer)
 {
-  GdkWaylandCursor *private;
-  GdkWaylandDisplay *wayland_display = GDK_WAYLAND_DISPLAY (display);
+  cairo_surface_t *cairo_surface = _data;
 
-  g_return_val_if_fail (GDK_IS_DISPLAY (display), NULL);
-
-  private = g_hash_table_lookup (wayland_display->cursor_cache, name);
-  if (private)
-    return GDK_CURSOR (g_object_ref (private));
-
-  private = g_object_new (GDK_TYPE_WAYLAND_CURSOR,
-                          "cursor-type", GDK_CURSOR_IS_PIXMAP,
-                          "display", display,
-                          NULL);
-  private->name = g_strdup (name);
-  private->scale = scale;
-
-  /* Blank cursor case */
-  if (!name || g_str_equal (name, "blank_cursor"))
-    return GDK_CURSOR (private);
-
-  if (!_gdk_wayland_cursor_update (wayland_display, private))
-    return GDK_CURSOR (private);
-
-  /* Insert into cache. */
-  g_hash_table_insert (wayland_display->cursor_cache, private->name, g_object_ref (private));
-  return GDK_CURSOR (private);
+  cairo_surface_destroy (cairo_surface);
 }
 
-GdkCursor *
-_gdk_wayland_display_get_cursor_for_name (GdkDisplay  *display,
-                                          const gchar *name)
-{
-  return _gdk_wayland_display_get_cursor_for_name_with_scale (display, name, 1);
-}
+static const struct wl_buffer_listener buffer_listener = {
+  buffer_release_callback
+};
 
 GdkCursor *
 _gdk_wayland_display_get_cursor_for_surface (GdkDisplay *display,
@@ -348,12 +426,13 @@ _gdk_wayland_display_get_cursor_for_surface (GdkDisplay *display,
 					     gdouble     y)
 {
   GdkWaylandCursor *cursor;
-  GdkWaylandDisplay *wayland_display = GDK_WAYLAND_DISPLAY (display);
+  GdkWaylandDisplay *display_wayland = GDK_WAYLAND_DISPLAY (display);
+  struct wl_buffer *buffer;
   cairo_t *cr;
 
   cursor = g_object_new (GDK_TYPE_WAYLAND_CURSOR,
 			 "cursor-type", GDK_CURSOR_IS_PIXMAP,
-			 "display", wayland_display,
+			 "display", display_wayland,
 			 NULL);
   cursor->name = NULL;
   cursor->surface.hotspot_x = x;
@@ -375,10 +454,15 @@ _gdk_wayland_display_get_cursor_for_surface (GdkDisplay *display,
       cursor->surface.height = 1;
     }
 
-  cursor->surface.cairo_surface = _gdk_wayland_display_create_shm_surface (wayland_display,
-                                                                           cursor->surface.width,
-                                                                           cursor->surface.height,
-                                                                           cursor->surface.scale);
+  cursor->surface.cairo_surface =
+    _gdk_wayland_display_create_shm_surface (display_wayland,
+                                             cursor->surface.width,
+                                             cursor->surface.height,
+                                             cursor->surface.scale);
+
+  buffer = _gdk_wayland_shm_surface_get_wl_buffer (cursor->surface.cairo_surface);
+  wl_buffer_add_listener (buffer, &buffer_listener, cursor->surface.cairo_surface);
+
   if (surface)
     {
       cr = cairo_create (cursor->surface.cairo_surface);

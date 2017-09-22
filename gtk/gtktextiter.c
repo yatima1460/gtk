@@ -26,6 +26,7 @@
 #include "config.h"
 #include "gtktextiter.h"
 #include "gtktextbtree.h"
+#include "gtktextbufferprivate.h"
 #include "gtktextiterprivate.h"
 #include "gtkintl.h"
 #include "gtkdebug.h"
@@ -369,7 +370,7 @@ is_segment_start (GtkTextRealIter *real)
 static void
 check_invariants (const GtkTextIter *iter)
 {
-  if (gtk_get_debug_flags () & GTK_DEBUG_TEXT)
+  if (GTK_DEBUG_CHECK (TEXT))
     _gtk_text_iter_check (iter);
 }
 #else
@@ -1152,25 +1153,26 @@ gtk_text_iter_get_toggled_tags  (const GtkTextIter  *iter,
 }
 
 /**
- * gtk_text_iter_begins_tag:
+ * gtk_text_iter_starts_tag:
  * @iter: an iterator
- * @tag: (allow-none): a #GtkTextTag, or %NULL
+ * @tag: (nullable): a #GtkTextTag, or %NULL
  *
  * Returns %TRUE if @tag is toggled on at exactly this point. If @tag
  * is %NULL, returns %TRUE if any tag is toggled on at this point.
  *
- * Note that if gtk_text_iter_begins_tag() returns %TRUE, it means that @iter is
+ * Note that if gtk_text_iter_starts_tag() returns %TRUE, it means that @iter is
  * at the beginning of the tagged range, and that the
  * character at @iter is inside the tagged range. In other
- * words, unlike gtk_text_iter_ends_tag(), if gtk_text_iter_begins_tag() returns
+ * words, unlike gtk_text_iter_ends_tag(), if gtk_text_iter_starts_tag() returns
  * %TRUE, gtk_text_iter_has_tag() will also return %TRUE for the same
  * parameters.
  *
  * Returns: whether @iter is the start of a range tagged with @tag
+ * Since: 3.20
  **/
 gboolean
-gtk_text_iter_begins_tag    (const GtkTextIter  *iter,
-                             GtkTextTag         *tag)
+gtk_text_iter_starts_tag (const GtkTextIter *iter,
+                          GtkTextTag        *tag)
 {
   GtkTextRealIter *real;
   GtkTextLineSegment *seg;
@@ -1201,6 +1203,31 @@ gtk_text_iter_begins_tag    (const GtkTextIter  *iter,
 }
 
 /**
+ * gtk_text_iter_begins_tag:
+ * @iter: an iterator
+ * @tag: (nullable): a #GtkTextTag, or %NULL
+ *
+ * Returns %TRUE if @tag is toggled on at exactly this point. If @tag
+ * is %NULL, returns %TRUE if any tag is toggled on at this point.
+ *
+ * Note that if gtk_text_iter_begins_tag() returns %TRUE, it means that @iter is
+ * at the beginning of the tagged range, and that the
+ * character at @iter is inside the tagged range. In other
+ * words, unlike gtk_text_iter_ends_tag(), if gtk_text_iter_begins_tag() returns
+ * %TRUE, gtk_text_iter_has_tag() will also return %TRUE for the same
+ * parameters.
+ *
+ * Returns: whether @iter is the start of a range tagged with @tag
+ * Deprecated: 3.20: Use gtk_text_iter_starts_tag() instead.
+ **/
+gboolean
+gtk_text_iter_begins_tag (const GtkTextIter *iter,
+                          GtkTextTag        *tag)
+{
+  return gtk_text_iter_starts_tag (iter, tag);
+}
+
+/**
  * gtk_text_iter_ends_tag:
  * @iter: an iterator
  * @tag: (allow-none): a #GtkTextTag, or %NULL
@@ -1211,7 +1238,7 @@ gtk_text_iter_begins_tag    (const GtkTextIter  *iter,
  * Note that if gtk_text_iter_ends_tag() returns %TRUE, it means that @iter is
  * at the end of the tagged range, but that the character
  * at @iter is outside the tagged range. In other words,
- * unlike gtk_text_iter_begins_tag(), if gtk_text_iter_ends_tag() returns %TRUE,
+ * unlike gtk_text_iter_starts_tag(), if gtk_text_iter_ends_tag() returns %TRUE,
  * gtk_text_iter_has_tag() will return %FALSE for the same parameters.
  *
  * Returns: whether @iter is the end of a range tagged with @tag
@@ -1253,7 +1280,7 @@ gtk_text_iter_ends_tag   (const GtkTextIter  *iter,
  * @iter: an iterator
  * @tag: (allow-none): a #GtkTextTag, or %NULL
  *
- * This is equivalent to (gtk_text_iter_begins_tag() ||
+ * This is equivalent to (gtk_text_iter_starts_tag() ||
  * gtk_text_iter_ends_tag()), i.e. it tells you whether a range with
  * @tag applied to it begins or ends at @iter.
  *
@@ -1296,7 +1323,7 @@ gtk_text_iter_toggles_tag (const GtkTextIter  *iter,
  * @tag: a #GtkTextTag
  *
  * Returns %TRUE if @iter points to a character that is part of a range tagged
- * with @tag. See also gtk_text_iter_begins_tag() and gtk_text_iter_ends_tag().
+ * with @tag. See also gtk_text_iter_starts_tag() and gtk_text_iter_ends_tag().
  *
  * Returns: whether @iter is tagged with @tag
  **/
@@ -2577,6 +2604,8 @@ gtk_text_iter_backward_line (GtkTextIter *iter)
   if (real == NULL)
     return FALSE;
 
+  ensure_char_offsets (real);
+
   check_invariants (iter);
 
   new_line = _gtk_text_line_previous (real->line);
@@ -3046,9 +3075,12 @@ inside_sentence_func (const PangoLogAttr *attrs,
                       gint                len)
 {
   /* Find next sentence start or end */
-  while (offset >= min_offset &&
-         !(attrs[offset].is_sentence_start || attrs[offset].is_sentence_end))
-    --offset;
+  while (!(attrs[offset].is_sentence_start || attrs[offset].is_sentence_end))
+    {
+      --offset;
+      if (offset < min_offset)
+        return FALSE;
+    }
 
   return attrs[offset].is_sentence_start;
 }
@@ -5308,37 +5340,34 @@ gtk_text_iter_backward_search (const GtkTextIter *iter,
         {
           /* Match! */
           gint offset;
-          GtkTextIter next;
           GtkTextIter start_tmp;
-          
+          GtkTextIter end_tmp;
+
           /* Offset to start of search string */
           offset = g_utf8_strlen (*win.lines, first_line_match - *win.lines);
 
-          next = win.first_line_start;
-          start_tmp = next;
+          start_tmp = win.first_line_start;
           forward_chars_with_skipping (&start_tmp, offset,
                                        visible_only, !slice, FALSE);
 
           if (limit &&
               gtk_text_iter_compare (limit, &start_tmp) > 0)
             goto out; /* match was bogus */
-          
+
           if (match_start)
             *match_start = start_tmp;
 
           /* Go to end of search string */
-          l = lines;
-          while (*l)
-            {
-              offset += g_utf8_strlen (*l, -1);
-              ++l;
-            }
+          offset = 0;
+          for (l = lines; *l != NULL; l++)
+            offset += g_utf8_strlen (*l, -1);
 
-          forward_chars_with_skipping (&next, offset,
+          end_tmp = start_tmp;
+          forward_chars_with_skipping (&end_tmp, offset,
                                        visible_only, !slice, case_insensitive);
 
           if (match_end)
-            *match_end = next;
+            *match_end = end_tmp;
 
           retval = TRUE;
           goto out;
@@ -5648,14 +5677,21 @@ _gtk_text_btree_get_iter_at_last_toggle  (GtkTextBTree   *tree,
                                           GtkTextIter    *iter,
                                           GtkTextTag     *tag)
 {
+  gboolean found;
+
   g_return_val_if_fail (iter != NULL, FALSE);
   g_return_val_if_fail (tree != NULL, FALSE);
 
   _gtk_text_btree_get_end_iter (tree, iter);
-  gtk_text_iter_backward_to_tag_toggle (iter, tag);
+
+  if (gtk_text_iter_toggles_tag (iter, tag))
+    found = TRUE;
+  else
+    found = gtk_text_iter_backward_to_tag_toggle (iter, tag);
+
   check_invariants (iter);
   
-  return TRUE;
+  return found;
 }
 
 gboolean

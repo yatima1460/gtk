@@ -25,10 +25,8 @@
 G_BEGIN_DECLS
 
 
-GList *  _gtk_container_get_all_children       (GtkContainer *container);
-void     _gtk_container_queue_resize           (GtkContainer *container);
+void     gtk_container_queue_resize_handler    (GtkContainer *container);
 void     _gtk_container_queue_restyle          (GtkContainer *container);
-void     _gtk_container_resize_invalidate      (GtkContainer *container);
 void     _gtk_container_clear_resize_widgets   (GtkContainer *container);
 gchar*   _gtk_container_child_composite_name   (GtkContainer *container,
                                                 GtkWidget    *child);
@@ -44,6 +42,10 @@ void      _gtk_container_maybe_start_idle_sizer (GtkContainer *container);
 gboolean  _gtk_container_get_border_width_set   (GtkContainer *container);
 void      _gtk_container_set_border_width_set   (GtkContainer *container,
                                                  gboolean      border_width_set);
+void      gtk_container_get_children_clip       (GtkContainer  *container,
+                                                 GtkAllocation *out_clip);
+void      gtk_container_set_default_resize_mode (GtkContainer *container,
+                                                 GtkResizeMode resize_mode);
 
 G_END_DECLS
 

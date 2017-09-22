@@ -7,15 +7,15 @@
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as
- * published by the Free Software Foundation; either version 2 of the
+ * published by the Free Software Foundation; either version 2.1 of the
  * License, or (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * GNU Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
+ * You should have received a copy of the GNU Lesser General Public License
  * along with this program; if not, see <http://www.gnu.org/licenses/>.
  *
  * Authors: Federico Mena Quintero <federico@gnome.org>
@@ -31,8 +31,10 @@
 #include "gtkfilechooser.h" /* for the GError types */
 
 static void
-_gtk_bookmark_free (GtkBookmark *bookmark)
+_gtk_bookmark_free (gpointer data)
 {
+  GtkBookmark *bookmark = data;
+
   g_object_unref (bookmark->file);
   g_free (bookmark->label);
   g_slice_free (GtkBookmark, bookmark);
@@ -143,7 +145,7 @@ save_bookmarks (GFile  *bookmarks_file,
 
       g_string_append (contents, uri);
 
-      if (bookmark->label)
+      if (bookmark->label && g_utf8_validate (bookmark->label, -1, NULL))
 	g_string_append_printf (contents, " %s", bookmark->label);
 
       g_string_append_c (contents, '\n');
@@ -197,9 +199,7 @@ bookmarks_file_changed (GFileMonitor      *monitor,
     case G_FILE_MONITOR_EVENT_CHANGES_DONE_HINT:
     case G_FILE_MONITOR_EVENT_CREATED:
     case G_FILE_MONITOR_EVENT_DELETED:
-      g_slist_foreach (manager->bookmarks, (GFunc) _gtk_bookmark_free, NULL);
-      g_slist_free (manager->bookmarks);
-
+      g_slist_free_full (manager->bookmarks, _gtk_bookmark_free);
       manager->bookmarks = read_bookmarks (file);
 
       gdk_threads_enter ();
@@ -271,11 +271,7 @@ _gtk_bookmarks_manager_free (GtkBookmarksManager *manager)
       g_object_unref (manager->bookmarks_monitor);
     }
 
-  if (manager->bookmarks)
-    {
-      g_slist_foreach (manager->bookmarks, (GFunc) _gtk_bookmark_free, NULL);
-      g_slist_free (manager->bookmarks);
-    }
+  g_slist_free_full (manager->bookmarks, _gtk_bookmark_free);
 
   g_free (manager);
 }

@@ -129,6 +129,22 @@ on_alpha_window_draw (GtkWidget *widget,
   cairo_pattern_t *pattern;
   int radius, width, height;
 
+  /* Get the child allocation to avoid painting over the borders */
+  GtkWidget *child = gtk_bin_get_child (GTK_BIN (widget));
+  GtkAllocation child_allocation;
+  int border_width = gtk_container_get_border_width (GTK_CONTAINER (child));
+
+  gtk_widget_get_allocation (child, &child_allocation);
+  child_allocation.x -= border_width;
+  child_allocation.y -= border_width;
+  child_allocation.width += 2 * border_width;
+  child_allocation.height += 2 * border_width;
+
+  cairo_translate (cr, child_allocation.x, child_allocation.y);
+
+  cairo_rectangle (cr, 0, 0, child_allocation.width, child_allocation.height);
+  cairo_clip (cr);
+
   width = gtk_widget_get_allocated_width (widget);
   height = gtk_widget_get_allocated_height (widget);
   radius = MIN (width, height) / 2;
@@ -3366,103 +3382,6 @@ create_menus (GtkWidget *widget)
     gtk_widget_destroy (window);
 }
 
-/* GdkPixbuf RGBA C-Source image dump */
-
-static const guint8 apple[] = 
-{ ""
-  /* Pixbuf magic (0x47646b50) */
-  "GdkP"
-  /* length: header (24) + pixel_data (2304) */
-  "\0\0\11\30"
-  /* pixdata_type (0x1010002) */
-  "\1\1\0\2"
-  /* rowstride (96) */
-  "\0\0\0`"
-  /* width (24) */
-  "\0\0\0\30"
-  /* height (24) */
-  "\0\0\0\30"
-  /* pixel_data: */
-  "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
-  "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
-  "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
-  "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
-  "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
-  "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
-  "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\26\24"
-  "\17\11\0\0\0\2\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
-  "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0`m"
-  "[pn{a\344hv_\345_k[`\0\0\0\0\0\0\0\0\0\0\0\0D>/\305\0\0\0_\0\0\0\0\0"
-  "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
-  "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0`l[Blza\373s\202d\354w\206g\372p~c"
-  "\374`l[y\0\0\0\0[S\77/\27\25\17\335\0\0\0\20\0\0\0\0\0\0\0\0\0\0\0\0"
-  "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
-  "\0\0\0\0\0\0`l\\\20iw_\356y\211h\373x\207g\364~\216i\364u\204e\366gt"
-  "_\374^jX\241A;-_\0\0\0~\0\0\0\0SM4)SM21B9&\22\320\270\204\1\320\270\204"
-  "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0eq"
-  "]\212r\200c\366v\205f\371jx_\323_kY\232_kZH^jY\26]iW\211@G9\272:6%j\220"
-  "\211]\320\221\211`\377\212\203Z\377~xP\377mkE\331]^;|/0\37\21\0\0\0\0"
-  "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0ly`\40p~b\360lz`\353^kY\246["
-  "eT<\216\200Z\203\227\211_\354\234\217c\377\232\217b\362\232\220c\337"
-  "\243\233k\377\252\241p\377\250\236p\377\241\225h\377\231\214_\377\210"
-  "\202U\377srI\377[]:\355KO0U\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0i"
-  "v^\200`lY\211^jY\"\0\0\0\0\221\204\\\273\250\233r\377\302\267\224\377"
-  "\311\300\237\377\272\256\204\377\271\256\177\377\271\257\200\377\267"
-  "\260\177\377\260\251x\377\250\236l\377\242\225e\377\226\213]\377~zP\377"
-  "ff@\377QT5\377LR2d\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0]iW(\0\0\0\0\0\0\0"
-  "\0\213\203[v\253\240t\377\334\326\301\377\344\340\317\377\321\312\253"
-  "\377\303\271\217\377\300\270\213\377\277\267\210\377\272\264\203\377"
-  "\261\255z\377\250\242n\377\243\232h\377\232\220`\377\210\202V\377nnE"
-  "\377SW6\377RX6\364Za<\34\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0b]@\20"
-  "\234\222e\362\304\274\232\377\337\333\306\377\332\325\273\377\311\302"
-  "\232\377\312\303\236\377\301\273\216\377\300\271\212\377\270\264\200"
-  "\377\256\253v\377\246\243n\377\236\232h\377\230\220`\377\213\203V\377"
-  "wvL\377X]:\377KR0\377NU5v\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\212"
-  "\203Zl\242\234l\377\321\315\260\377\331\324\271\377\320\313\251\377\307"
-  "\301\232\377\303\276\224\377\300\272\214\377\274\267\206\377\264\260"
-  "|\377\253\251s\377\244\243n\377\232\230e\377\223\216^\377\207\200U\377"
-  "ttJ\377[_<\377HO/\377GN0\200\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
-  "\210\204Y\240\245\237o\377\316\310\253\377\310\303\237\377\304\300\230"
-  "\377\303\277\225\377\277\272\216\377\274\270\210\377\266\263\200\377"
-  "\256\254v\377\247\246p\377\237\236j\377\227\226d\377\215\212[\377\203"
-  "\177T\377qsH\377X]8\377FN.\377DK-\200\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
-  "\0\0\0\0\207\204X\257\244\240o\377\300\275\231\377\301\275\226\377\274"
-  "\270\213\377\274\270\214\377\267\264\205\377\264\262\200\377\260\256"
-  "z\377\251\251s\377\243\244n\377\231\232g\377\220\222`\377\210\211Y\377"
-  "|}Q\377hlC\377PU3\377CK,\377DL/Y\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
-  "\0\0\205\204X\220\232\230h\377\261\260\204\377\266\264\212\377\261\260"
-  "\201\377\263\260\200\377\260\257}\377\256\256x\377\253\254t\377\244\246"
-  "o\377\233\236i\377\221\224b\377\211\214\\\377\202\204V\377txM\377]b>"
-  "\377HP0\377@H+\373CJ-\25\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0xxO>"
-  "\215\215_\377\237\237r\377\247\247x\377\247\247t\377\252\252w\377\252"
-  "\252u\377\252\253t\377\243\246o\377\235\240j\377\223\230c\377\213\217"
-  "]\377\201\206V\377x}P\377gkD\377RY5\377BI,\377AI,\262\0\0\0\0\0\0\0\0"
-  "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\202\205W\312\216\220`\377\230"
-  "\232g\377\234\236i\377\236\241l\377\241\244n\377\240\244m\377\232\237"
-  "i\377\223\230c\377\212\221]\377\200\210W\377v|P\377jnG\377Za>\377HP2"
-  "\377=D)\377HQ1:\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
-  "\0wzQ6\177\201U\371\206\211Z\377\216\222`\377\220\225a\377\220\225b\377"
-  "\220\226a\377\213\221_\377\204\213Z\377{\203R\377ryN\377iqH\377^fA\377"
-  "R[;\377BJ-\3778@'\317\0\0\0>\0\0\0\36\0\0\0\7\0\0\0\0\0\0\0\0\0\0\0\0"
-  "\0\0\0\0\0\0\0\0\0\0\0\0ptJTw|Q\371z\177R\377}\202T\377|\203T\377z\200"
-  "R\377v|O\377pwL\377jpF\377dlB\377`hB\377Yb@\377LT6\377<C*\377\11\12\6"
-  "\376\0\0\0\347\0\0\0\262\0\0\0Y\0\0\0\32\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
-  "\0\0\0\0\0\0\0\0\0\0\\`=UgnE\370hnG\377gmE\377djB\377]d>\377[c<\377Y"
-  "b<\377Zc>\377V_>\377OW8\377BK/\377\16\20\12\377\0\0\0\377\0\0\0\377\0"
-  "\0\0\374\0\0\0\320\0\0\0I\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
-  "\0\1\0\0\0\40\22\24\15\260@D+\377W`;\377OV5\377.3\36\377.3\37\377IP0"
-  "\377RZ7\377PZ8\3776=&\377\14\15\10\377\0\0\0\377\0\0\0\377\0\0\0\377"
-  "\0\0\0\347\0\0\0\217\0\0\0""4\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
-  "\0\0\0\0\0\0\0\20\0\0\0P\0\0\0\252\7\10\5\346\7\7\5\375\0\0\0\377\0\0"
-  "\0\377\0\0\0\377\0\0\0\377\0\0\0\377\0\0\0\377\0\0\0\377\0\0\0\374\0"
-  "\0\0\336\0\0\0\254\0\0\0i\0\0\0""2\0\0\0\10\0\0\0\0\0\0\0\0\0\0\0\0\0"
-  "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\11\0\0\0\40\0\0\0D\0\0\0m\0\0\0"
-  "\226\0\0\0\234\0\0\0\234\0\0\0\244\0\0\0\246\0\0\0\232\0\0\0\202\0\0"
-  "\0i\0\0\0T\0\0\0,\0\0\0\15\0\0\0\2\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
-  "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\2\0\0\0\6\0\0\0"
-  "\16\0\0\0\22\0\0\0\24\0\0\0\23\0\0\0\17\0\0\0\14\0\0\0\13\0\0\0\10\0"
-  "\0\0\5\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"};
-
 
 static GtkWidget *
 accel_button_new (GtkAccelGroup *accel_group,
@@ -4848,6 +4767,7 @@ cursor_draw (GtkWidget *widget,
 }
 
 static const gchar *cursor_names[] = {
+    "all-scroll",
     "arrow",
     "bd_double_arrow",
     "boat",
@@ -4882,6 +4802,7 @@ static const gchar *cursor_names[] = {
     "fleur",
     "gobbler",
     "gumby",
+    "grab",
     "grabbing",
     "hand",
     "hand1",
@@ -4937,9 +4858,12 @@ static const gchar *cursor_names[] = {
     "umbrella",
     "ur_angle",
     "v_double_arrow",
+    "vertical-text",
     "watch",
     "X_cursor",
-    "xterm"
+    "xterm",
+    "zoom-in",
+    "zoom-out"
 };
 
 static GtkTreeModel *
@@ -5024,6 +4948,7 @@ static void
 change_cursor_theme (GtkWidget *widget,
 		     gpointer   data)
 {
+#if defined(GDK_WINDOWING_X11) || defined (GDK_WINDOWING_WAYLAND)
   const gchar *theme;
   gint size;
   GList *children;
@@ -5044,6 +4969,7 @@ change_cursor_theme (GtkWidget *widget,
 #ifdef GDK_WINDOWING_WAYLAND
   if (GDK_IS_WAYLAND_DISPLAY (display))
     gdk_wayland_display_set_cursor_theme (display, theme, size);
+#endif
 #endif
 }
 
@@ -5625,7 +5551,7 @@ static void
 screen_display_check (GtkWidget *widget, ScreenDisplaySelection *data)
 {
   const gchar *display_name;
-  GdkDisplay *display = gtk_widget_get_display (widget);
+  GdkDisplay *display;
   GtkWidget *dialog;
   GdkScreen *new_screen = NULL;
   GdkScreen *current_screen = gtk_widget_get_screen (widget);
@@ -6928,14 +6854,10 @@ shape_pressed (GtkWidget *widget, GdkEventButton *event)
   p->y = (int) event->y;
 
   gtk_grab_add (widget);
-  gdk_device_grab (gdk_event_get_device ((GdkEvent*)event),
-                   gtk_widget_get_window (widget),
-                   GDK_OWNERSHIP_NONE,
-                   TRUE,
-                   GDK_BUTTON_RELEASE_MASK |
-                   GDK_BUTTON_MOTION_MASK,
-                   NULL,
-                   event->time);
+  gdk_seat_grab (gdk_event_get_seat ((GdkEvent *) event),
+                 gtk_widget_get_window (widget),
+                 GDK_SEAT_CAPABILITY_ALL_POINTING,
+                 TRUE, NULL, (GdkEvent *) event, NULL, NULL);
 }
 
 static void
@@ -6943,7 +6865,7 @@ shape_released (GtkWidget      *widget,
                 GdkEventButton *event)
 {
   gtk_grab_remove (widget);
-  gdk_device_ungrab (gdk_event_get_device ((GdkEvent*)event), event->time);
+  gdk_seat_ungrab (gdk_event_get_seat ((GdkEvent *) event));
 }
 
 static void
@@ -7661,8 +7583,10 @@ set_geometry_callback (GtkWidget *entry,
   
   text = gtk_editable_get_chars (GTK_EDITABLE (entry), 0, -1);
 
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
   if (!gtk_window_parse_geometry (target, text))
     g_print ("Bad geometry string '%s'\n", text);
+G_GNUC_END_IGNORE_DEPRECATIONS
 
   g_free (text);
 }
@@ -8656,9 +8580,8 @@ snapshot_widget_event (GtkWidget	       *widget,
   if (event->type == GDK_BUTTON_RELEASE)
     {
       gtk_grab_remove (widget);
-      gdk_device_ungrab (gdk_event_get_device (event),
-			 GDK_CURRENT_TIME);
-      
+      gdk_seat_ungrab (gdk_event_get_seat (event));
+
       res_widget = find_widget_at_pointer (gdk_event_get_device (event));
       if (data->is_toplevel && res_widget)
 	res_widget = gtk_widget_get_toplevel (res_widget);
@@ -8709,22 +8632,16 @@ snapshot_widget (GtkButton *button,
   if (device == NULL)
     return;
 
-  if (gdk_device_get_source (device) == GDK_SOURCE_KEYBOARD)
-    device = gdk_device_get_associated_device (device);
-
   data->is_toplevel = widget == data->toplevel_button;
 
   if (!data->cursor)
     data->cursor = gdk_cursor_new_for_display (gtk_widget_get_display (widget),
 					       GDK_TARGET);
 
-  gdk_device_grab (device,
-                   gtk_widget_get_window (widget),
-                   GDK_OWNERSHIP_APPLICATION,
-		   TRUE,
-		   GDK_BUTTON_RELEASE_MASK,
-		   data->cursor,
-		   GDK_CURRENT_TIME);
+  gdk_seat_grab (gdk_device_get_seat (device),
+                 gtk_widget_get_window (widget),
+                 GDK_SEAT_CAPABILITY_ALL_POINTING,
+                 TRUE, data->cursor, NULL, NULL, NULL);
 
   g_signal_connect (button, "event",
 		    G_CALLBACK (snapshot_widget_event), data);
@@ -9393,6 +9310,384 @@ void create_layout (GtkWidget *widget)
     gtk_widget_destroy (window);
 }
 
+static void
+show_native (GtkWidget *button,
+             GtkFileChooserNative *native)
+{
+  gtk_native_dialog_show (GTK_NATIVE_DIALOG (native));
+}
+
+static void
+hide_native (GtkWidget *button,
+             GtkFileChooserNative *native)
+{
+  gtk_native_dialog_hide (GTK_NATIVE_DIALOG (native));
+}
+
+static void
+native_response (GtkNativeDialog *self,
+                 gint response_id,
+                 GtkWidget *label)
+{
+  static int count = 0;
+  char *res;
+  GSList *uris, *l;
+  GString *s;
+  char *response;
+  GtkFileFilter *filter;
+
+  uris = gtk_file_chooser_get_uris (GTK_FILE_CHOOSER (self));
+  filter = gtk_file_chooser_get_filter (GTK_FILE_CHOOSER (self));
+  s = g_string_new ("");
+  for (l = uris; l != NULL; l = l->next)
+    {
+      g_string_prepend (s, l->data);
+      g_string_prepend (s, "\n");
+    }
+
+  switch (response_id)
+    {
+    case GTK_RESPONSE_NONE:
+      response = g_strdup ("GTK_RESPONSE_NONE");
+      break;
+    case GTK_RESPONSE_ACCEPT:
+      response = g_strdup ("GTK_RESPONSE_ACCEPT");
+      break;
+    case GTK_RESPONSE_CANCEL:
+      response = g_strdup ("GTK_RESPONSE_CANCEL");
+      break;
+    case GTK_RESPONSE_DELETE_EVENT:
+      response = g_strdup ("GTK_RESPONSE_DELETE_EVENT");
+      break;
+    default:
+      response = g_strdup_printf ("%d", response_id);
+      break;
+    }
+
+  if (filter)
+    res = g_strdup_printf ("Response #%d: %s\n"
+                           "Filter: %s\n"
+                           "Files:\n"
+                           "%s",
+                           ++count,
+                           response,
+                           gtk_file_filter_get_name (filter),
+                           s->str);
+  else
+    res = g_strdup_printf ("Response #%d: %s\n"
+                           "NO Filter\n"
+                           "Files:\n"
+                           "%s",
+                           ++count,
+                           response,
+                           s->str);
+  gtk_label_set_text (GTK_LABEL (label), res);
+  g_free (response);
+  g_string_free (s, TRUE);
+}
+
+static void
+native_modal_toggle (GtkWidget *checkbutton,
+                     GtkFileChooserNative *native)
+{
+  gtk_native_dialog_set_modal (GTK_NATIVE_DIALOG (native),
+                               gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON(checkbutton)));
+}
+
+static void
+native_multi_select_toggle (GtkWidget *checkbutton,
+                            GtkFileChooserNative *native)
+{
+  gtk_file_chooser_set_select_multiple (GTK_FILE_CHOOSER (native),
+                                        gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON(checkbutton)));
+}
+
+static void
+native_overwrite_confirmation_toggle (GtkWidget *checkbutton,
+                                      GtkFileChooserNative *native)
+{
+  gtk_file_chooser_set_do_overwrite_confirmation (GTK_FILE_CHOOSER (native),
+                                                  gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON(checkbutton)));
+}
+
+static void
+native_extra_widget_toggle (GtkWidget *checkbutton,
+                            GtkFileChooserNative *native)
+{
+  gboolean extra_widget = gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON(checkbutton));
+
+  if (extra_widget)
+    {
+      GtkWidget *extra = gtk_check_button_new_with_label ("Extra toggle");
+      gtk_widget_show (extra);
+      gtk_file_chooser_set_extra_widget (GTK_FILE_CHOOSER (native), extra);
+    }
+  else
+    {
+      gtk_file_chooser_set_extra_widget (GTK_FILE_CHOOSER (native), NULL);
+    }
+}
+
+
+static void
+native_visible_notify_show (GObject	*object,
+                            GParamSpec	*pspec,
+                            GtkWidget   *show_button)
+{
+  GtkFileChooserNative *native = GTK_FILE_CHOOSER_NATIVE (object);
+  gboolean visible;
+
+  visible = gtk_native_dialog_get_visible (GTK_NATIVE_DIALOG (native));
+  gtk_widget_set_sensitive (show_button, !visible);
+}
+
+static void
+native_visible_notify_hide (GObject	*object,
+                            GParamSpec	*pspec,
+                            GtkWidget   *hide_button)
+{
+  GtkFileChooserNative *native = GTK_FILE_CHOOSER_NATIVE (object);
+  gboolean visible;
+
+  visible = gtk_native_dialog_get_visible (GTK_NATIVE_DIALOG (native));
+  gtk_widget_set_sensitive (hide_button, visible);
+}
+
+static char *
+get_some_file (void)
+{
+  GFile *dir = g_file_new_for_path (g_get_current_dir ());
+  GFileEnumerator *e;
+  char *res = NULL;
+
+  e = g_file_enumerate_children (dir, "*", 0, NULL, NULL);
+  if (e)
+    {
+      GFileInfo *info;
+
+      while (res == NULL)
+        {
+          info = g_file_enumerator_next_file (e, NULL, NULL);
+          if (info)
+            {
+              if (g_file_info_get_file_type (info) == G_FILE_TYPE_REGULAR)
+                {
+                  GFile *child = g_file_enumerator_get_child (e, info);
+                  res = g_file_get_path (child);
+                  g_object_unref (child);
+                }
+              g_object_unref (info);
+            }
+          else
+            break;
+        }
+    }
+
+  return res;
+}
+
+static void
+native_action_changed (GtkWidget *combo,
+                       GtkFileChooserNative *native)
+{
+  int i;
+  gboolean save_as = FALSE;
+  i = gtk_combo_box_get_active (GTK_COMBO_BOX (combo));
+
+  if (i == 4) /* Save as */
+    {
+      save_as = TRUE;
+      i = GTK_FILE_CHOOSER_ACTION_SAVE;
+    }
+
+  gtk_file_chooser_set_action (GTK_FILE_CHOOSER (native),
+                               (GtkFileChooserAction) i);
+
+
+  if (i == GTK_FILE_CHOOSER_ACTION_SAVE ||
+      i == GTK_FILE_CHOOSER_ACTION_CREATE_FOLDER)
+    {
+      if (save_as)
+        {
+          char *file = get_some_file ();
+          gtk_file_chooser_set_filename (GTK_FILE_CHOOSER (native), file);
+          g_free (file);
+        }
+      else
+        gtk_file_chooser_set_current_name (GTK_FILE_CHOOSER (native), "newname.txt");
+    }
+}
+
+static void
+native_filter_changed (GtkWidget *combo,
+                       GtkFileChooserNative *native)
+{
+  int i;
+  GSList *filters, *l;
+  GtkFileFilter *filter;
+
+  i = gtk_combo_box_get_active (GTK_COMBO_BOX (combo));
+
+  filters = gtk_file_chooser_list_filters (GTK_FILE_CHOOSER (native));
+  for (l = filters; l != NULL; l = l->next)
+    gtk_file_chooser_remove_filter (GTK_FILE_CHOOSER (native), l->data);
+  g_slist_free (filters);
+
+  switch (i)
+    {
+    case 0:
+      break;
+    case 1:   /* pattern */
+      filter = gtk_file_filter_new ();
+      gtk_file_filter_set_name (filter, "Text");
+      gtk_file_filter_add_pattern (filter, "*.doc");
+      gtk_file_filter_add_pattern (filter, "*.txt");
+      gtk_file_chooser_add_filter (GTK_FILE_CHOOSER (native), filter);
+
+      filter = gtk_file_filter_new ();
+      gtk_file_filter_set_name (filter, "Images");
+      gtk_file_filter_add_pixbuf_formats (filter);
+      gtk_file_chooser_add_filter (GTK_FILE_CHOOSER (native), filter);
+      gtk_file_chooser_set_filter (GTK_FILE_CHOOSER (native), filter);
+
+      filter = gtk_file_filter_new ();
+      gtk_file_filter_set_name (filter, "All");
+      gtk_file_filter_add_pattern (filter, "*");
+      gtk_file_chooser_add_filter (GTK_FILE_CHOOSER (native), filter);
+      break;
+
+    case 2:   /* mimetype */
+      filter = gtk_file_filter_new ();
+      gtk_file_filter_set_name (filter, "Text");
+      gtk_file_filter_add_mime_type (filter, "text/plain");
+      gtk_file_chooser_add_filter (GTK_FILE_CHOOSER (native), filter);
+
+      filter = gtk_file_filter_new ();
+      gtk_file_filter_set_name (filter, "All");
+      gtk_file_filter_add_pattern (filter, "*");
+      gtk_file_chooser_add_filter (GTK_FILE_CHOOSER (native), filter);
+      gtk_file_chooser_set_filter (GTK_FILE_CHOOSER (native), filter);
+      break;
+    }
+}
+
+static void
+destroy_native (GtkFileChooserNative *native)
+{
+  gtk_native_dialog_destroy (GTK_NATIVE_DIALOG (native));
+  g_object_unref (native);
+}
+
+void
+create_native_dialogs (GtkWidget *widget)
+{
+  static GtkWidget *window = NULL;
+  GtkWidget *box, *label;
+  GtkWidget *show_button, *hide_button, *check_button;
+  GtkFileChooserNative *native;
+  GtkWidget *combo;
+
+  if (!window)
+    {
+      window = gtk_window_new (GTK_WINDOW_TOPLEVEL);
+      gtk_window_set_screen (GTK_WINDOW (window),
+                             gtk_widget_get_screen (widget));
+
+      native = gtk_file_chooser_native_new ("Native title",
+                                            GTK_WINDOW (window),
+                                            GTK_FILE_CHOOSER_ACTION_OPEN,
+                                            "_accept&native",
+                                            "_cancel__native");
+
+      g_signal_connect_swapped (G_OBJECT (window), "destroy", G_CALLBACK (destroy_native), native);
+
+      gtk_file_chooser_add_shortcut_folder (GTK_FILE_CHOOSER (native),
+                                            g_get_current_dir (),
+                                            NULL);
+
+      gtk_window_set_title (GTK_WINDOW(window), "Native dialog parent");
+
+      box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 5);
+      gtk_container_add (GTK_CONTAINER (window), box);
+
+      label = gtk_label_new ("");
+      gtk_box_pack_start (GTK_BOX (box), label, FALSE, FALSE, 4);
+
+      combo = gtk_combo_box_text_new ();
+
+      gtk_combo_box_text_append_text (GTK_COMBO_BOX_TEXT (combo), "Open");
+      gtk_combo_box_text_append_text (GTK_COMBO_BOX_TEXT (combo), "Save");
+      gtk_combo_box_text_append_text (GTK_COMBO_BOX_TEXT (combo), "Select Folder");
+      gtk_combo_box_text_append_text (GTK_COMBO_BOX_TEXT (combo), "Create Folder");
+      gtk_combo_box_text_append_text (GTK_COMBO_BOX_TEXT (combo), "Save as");
+
+      g_signal_connect (combo, "changed",
+                        G_CALLBACK (native_action_changed), native);
+      gtk_combo_box_set_active (GTK_COMBO_BOX (combo), GTK_FILE_CHOOSER_ACTION_OPEN);
+      gtk_box_pack_start (GTK_BOX (box), combo, FALSE, FALSE, 4);
+
+      combo = gtk_combo_box_text_new ();
+
+      gtk_combo_box_text_append_text (GTK_COMBO_BOX_TEXT (combo), "No filters");
+      gtk_combo_box_text_append_text (GTK_COMBO_BOX_TEXT (combo), "Pattern filter");
+      gtk_combo_box_text_append_text (GTK_COMBO_BOX_TEXT (combo), "Mimetype filter");
+
+      g_signal_connect (combo, "changed",
+                        G_CALLBACK (native_filter_changed), native);
+      gtk_combo_box_set_active (GTK_COMBO_BOX (combo), 0);
+      gtk_box_pack_start (GTK_BOX (box), combo, FALSE, FALSE, 4);
+
+      check_button = gtk_check_button_new_with_label ("Modal");
+      g_signal_connect (check_button, "toggled",
+                        G_CALLBACK (native_modal_toggle), native);
+      gtk_box_pack_start (GTK_BOX (box), check_button, FALSE, FALSE, 4);
+
+      check_button = gtk_check_button_new_with_label ("Multiple select");
+      g_signal_connect (check_button, "toggled",
+                        G_CALLBACK (native_multi_select_toggle), native);
+      gtk_box_pack_start (GTK_BOX (box), check_button, FALSE, FALSE, 4);
+
+      check_button = gtk_check_button_new_with_label ("Confirm overwrite");
+      g_signal_connect (check_button, "toggled",
+                        G_CALLBACK (native_overwrite_confirmation_toggle), native);
+      gtk_box_pack_start (GTK_BOX (box), check_button, FALSE, FALSE, 4);
+
+      check_button = gtk_check_button_new_with_label ("Extra widget");
+      g_signal_connect (check_button, "toggled",
+                        G_CALLBACK (native_extra_widget_toggle), native);
+      gtk_box_pack_start (GTK_BOX (box), check_button, FALSE, FALSE, 4);
+
+      show_button = gtk_button_new_with_label ("Show");
+      hide_button = gtk_button_new_with_label ("Hide");
+      gtk_widget_set_sensitive (hide_button, FALSE);
+
+      gtk_box_pack_start (GTK_BOX (box), show_button, FALSE, FALSE, 4);
+      gtk_box_pack_start (GTK_BOX (box), hide_button, FALSE, FALSE, 4);
+
+      /* connect signals */
+      g_signal_connect (native, "response",
+                        G_CALLBACK (native_response), label);
+      g_signal_connect (show_button, "clicked",
+                        G_CALLBACK (show_native), native);
+      g_signal_connect (hide_button, "clicked",
+                        G_CALLBACK (hide_native), native);
+
+      g_signal_connect (native, "notify::visible",
+                        G_CALLBACK (native_visible_notify_show), show_button);
+      g_signal_connect (native, "notify::visible",
+                        G_CALLBACK (native_visible_notify_hide), hide_button);
+
+      g_signal_connect (window, "destroy",
+                        G_CALLBACK (gtk_widget_destroyed),
+                        &window);
+    }
+
+  if (!gtk_widget_get_visible (window))
+    gtk_widget_show_all (window);
+  else
+    gtk_widget_destroy (window);
+}
+
 /*
  * Main Window and Exit
  */
@@ -9436,6 +9731,7 @@ struct {
   { "menus", create_menus },
   { "message dialog", create_message_dialog },
   { "modal window", create_modal_window, TRUE },
+  { "native dialogs", create_native_dialogs },
   { "notebook", create_notebook },
   { "panes", create_panes },
   { "paned keyboard", create_paned_keyboard_navigation },
@@ -9778,7 +10074,8 @@ main (int argc, char *argv[])
   gtk_css_provider_load_from_data (memory_provider,
                                    "#testgtk-version-label {\n"
                                    "  color: #f00;\n"
-                                   "  font: Sans 18;\n"
+                                   "  font-family: Sans;\n"
+                                   "  font-size: 18px;\n"
                                    "}",
                                    -1, NULL);
   gtk_style_context_add_provider_for_screen (screen, GTK_STYLE_PROVIDER (memory_provider),

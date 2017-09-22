@@ -156,6 +156,13 @@ gdk_display_supports_input_shapes
 gdk_display_supports_composite
 gdk_display_get_app_launch_context
 gdk_display_notify_startup_complete
+gdk_display_get_default_seat
+gdk_display_list_seats
+gdk_display_get_n_monitors
+gdk_display_get_monitor
+gdk_display_get_primary_monitor
+gdk_display_get_monitor_at_point
+gdk_display_get_monitor_at_window
 
 <SUBSECTION Standard>
 GDK_DISPLAY
@@ -334,6 +341,7 @@ GdkWindowWindowClass
 GdkWindowHints
 GdkGeometry
 GdkGravity
+GdkAnchorHints
 GdkWindowEdge
 GdkWindowTypeHint
 GdkWindowAttr
@@ -362,6 +370,7 @@ gdk_window_unstick
 gdk_window_maximize
 gdk_window_unmaximize
 gdk_window_fullscreen
+gdk_window_fullscreen_on_monitor
 gdk_window_unfullscreen
 GdkFullscreenMode
 gdk_window_get_fullscreen_mode
@@ -371,6 +380,8 @@ gdk_window_set_keep_below
 gdk_window_set_opacity
 gdk_window_set_composited
 gdk_window_get_composited
+gdk_window_set_pass_through
+gdk_window_get_pass_through
 gdk_window_move
 gdk_window_resize
 gdk_window_move_resize
@@ -402,6 +413,9 @@ gdk_window_get_clip_region
 gdk_window_begin_paint_rect
 gdk_window_begin_paint_region
 gdk_window_end_paint
+gdk_window_begin_draw_frame
+gdk_window_end_draw_frame
+gdk_window_should_draw
 gdk_window_get_visible_region
 GdkWindowInvalidateHandlerFunc
 gdk_window_set_invalidate_handler
@@ -602,6 +616,7 @@ gdk_pango_layout_get_clip_region
 gdk_pango_layout_line_get_clip_region
 gdk_pango_context_get
 gdk_pango_context_get_for_screen
+gdk_pango_context_get_for_display
 </SECTION>
 
 <SECTION>
@@ -611,6 +626,7 @@ gdk_window_create_similar_surface
 gdk_window_create_similar_image_surface
 gdk_cairo_create
 gdk_cairo_get_clip_rectangle
+gdk_cairo_get_drawing_context
 gdk_cairo_set_source_color
 gdk_cairo_set_source_rgba
 gdk_cairo_set_source_pixbuf
@@ -631,6 +647,7 @@ GdkPoint
 GdkRectangle
 gdk_rectangle_intersect
 gdk_rectangle_union
+gdk_rectangle_equal
 
 <SUBSECTION Private>
 gdk_rectangle_get_type
@@ -668,6 +685,7 @@ gdk_keymap_get_direction
 gdk_keymap_have_bidi_layouts
 gdk_keymap_get_caps_lock_state
 gdk_keymap_get_num_lock_state
+gdk_keymap_get_scroll_lock_state
 gdk_keymap_get_modifier_state
 gdk_keymap_add_virtual_modifiers
 gdk_keymap_map_virtual_modifiers
@@ -708,6 +726,8 @@ GdkDevice
 GdkInputSource
 GdkInputMode
 GdkAxisUse
+GdkAxisFlags
+GdkDeviceToolType
 GdkDeviceType
 GdkGrabOwnership
 
@@ -729,7 +749,9 @@ gdk_device_get_display
 gdk_device_get_has_cursor
 gdk_device_get_n_axes
 gdk_device_get_n_keys
+gdk_device_get_axes
 gdk_device_warp
+gdk_device_get_seat
 
 <SUBSECTION>
 gdk_device_grab
@@ -748,6 +770,10 @@ gdk_device_get_axis
 gdk_device_list_axes
 gdk_device_get_axis_value
 gdk_device_get_last_event_window
+
+<SUBSECTION>
+gdk_device_tool_get_serial
+gdk_device_tool_get_tool_type
 
 <SUBSECTION Standard>
 GDK_TYPE_AXIS_USE
@@ -768,6 +794,50 @@ GdkDeviceClass
 gdk_device_get_type
 gdk_device_type_get_type
 GDK_MAX_TIMECOORD_AXES
+</SECTION>
+
+<SECTION>
+<TITLE>GdkDevicePad</TITLE>
+<FILE>gdkdevicepad</FILE>
+GdkDevicePad
+GdkDevicePadFeature
+gdk_device_pad_get_n_groups
+gdk_device_pad_get_group_n_modes
+gdk_device_pad_get_n_features
+gdk_device_pad_get_feature_group
+
+<SUBSECTION Standard>
+GDK_TYPE_DEVICE_PAD
+GDK_DEVICE_PAD
+GDK_IS_DEVICE_PAD
+
+<SUBSECTION Private>
+gdk_device_pad_get_type
+</SECTION>
+
+<SECTION>
+<TITLE>GdkSeat</TITLE>
+<FILE>gdkseat</FILE>
+GdkSeat
+GdkSeatCapabilities
+GdkSeatGrabPrepareFunc
+gdk_seat_get_display
+gdk_seat_grab
+gdk_seat_ungrab
+gdk_seat_get_capabilities
+gdk_seat_get_pointer
+gdk_seat_get_keyboard
+gdk_seat_get_slaves
+
+<SUBSECTION Standard>
+GDK_SEAT
+GDK_IS_SEAT
+GDK_TYPE_SEAT
+GDK_TYPE_SEAT_CAPABILITIES
+
+<SUBSECTION Private>
+gdk_seat_get_type
+gdk_seat_capabilities_get_type
 </SECTION>
 
 <SECTION>
@@ -823,6 +893,7 @@ gdk_event_get_keyval
 gdk_event_get_root_coords
 gdk_event_get_scroll_direction
 gdk_event_get_scroll_deltas
+gdk_event_is_scroll_stop_event
 gdk_event_get_state
 gdk_event_get_time
 gdk_event_get_window
@@ -834,6 +905,9 @@ gdk_events_get_angle
 gdk_events_get_center
 gdk_events_get_distance
 gdk_event_triggers_context_menu
+gdk_event_get_seat
+gdk_event_get_scancode
+gdk_event_get_pointer_emulated
 
 <SUBSECTION>
 gdk_event_handler_set
@@ -848,6 +922,8 @@ gdk_event_get_device
 gdk_event_set_device
 gdk_event_get_source_device
 gdk_event_set_source_device
+gdk_event_get_device_tool
+gdk_event_set_device_tool
 
 <SUBSECTION>
 gdk_setting_get
@@ -882,6 +958,11 @@ GdkEventWindowState
 GdkEventSetting
 GdkEventOwnerChange
 GdkEventGrabBroken
+GdkEventTouchpadSwipe
+GdkEventTouchpadPinch
+GdkEventPadButton
+GdkEventPadAxis
+GdkEventPadGroupMode
 
 <SUBSECTION>
 GdkScrollDirection
@@ -939,13 +1020,16 @@ gdk_cursor_get_type
 <TITLE>Drag and Drop</TITLE>
 <FILE>dnd</FILE>
 GdkDragContext
+GdkDragCancelReason
 gdk_drag_get_selection
 gdk_drag_abort
 gdk_drop_reply
 gdk_drag_drop
+gdk_drag_drop_done
 gdk_drag_find_window_for_screen
 gdk_drag_begin
 gdk_drag_begin_for_device
+gdk_drag_begin_from_point
 gdk_drag_motion
 gdk_drop_finish
 GdkDragProtocol
@@ -963,6 +1047,9 @@ gdk_drag_context_set_device
 gdk_drag_context_get_source_window
 gdk_drag_context_get_dest_window
 gdk_drag_context_get_protocol
+gdk_drag_context_get_drag_window
+gdk_drag_context_set_hotspot
+gdk_drag_context_manage_dnd
 
 <SUBSECTION Standard>
 GDK_DRAG_CONTEXT
@@ -1176,6 +1263,7 @@ gdk_window_impl_x11_get_type
 <INCLUDE>gdk/gdkwayland.h</INCLUDE>
 <TITLE>Wayland Interaction</TITLE>
 <FILE>wayland_interaction</FILE>
+gdk_wayland_seat_get_wl_seat
 gdk_wayland_device_get_wl_keyboard
 gdk_wayland_device_get_wl_pointer
 gdk_wayland_device_get_wl_seat
@@ -1184,6 +1272,10 @@ gdk_wayland_display_get_wl_display
 gdk_wayland_display_get_xdg_shell
 gdk_wayland_window_get_wl_surface
 gdk_wayland_window_set_use_custom_surface
+GdkWaylandWindowExported
+gdk_wayland_window_export_handle
+gdk_wayland_window_unexport_handle
+gdk_wayland_window_set_transient_for_exported
 
 <SUBSECTION Standard>
 GDK_TYPE_WAYLAND_DEVICE
@@ -1300,6 +1392,9 @@ gdk_gl_context_set_debug_enabled
 gdk_gl_context_get_debug_enabled
 gdk_gl_context_set_forward_compatible
 gdk_gl_context_get_forward_compatible
+gdk_gl_context_set_use_es
+gdk_gl_context_get_use_es
+gdk_gl_context_is_legacy
 
 <SUBSECTION>
 GdkGLError
@@ -1320,4 +1415,44 @@ gdk_gl_error_quark
 GDK_GL_ERROR
 GDK_TYPE_GL_ERROR
 GDK_TYPE_GL_PROFILE
+</SECTION>
+
+<SECTION>
+<FILE>gdkmonitor</FILE>
+GdkMonitor
+gdk_monitor_get_display
+gdk_monitor_get_geometry
+gdk_monitor_get_workarea
+gdk_monitor_get_width_mm
+gdk_monitor_get_height_mm
+gdk_monitor_get_manufacturer
+gdk_monitor_get_model
+gdk_monitor_get_scale_factor
+gdk_monitor_get_refresh_rate
+GdkSubpixelLayout
+gdk_monitor_get_subpixel_layout
+gdk_monitor_is_primary
+
+<SUBSECTION Standard>
+gdk_monitor_get_type
+GdkMonitorClass
+GDK_TYPE_MONITOR
+GDK_MONITOR
+GDK_IS_MONITOR
+</SECTION>
+
+<SECTION>
+<FILE>gdkdrawingcontext</FILE>
+GdkDrawingContext
+gdk_drawing_context_get_window
+gdk_drawing_context_get_clip
+gdk_drawing_context_get_cairo_context
+gdk_drawing_context_is_valid
+
+<SUBSECTION Standard>
+gdk_drawing_context_get_type
+GdkDrawingContextClass
+GDK_TYPE_DRAWING_CONTEXT
+GDK_DRAWING_CONTEXT
+GDK_IS_DRAWING_CONTEXT
 </SECTION>

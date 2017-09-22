@@ -37,6 +37,8 @@
 #include "gtkcolorchooserdialog.h"
 #include "gtkcolorswatchprivate.h"
 #include "gtkdnd.h"
+#include "gtkdragdest.h"
+#include "gtkdragsource.h"
 #include "gtkmarshalers.h"
 #include "gtkprivate.h"
 #include "gtkintl.h"
@@ -51,6 +53,11 @@
  * The #GtkColorButton is a button which displays the currently selected
  * color and allows to open a color selection dialog to change the color.
  * It is suitable widget for selecting a color in a preference dialog.
+ *
+ * # CSS nodes
+ *
+ * GtkColorButton has a single CSS node with name button. To differentiate
+ * it from a plain #GtkButton, it gets the .color style class.
  */
 
 
@@ -63,6 +70,7 @@ struct _GtkColorButtonPrivate
   GdkRGBA rgba;
 
   guint use_alpha : 1;  /* Use alpha or not */
+  guint show_editor : 1;
 };
 
 /* Properties */
@@ -73,7 +81,8 @@ enum
   PROP_TITLE,
   PROP_COLOR,
   PROP_ALPHA,
-  PROP_RGBA
+  PROP_RGBA,
+  PROP_SHOW_EDITOR
 };
 
 /* Signals */
@@ -93,10 +102,6 @@ static void gtk_color_button_get_property  (GObject          *object,
                                             guint             param_id,
                                             GValue           *value,
                                             GParamSpec       *pspec);
-
-/* gtkwidget signals */
-static void gtk_color_button_state_changed (GtkWidget        *widget,
-                                            GtkStateType      previous_state);
 
 /* gtkbutton signals */
 static void gtk_color_button_clicked       (GtkButton        *button);
@@ -138,17 +143,14 @@ static void
 gtk_color_button_class_init (GtkColorButtonClass *klass)
 {
   GObjectClass *gobject_class;
-  GtkWidgetClass *widget_class;
   GtkButtonClass *button_class;
 
   gobject_class = G_OBJECT_CLASS (klass);
-  widget_class = GTK_WIDGET_CLASS (klass);
   button_class = GTK_BUTTON_CLASS (klass);
 
   gobject_class->get_property = gtk_color_button_get_property;
   gobject_class->set_property = gtk_color_button_set_property;
   gobject_class->finalize = gtk_color_button_finalize;
-  widget_class->state_changed = gtk_color_button_state_changed;
   button_class->clicked = gtk_color_button_clicked;
   klass->color_set = NULL;
 
@@ -252,15 +254,27 @@ G_GNUC_END_IGNORE_DEPRECATIONS
                                                   G_SIGNAL_RUN_FIRST,
                                                   G_STRUCT_OFFSET (GtkColorButtonClass, color_set),
                                                   NULL, NULL,
-                                                  _gtk_marshal_VOID__VOID,
+                                                  NULL,
                                                   G_TYPE_NONE, 0);
-}
 
-static void
-gtk_color_button_state_changed (GtkWidget   *widget,
-                                GtkStateType previous_state)
-{
-  gtk_widget_queue_draw (widget);
+  /**
+   * GtkColorButton:show-editor:
+   *
+   * Set this property to %TRUE to skip the palette
+   * in the dialog and go directly to the color editor.
+   *
+   * This property should be used in cases where the palette
+   * in the editor would be redundant, such as when the color
+   * button is already part of a palette.
+   *
+   * Since: 3.20
+   */
+  g_object_class_install_property (gobject_class,
+                                   PROP_SHOW_EDITOR,
+                                   g_param_spec_boolean ("show-editor", P_("Show Editor"),
+                                                         P_("Whether to show the color editor right away"),
+                                                         FALSE,
+                                                         GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
 }
 
 static void
@@ -366,6 +380,7 @@ gtk_color_button_init (GtkColorButton *button)
   GtkColorButtonPrivate *priv;
   PangoLayout *layout;
   PangoRectangle rect;
+  GtkStyleContext *context;
 
   /* Create the widgets */
   priv = button->priv = gtk_color_button_get_instance_private (button);
@@ -404,6 +419,9 @@ gtk_color_button_init (GtkColorButton *button)
                     G_CALLBACK (gtk_color_button_drag_data_received), button);
   g_signal_connect (button, "drag-data-get",
                     G_CALLBACK (gtk_color_button_drag_data_get), button);
+
+  context = gtk_widget_get_style_context (GTK_WIDGET (button));
+  gtk_style_context_add_class (context, "color");
 }
 
 static void
@@ -477,6 +495,16 @@ gtk_color_button_new_with_rgba (const GdkRGBA *rgba)
 }
 
 static gboolean
+dialog_delete_event (GtkWidget *dialog,
+                     GdkEvent  *event,
+                     gpointer   user_data)
+{
+  g_signal_emit_by_name (dialog, "response", GTK_RESPONSE_CANCEL);
+
+  return TRUE;
+}
+
+static gboolean
 dialog_destroy (GtkWidget *widget,
                 gpointer   data)
 {
@@ -543,6 +571,8 @@ ensure_dialog (GtkColorButton *button)
                     G_CALLBACK (dialog_response), button);
   g_signal_connect (dialog, "destroy",
                     G_CALLBACK (dialog_destroy), button);
+  g_signal_connect (dialog, "delete-event",
+                    G_CALLBACK (dialog_delete_event), button);
 }
 
 
@@ -554,6 +584,8 @@ gtk_color_button_clicked (GtkButton *b)
 
   /* if dialog already exists, make sure it's shown and raised */
   ensure_dialog (button);
+
+  g_object_set (priv->cs_dialog, "show-editor", priv->show_editor, NULL);
 
   gtk_color_chooser_set_use_alpha (GTK_COLOR_CHOOSER (priv->cs_dialog), priv->use_alpha);
 
@@ -856,6 +888,16 @@ G_GNUC_END_IGNORE_DEPRECATIONS
     case PROP_RGBA:
       gtk_color_chooser_set_rgba (GTK_COLOR_CHOOSER (button), g_value_get_boxed (value));
       break;
+    case PROP_SHOW_EDITOR:
+      {
+        gboolean show_editor = g_value_get_boolean (value);
+        if (button->priv->show_editor != show_editor)
+          {
+            button->priv->show_editor = show_editor;
+            g_object_notify (object, "show-editor");
+          }
+      }
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, param_id, pspec);
       break;
@@ -909,6 +951,9 @@ gtk_color_button_get_property (GObject    *object,
         g_value_set_boxed (value, &rgba);
       }
       break;
+    case PROP_SHOW_EDITOR:
+      g_value_set_boolean (value, button->priv->show_editor);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, param_id, pspec);
       break;
@@ -942,3 +987,4 @@ G_GNUC_BEGIN_IGNORE_DEPRECATIONS
 G_GNUC_END_IGNORE_DEPRECATIONS
   iface->add_palette = gtk_color_button_add_palette;
 }
+

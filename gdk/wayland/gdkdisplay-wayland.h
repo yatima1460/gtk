@@ -27,8 +27,11 @@
 #include <wayland-client.h>
 #include <wayland-cursor.h>
 #include <wayland-egl.h>
+#include <gdk/wayland/tablet-unstable-v2-client-protocol.h>
 #include <gdk/wayland/gtk-shell-client-protocol.h>
-#include <gdk/wayland/xdg-shell-client-protocol.h>
+#include <gdk/wayland/xdg-shell-unstable-v6-client-protocol.h>
+#include <gdk/wayland/xdg-foreign-unstable-v1-client-protocol.h>
+#include <gdk/wayland/keyboard-shortcuts-inhibit-unstable-v1-client-protocol.h>
 
 #include <glib.h>
 #include <gdk/gdkkeys.h>
@@ -45,15 +48,14 @@ G_BEGIN_DECLS
 #define GDK_WAYLAND_MAX_THEME_SCALE 2
 #define GDK_WAYLAND_THEME_SCALES_COUNT GDK_WAYLAND_MAX_THEME_SCALE
 
+#define GDK_ZWP_POINTER_GESTURES_V1_VERSION 1
+
 typedef struct _GdkWaylandSelection GdkWaylandSelection;
 
 struct _GdkWaylandDisplay
 {
   GdkDisplay parent_instance;
   GdkScreen *screen;
-
-  /* input GdkDevice list */
-  GList *input_devices;
 
   /* Startup notification */
   gchar *startup_notification_id;
@@ -66,11 +68,31 @@ struct _GdkWaylandDisplay
   struct wl_registry *wl_registry;
   struct wl_compositor *compositor;
   struct wl_shm *shm;
-  struct xdg_shell *xdg_shell;
-  struct gtk_shell *gtk_shell;
+  struct zxdg_shell_v6 *xdg_shell;
+  struct gtk_shell1 *gtk_shell;
   struct wl_input_device *input_device;
   struct wl_data_device_manager *data_device_manager;
   struct wl_subcompositor *subcompositor;
+  struct zwp_pointer_gestures_v1 *pointer_gestures;
+  struct gtk_primary_selection_device_manager *primary_selection_manager;
+  struct zwp_tablet_manager_v2 *tablet_manager;
+  struct zxdg_exporter_v1 *xdg_exporter;
+  struct zxdg_importer_v1 *xdg_importer;
+  struct zwp_keyboard_shortcuts_inhibit_manager_v1 *keyboard_shortcuts_inhibit;
+
+  GList *async_roundtrips;
+
+  /* Keep track of the ID's of the known globals and their corresponding
+   * names. This way we can check whether an interface is known, and
+   * remove globals given its ID. This table is not expected to be very
+   * large, meaning the lookup by interface name time is insignificant. */
+  GHashTable *known_globals;
+  GList *on_has_globals_closures;
+
+  /* Keep a list of orphaned dialogs (i.e. without parent) */
+  GList *orphan_dialogs;
+
+  GList *current_popups;
 
   struct wl_cursor_theme *scaled_cursor_themes[GDK_WAYLAND_THEME_SCALES_COUNT];
   gchar *cursor_theme_name;
@@ -80,10 +102,17 @@ struct _GdkWaylandDisplay
   GSource *event_source;
 
   int compositor_version;
+  int seat_version;
+  int data_device_manager_version;
+  int gtk_shell_version;
 
   struct xkb_context *xkb_context;
 
   GdkWaylandSelection *selection;
+
+  GPtrArray *monitors;
+
+  gint64 last_bell_time_ms;
 
   /* egl info */
   EGLDisplay egl_display;
@@ -95,6 +124,7 @@ struct _GdkWaylandDisplay
   guint have_egl_buffer_age : 1;
   guint have_egl_swap_buffers_with_damage : 1;
   guint have_egl_surfaceless_context : 1;
+  EGLint egl_min_swap_interval;
 };
 
 struct _GdkWaylandDisplayClass

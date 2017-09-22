@@ -44,19 +44,20 @@
  * @Short_description: Infinite scrollable area containing child widgets
  *   and/or custom drawing
  * @Title: GtkLayout
- * @See_also: #GtkDrawingArea, #GtkScrolledWindow
+ * @See_also: #GtkDrawingArea, #GtkFixed
  *
- * #GtkLayout is similar to #GtkDrawingArea in that it’s a “blank slate”
- * and doesn’t do anything but paint a blank background by default. It's
- * different in that it supports scrolling natively (you can add it to a
- * #GtkScrolledWindow), and it can contain child widgets, since it’s a
- * #GtkContainer. However if you’re just going to draw, a #GtkDrawingArea
- * is a better choice since it has lower overhead.
+ * #GtkLayout is similar to #GtkDrawingArea in that it’s a “blank slate” and
+ * doesn’t do anything except paint a blank background by default. It’s
+ * different in that it supports scrolling natively due to implementing
+ * #GtkScrollable, and can contain child widgets since it’s a #GtkContainer.
  *
- * When handling expose events on a #GtkLayout, you must draw to
- * GTK_LAYOUT (layout)->bin_window, rather than to
- * GTK_WIDGET (layout)->window, as you would for a drawing
- * area.
+ * If you just want to draw, a #GtkDrawingArea is a better choice since it has
+ * lower overhead. If you just need to position child widgets at specific
+ * points, then #GtkFixed provides that functionality on its own.
+ *
+ * When handling expose events on a #GtkLayout, you must draw to the #GdkWindow
+ * returned by gtk_layout_get_bin_window(), rather than to the one returned by
+ * gtk_widget_get_window() as you would for a #GtkDrawingArea.
  */
 
 
@@ -858,6 +859,25 @@ gtk_layout_init (GtkLayout *layout)
 
 /* Widget methods
  */
+static void
+set_background (GtkWidget *widget)
+{
+  GtkLayoutPrivate *priv;
+
+  if (gtk_widget_get_realized (widget))
+    {
+      priv = GTK_LAYOUT (widget)->priv;
+
+      /* We still need to call gtk_style_context_set_background() here for
+       * GtkLayout, since subclasses like EelCanvas depend on a background to
+       * be set since the beginning of the draw() implementation.
+       * This should be revisited next time we have a major API break.
+       */
+      G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
+      gtk_style_context_set_background (gtk_widget_get_style_context (widget), priv->bin_window);
+      G_GNUC_END_IGNORE_DEPRECATIONS;
+    }
+}
 
 static void 
 gtk_layout_realize (GtkWidget *widget)
@@ -903,7 +923,7 @@ gtk_layout_realize (GtkWidget *widget)
   priv->bin_window = gdk_window_new (window,
                                      &attributes, attributes_mask);
   gtk_widget_register_window (widget, priv->bin_window);
-  gtk_style_context_set_background (gtk_widget_get_style_context (widget), priv->bin_window);
+  set_background (widget);
 
   tmp_list = priv->children;
   while (tmp_list)
@@ -918,15 +938,9 @@ gtk_layout_realize (GtkWidget *widget)
 static void
 gtk_layout_style_updated (GtkWidget *widget)
 {
-  GtkLayoutPrivate *priv;
-
   GTK_WIDGET_CLASS (gtk_layout_parent_class)->style_updated (widget);
 
-  if (gtk_widget_get_realized (widget))
-    {
-      priv = GTK_LAYOUT (widget)->priv;
-      gtk_style_context_set_background (gtk_widget_get_style_context (widget), priv->bin_window);
-    }
+  set_background (widget);
 }
 
 static void

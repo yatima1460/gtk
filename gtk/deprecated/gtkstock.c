@@ -31,6 +31,7 @@
 #include "gtkprivate.h"
 #include "gtkstock.h"
 #include "gtkiconfactory.h"
+#include "deprecated/gtkiconfactoryprivate.h"
 #include "gtkintl.h"
 
 /**
@@ -105,7 +106,7 @@ real_add (const GtkStockItem *items,
         {
           if (item->modifier & NON_STATIC_MASK)
             {
-              g_warning ("Bit 29 set in stock accelerator.\n");
+              g_warning ("Bit 29 set in stock accelerator.");
               copy = TRUE;
             }
 
@@ -255,7 +256,7 @@ gtk_stock_list_ids (void)
     {
       GList *next;
 
-      next = g_list_next (ids);
+      next = ids->next;
 
       if (last_id && strcmp (ids->data, last_id) == 0)
         {
@@ -268,7 +269,7 @@ gtk_stock_list_ids (void)
         }
 
       g_list_free_1 (ids);
-      
+
       ids = next;
     }
 

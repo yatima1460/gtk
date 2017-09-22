@@ -73,12 +73,7 @@ static void accel_closure_invalidate     (gpointer    data,
 static guint  signal_accel_activate      = 0;
 static guint  signal_accel_changed       = 0;
 static guint  quark_acceleratable_groups = 0;
-static guint  default_accel_mod_mask     = (GDK_SHIFT_MASK   |
-                                            GDK_CONTROL_MASK |
-                                            GDK_MOD1_MASK    |
-                                            GDK_SUPER_MASK   |
-                                            GDK_HYPER_MASK   |
-                                            GDK_META_MASK);
+static guint  default_accel_mod_mask     = 0;
 
 enum {
   PROP_0,
@@ -823,13 +818,13 @@ _gtk_accel_group_get_accelerables (GtkAccelGroup *accel_group)
  * @accel_group: the accelerator group to query
  * @accel_key: key value of the accelerator
  * @accel_mods: modifier combination of the accelerator
- * @n_entries: (out) (allow-none): location to return the number
+ * @n_entries: (out) (optional): location to return the number
  *     of entries found, or %NULL
  *
  * Queries an accelerator group for all entries matching @accel_key
  * and @accel_mods.
  *
- * Returns: (transfer none) (array length=n_entries): an array of
+ * Returns: (nullable) (transfer none) (array length=n_entries): an array of
  *     @n_entries #GtkAccelGroupEntry elements, or %NULL. The array
  *     is owned by GTK+ and must not be freed.
  */
@@ -859,7 +854,7 @@ gtk_accel_group_query (GtkAccelGroup   *accel_group,
  * Finds the #GtkAccelGroup to which @closure is connected;
  * see gtk_accel_group_connect().
  *
- * Returns: (transfer none): the #GtkAccelGroup to which @closure
+ * Returns: (nullable) (transfer none): the #GtkAccelGroup to which @closure
  *     is connected, or %NULL
  */
 GtkAccelGroup*
@@ -1724,11 +1719,12 @@ gtk_accelerator_get_label (guint           accelerator_key,
  * @default_mod_mask: accelerator modifier mask
  *
  * Sets the modifiers that will be considered significant for keyboard
- * accelerators. The default mod mask is #GDK_CONTROL_MASK |
- * #GDK_SHIFT_MASK | #GDK_MOD1_MASK | #GDK_SUPER_MASK |
- * #GDK_HYPER_MASK | #GDK_META_MASK, that is, Control, Shift, Alt,
- * Super, Hyper and Meta. Other modifiers will by default be ignored
- * by #GtkAccelGroup.
+ * accelerators. The default mod mask depends on the GDK backend in use,
+ * but will typically include #GDK_CONTROL_MASK | #GDK_SHIFT_MASK |
+ * #GDK_MOD1_MASK | #GDK_SUPER_MASK | #GDK_HYPER_MASK | #GDK_META_MASK.
+ * In other words, Control, Shift, Alt, Super, Hyper and Meta. Other
+ * modifiers will by default be ignored by #GtkAccelGroup.
+ *
  * You must include at least the three modifiers Control, Shift
  * and Alt in any value you pass to this function.
  *
@@ -1745,12 +1741,29 @@ gtk_accelerator_set_default_mod_mask (GdkModifierType default_mod_mask)
 /**
  * gtk_accelerator_get_default_mod_mask:
  *
- * Gets the value set by gtk_accelerator_set_default_mod_mask().
+ * Gets the modifier mask.
+ *
+ * The modifier mask determines which modifiers are considered significant
+ * for keyboard accelerators. See gtk_accelerator_set_default_mod_mask().
  *
  * Returns: the default accelerator modifier mask
  */
 GdkModifierType
 gtk_accelerator_get_default_mod_mask (void)
 {
+  if (!default_accel_mod_mask)
+    {
+      GdkDisplay *display;
+
+      display = gdk_display_get_default ();
+
+      if (!display)
+        return GDK_CONTROL_MASK | GDK_SHIFT_MASK | GDK_MOD1_MASK;
+
+      default_accel_mod_mask =
+          gdk_keymap_get_modifier_mask (gdk_keymap_get_for_display (display),
+				        GDK_MODIFIER_INTENT_DEFAULT_MOD_MASK);
+    }
+
   return default_accel_mod_mask;
 }

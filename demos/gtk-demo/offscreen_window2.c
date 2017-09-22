@@ -169,7 +169,6 @@ gtk_mirror_bin_realize (GtkWidget *widget)
 {
   GtkMirrorBin *bin = GTK_MIRROR_BIN (widget);
   GtkAllocation allocation;
-  GtkStyleContext *context;
   GdkWindow *window;
   GdkWindowAttr attributes;
   gint attributes_mask;
@@ -229,9 +228,6 @@ gtk_mirror_bin_realize (GtkWidget *widget)
   g_signal_connect (bin->offscreen_window, "from-embedder",
                     G_CALLBACK (offscreen_window_from_parent), bin);
 
-  context = gtk_widget_get_style_context (widget);
-  gtk_style_context_set_background (context, window);
-  gtk_style_context_set_background (context, bin->offscreen_window);
   gdk_window_show (bin->offscreen_window);
 }
 
@@ -271,7 +267,7 @@ gtk_mirror_bin_add (GtkContainer *container,
       bin->child = widget;
     }
   else
-    g_warning ("GtkMirrorBin cannot have more than one child\n");
+    g_warning ("GtkMirrorBin cannot have more than one child");
 }
 
 static void
@@ -349,7 +345,7 @@ gtk_mirror_bin_get_preferred_height (GtkWidget *widget,
 
   gtk_mirror_bin_size_request (widget, &requisition);
 
-  *minimum = *natural = requisition.width;
+  *minimum = *natural = requisition.height;
 }
 
 static void
@@ -468,11 +464,11 @@ gtk_mirror_bin_draw (GtkWidget *widget,
 
 /*** ***/
 
-static GtkWidget *window = NULL;
-
 GtkWidget *
 do_offscreen_window2 (GtkWidget *do_widget)
 {
+  static GtkWidget *window = NULL;
+
   if (!window)
     {
       GtkWidget *bin, *vbox;
@@ -516,10 +512,7 @@ do_offscreen_window2 (GtkWidget *do_widget)
   if (!gtk_widget_get_visible (window))
     gtk_widget_show_all (window);
   else
-    {
-      gtk_widget_destroy (window);
-      window = NULL;
-    }
+    gtk_widget_destroy (window);
 
   return window;
 }

@@ -195,9 +195,25 @@ gtk_menu_section_box_remove_func (gint     position,
                                   gpointer user_data)
 {
   GtkMenuSectionBox *box = user_data;
+  GtkMenuTrackerItem *item;
+  GtkWidget *widget;
   GList *children;
 
   children = gtk_container_get_children (GTK_CONTAINER (box->item_box));
+
+  widget = g_list_nth_data (children, position);
+
+  item = g_object_get_data (G_OBJECT (widget), "GtkMenuTrackerItem");
+  if (gtk_menu_tracker_item_get_has_link (item, G_MENU_LINK_SUBMENU))
+    {
+      GtkWidget *stack, *subbox;
+
+      stack = gtk_widget_get_ancestor (GTK_WIDGET (box->toplevel), GTK_TYPE_STACK);
+      subbox = gtk_stack_get_child_by_name (GTK_STACK (stack), gtk_menu_tracker_item_get_label (item));
+      if (subbox != NULL)
+        gtk_container_remove (GTK_CONTAINER (stack), subbox);
+    }
+
   gtk_widget_destroy (g_list_nth_data (children, position));
   g_list_free (children);
 
@@ -277,7 +293,7 @@ gtk_menu_section_box_insert_func (GtkMenuTrackerItem *item,
       gchar *name;
 
       widget = g_object_new (GTK_TYPE_MODEL_BUTTON,
-                             "menu-name", gtk_menu_tracker_item_get_label (item), 
+                             "menu-name", gtk_menu_tracker_item_get_label (item),
                              NULL);
       g_object_bind_property (item, "label", widget, "text", G_BINDING_SYNC_CREATE);
       g_object_bind_property (item, "icon", widget, "icon", G_BINDING_SYNC_CREATE);
@@ -369,10 +385,41 @@ gtk_menu_section_box_class_init (GtkMenuSectionBoxClass *class)
   G_OBJECT_CLASS (class)->dispose = gtk_menu_section_box_dispose;
 }
 
+static void
+update_popover_position_cb (GObject    *source,
+                            GParamSpec *spec,
+                            gpointer   *user_data)
+{
+  GtkPopover *popover = GTK_POPOVER (source);
+  GtkMenuSectionBox *box = GTK_MENU_SECTION_BOX (user_data);
+
+  GtkPositionType new_pos = gtk_popover_get_position (popover);
+
+  GList *children = gtk_container_get_children (GTK_CONTAINER (gtk_widget_get_parent (GTK_WIDGET (box))));
+  GList *l;
+
+  for (l = children;
+       l != NULL;
+       l = l->next)
+    {
+      GtkWidget *w = l->data;
+
+      if (new_pos == GTK_POS_BOTTOM)
+        gtk_widget_set_valign (w, GTK_ALIGN_START);
+      else if (new_pos == GTK_POS_TOP)
+        gtk_widget_set_valign (w, GTK_ALIGN_END);
+      else
+        gtk_widget_set_valign (w, GTK_ALIGN_CENTER);
+    }
+
+  g_list_free (children);
+}
+
 void
 gtk_menu_section_box_new_toplevel (GtkStack    *stack,
                                    GMenuModel  *model,
-                                   const gchar *action_namespace)
+                                   const gchar *action_namespace,
+                                   GtkPopover  *popover)
 {
   GtkMenuSectionBox *box;
 
@@ -383,6 +430,9 @@ gtk_menu_section_box_new_toplevel (GtkStack    *stack,
                                        model, TRUE, FALSE, FALSE, action_namespace,
                                        gtk_menu_section_box_insert_func,
                                        gtk_menu_section_box_remove_func, box);
+
+  g_signal_connect (G_OBJECT (popover), "notify::position", G_CALLBACK (update_popover_position_cb), box);
+
 
   gtk_widget_show (GTK_WIDGET (box));
 }
@@ -431,58 +481,66 @@ gtk_menu_section_box_new_section (GtkMenuTrackerItem *item,
                                   GtkMenuSectionBox  *parent)
 {
   GtkMenuSectionBox *box;
-  GtkWidget *separator;
   const gchar *label;
   const gchar *hint;
+  const gchar *text_direction;
 
   box = g_object_new (GTK_TYPE_MENU_SECTION_BOX, NULL);
   box->toplevel = parent->toplevel;
   box->depth = parent->depth + 1;
 
-  separator = gtk_separator_new (GTK_ORIENTATION_HORIZONTAL);
   label = gtk_menu_tracker_item_get_label (item);
   hint = gtk_menu_tracker_item_get_display_hint (item);
+  text_direction = gtk_menu_tracker_item_get_text_direction (item);
 
   if (hint && g_str_equal (hint, "horizontal-buttons"))
     {
       gtk_orientable_set_orientation (GTK_ORIENTABLE (box->item_box), GTK_ORIENTATION_HORIZONTAL);
       gtk_style_context_add_class (gtk_widget_get_style_context (GTK_WIDGET (box->item_box)), GTK_STYLE_CLASS_LINKED);
       box->iconic = TRUE;
+
+      if (text_direction)
+        {
+          GtkTextDirection dir = GTK_TEXT_DIR_NONE;
+
+          if (g_str_equal (text_direction, "rtl"))
+            dir = GTK_TEXT_DIR_RTL;
+          else if (g_str_equal (text_direction, "ltr"))
+            dir = GTK_TEXT_DIR_LTR;
+
+          gtk_widget_set_direction (GTK_WIDGET (box->item_box), dir);
+        }
     }
 
   if (label != NULL)
     {
+      GtkWidget *separator;
       GtkWidget *title;
+
+      box->separator = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 4);
+      g_object_ref_sink (box->separator);
+
+      separator = gtk_separator_new (GTK_ORIENTATION_HORIZONTAL);
+      gtk_widget_set_valign (separator, GTK_ALIGN_CENTER);
+      gtk_box_pack_start (GTK_BOX (box->separator), separator, TRUE, TRUE, 0);
 
       title = gtk_label_new (label);
       g_object_bind_property (item, "label", title, "label", G_BINDING_SYNC_CREATE);
       gtk_style_context_add_class (gtk_widget_get_style_context (title), GTK_STYLE_CLASS_SEPARATOR);
       gtk_widget_set_halign (title, GTK_ALIGN_START);
+      gtk_box_pack_start (GTK_BOX (box->separator), title, FALSE, FALSE, 0);
 
-      box->separator = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
-      g_object_ref_sink (box->separator);
+      separator = gtk_separator_new (GTK_ORIENTATION_HORIZONTAL);
+      gtk_widget_set_valign (separator, GTK_ALIGN_CENTER);
+      gtk_box_pack_start (GTK_BOX (box->separator), separator, TRUE, TRUE, 0);
 
-      g_object_set (box->separator,
-                    "margin-start", 12,
-                    "margin-end", 12,
-                    "margin-top", 6,
-                    "margin-bottom", 3,
-                    NULL);
-      gtk_container_add (GTK_CONTAINER (box->separator), title);
-      gtk_container_add (GTK_CONTAINER (box->separator), separator);
       gtk_widget_show_all (box->separator);
     }
   else
     {
-      box->separator = separator;
+      box->separator = gtk_separator_new (GTK_ORIENTATION_HORIZONTAL);
       g_object_ref_sink (box->separator);
 
-      g_object_set (box->separator,
-                    "margin-start", 12,
-                    "margin-end", 12,
-                    "margin-top", 3,
-                    "margin-bottom", 3,
-                    NULL);
       gtk_widget_show (box->separator);
     }
 

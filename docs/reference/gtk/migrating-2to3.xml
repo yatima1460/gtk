@@ -184,8 +184,9 @@
         <listitem>If you are opening a document or URI by launching a command
         like <literal>firefox http://my-favourite-website.com</literal> or
         <literal>gnome-open ghelp:epiphany</literal>, it is best to just use
-        gtk_show_uri(); as an added benefit, your application will henceforth
-        respect the users preference for what application to use.</listitem>
+        gtk_show_uri_on_window(); as an added benefit, your application will
+        henceforth respect the users preference for what application to use and
+        correctly open links in sandboxed applications.</listitem>
         <listitem>If you are launching a regular, installed application that
         has a desktop file, it is best to use GIOs #GAppInfo with a suitable
         launch context.
@@ -1133,7 +1134,7 @@ gtk_arrow_draw (GtkWidget *widget,
       The default values for the #GtkScrolledWindow:hscrollbar-policy and
       #GtkScrolledWindow:vscrollbar-policy properties have been changed from
       'never' to 'automatic'. If your application was relying on the default
-      value, you will have explicitly set it explicitly.
+      value, you will have to set it explicitly.
     </para>
 
     <para>
@@ -1204,6 +1205,12 @@ gtk_arrow_draw (GtkWidget *widget,
      gtk_statusbar_set_has_resize_grip() and gtk_statusbar_get_has_resize_grip()
      have disappeared, and instead there are now
      gtk_window_set_has_resize_grip() and gtk_window_get_has_resize_grip().
+    </para>
+    <para>
+     In more recent versions of GTK+ 3, the resize grip functionality has
+     been removed entirely, in favor of invisible resize borders around the
+     window. When updating to newer versions of GTK+ 3, you should simply
+     remove all code dealing with resize grips.
     </para>
   </section>
 

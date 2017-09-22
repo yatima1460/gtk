@@ -33,6 +33,7 @@
 #include "gdkinternals.h"
 #include "gdkmarshalers.h"
 #include "gdkscreen.h"
+#include "gdkmonitorprivate.h"
 
 #include <math.h>
 #include <glib.h>
@@ -69,11 +70,17 @@
 enum {
   OPENED,
   CLOSED,
+  SEAT_ADDED,
+  SEAT_REMOVED,
+  MONITOR_ADDED,
+  MONITOR_REMOVED,
   LAST_SIGNAL
 };
 
 static void gdk_display_dispose     (GObject         *object);
 static void gdk_display_finalize    (GObject         *object);
+static void gdk_display_put_event_nocopy (GdkDisplay *display,
+                                          GdkEvent   *event);
 
 
 static GdkAppLaunchContext *gdk_display_real_get_app_launch_context (GdkDisplay *display);
@@ -104,7 +111,9 @@ gdk_display_real_opened (GdkDisplay *display)
 {
   GdkDeviceManager *device_manager;
 
+  G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
   device_manager = gdk_display_get_device_manager (display);
+  G_GNUC_END_IGNORE_DEPRECATIONS;
 
   g_signal_connect (device_manager, "device-removed",
                     G_CALLBACK (device_removed_cb), display);
@@ -125,6 +134,15 @@ gdk_display_real_event_data_free (GdkDisplay     *display,
 {
 }
 
+static GdkSeat *
+gdk_display_real_get_default_seat (GdkDisplay *display)
+{
+  if (!display->seats)
+    return NULL;
+
+  return display->seats->data;
+}
+
 static void
 gdk_display_class_init (GdkDisplayClass *class)
 {
@@ -140,6 +158,7 @@ gdk_display_class_init (GdkDisplayClass *class)
   class->make_default = gdk_display_real_make_default;
   class->event_data_copy = gdk_display_real_event_data_copy;
   class->event_data_free = gdk_display_real_event_data_free;
+  class->get_default_seat = gdk_display_real_get_default_seat;
 
   /**
    * GdkDisplay::opened:
@@ -177,6 +196,78 @@ gdk_display_class_init (GdkDisplayClass *class)
 		  G_TYPE_NONE,
 		  1,
 		  G_TYPE_BOOLEAN);
+
+  /**
+   * GdkDisplay::seat-added:
+   * @display: the object on which the signal is emitted
+   * @seat: the seat that was just added
+   *
+   * The ::seat-added signal is emitted whenever a new seat is made
+   * known to the windowing system.
+   *
+   * Since: 3.20
+   */
+  signals[SEAT_ADDED] =
+    g_signal_new (g_intern_static_string ("seat-added"),
+		  G_OBJECT_CLASS_TYPE (object_class),
+		  G_SIGNAL_RUN_LAST,
+		  0, NULL, NULL,
+                  g_cclosure_marshal_VOID__OBJECT,
+		  G_TYPE_NONE, 1, GDK_TYPE_SEAT);
+
+  /**
+   * GdkDisplay::seat-removed:
+   * @display: the object on which the signal is emitted
+   * @seat: the seat that was just removed
+   *
+   * The ::seat-removed signal is emitted whenever a seat is removed
+   * by the windowing system.
+   *
+   * Since: 3.20
+   */
+  signals[SEAT_REMOVED] =
+    g_signal_new (g_intern_static_string ("seat-removed"),
+		  G_OBJECT_CLASS_TYPE (object_class),
+		  G_SIGNAL_RUN_LAST,
+		  0, NULL, NULL,
+                  g_cclosure_marshal_VOID__OBJECT,
+		  G_TYPE_NONE, 1, GDK_TYPE_SEAT);
+
+  /**
+   * GdkDisplay::monitor-added:
+   * @display: the objedct on which the signal is emitted
+   * @monitor: the monitor that was just added
+   *
+   * The ::monitor-added signal is emitted whenever a monitor is
+   * added.
+   *
+   * Since: 3.22
+   */
+  signals[MONITOR_ADDED] =
+    g_signal_new (g_intern_static_string ("monitor-added"),
+		  G_OBJECT_CLASS_TYPE (object_class),
+		  G_SIGNAL_RUN_LAST,
+		  0, NULL, NULL,
+                  g_cclosure_marshal_VOID__OBJECT,
+		  G_TYPE_NONE, 1, GDK_TYPE_MONITOR);
+
+  /**
+   * GdkDisplay::monitor-removed:
+   * @display: the object on which the signal is emitted
+   * @monitor: the monitor that was just removed
+   *
+   * The ::monitor-removed signal is emitted whenever a monitor is
+   * removed.
+   *
+   * Since: 3.22
+   */
+  signals[MONITOR_REMOVED] =
+    g_signal_new (g_intern_static_string ("monitor-removed"),
+		  G_OBJECT_CLASS_TYPE (object_class),
+		  G_SIGNAL_RUN_LAST,
+		  0, NULL, NULL,
+                  g_cclosure_marshal_VOID__OBJECT,
+		  G_TYPE_NONE, 1, GDK_TYPE_MONITOR);
 }
 
 static void
@@ -233,13 +324,17 @@ gdk_display_dispose (GObject *object)
   GdkDisplay *display = GDK_DISPLAY (object);
   GdkDeviceManager *device_manager;
 
+  G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
   device_manager = gdk_display_get_device_manager (GDK_DISPLAY (object));
+  G_GNUC_END_IGNORE_DEPRECATIONS;
 
   _gdk_display_manager_remove_display (gdk_display_manager_get (), display);
 
   g_list_free_full (display->queued_events, (GDestroyNotify) gdk_event_free);
   display->queued_events = NULL;
   display->queued_tail = NULL;
+
+  g_list_foreach (display->input_devices, (GFunc) g_object_run_dispose, NULL);
 
   if (device_manager)
     {
@@ -268,6 +363,9 @@ gdk_display_finalize (GObject *object)
   g_hash_table_destroy (display->motion_hint_info);
   g_hash_table_destroy (display->pointers_info);
   g_hash_table_destroy (display->multiple_click_info);
+
+  g_list_free_full (display->input_devices, g_object_unref);
+  g_list_free_full (display->seats, g_object_unref);
 
   if (display->device_manager)
     g_object_unref (display->device_manager);
@@ -372,6 +470,15 @@ gdk_display_peek_event (GdkDisplay *display)
     return NULL;
 }
 
+static void
+gdk_display_put_event_nocopy (GdkDisplay *display,
+                              GdkEvent   *event)
+{
+  _gdk_event_queue_append (display, event);
+  /* If the main loop is blocking in a different thread, wake it up */
+  g_main_context_wakeup (NULL);
+}
+
 /**
  * gdk_display_put_event:
  * @display: a #GdkDisplay
@@ -389,9 +496,7 @@ gdk_display_put_event (GdkDisplay     *display,
   g_return_if_fail (GDK_IS_DISPLAY (display));
   g_return_if_fail (event != NULL);
 
-  _gdk_event_queue_append (display, gdk_event_copy (event));
-  /* If the main loop is blocking in a different thread, wake it up */
-  g_main_context_wakeup (NULL); 
+  gdk_display_put_event_nocopy (display, gdk_event_copy (event));
 }
 
 /**
@@ -410,28 +515,22 @@ void
 gdk_display_pointer_ungrab (GdkDisplay *display,
 			    guint32     time_)
 {
-  GdkDeviceManager *device_manager;
-  GList *devices, *dev;
+  GList *seats, *s;
   GdkDevice *device;
 
   g_return_if_fail (GDK_IS_DISPLAY (display));
 
-  device_manager = gdk_display_get_device_manager (display);
-  devices = gdk_device_manager_list_devices (device_manager, GDK_DEVICE_TYPE_MASTER);
+  seats = gdk_display_list_seats (display);
 
-  /* FIXME: Should this be generic to all backends? */
-  /* FIXME: What happens with extended devices? */
-  for (dev = devices; dev; dev = dev->next)
+  for (s = seats; s; s = s->next)
     {
-      device = dev->data;
-
-      if (gdk_device_get_source (device) != GDK_SOURCE_MOUSE)
-        continue;
-
+      device = gdk_seat_get_pointer (s->data);
+      G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
       gdk_device_ungrab (device, time_);
+      G_GNUC_END_IGNORE_DEPRECATIONS;
     }
 
-  g_list_free (devices);
+  g_list_free (seats);
 }
 
 /**
@@ -450,28 +549,22 @@ void
 gdk_display_keyboard_ungrab (GdkDisplay *display,
 			     guint32     time)
 {
-  GdkDeviceManager *device_manager;
-  GList *devices, *dev;
+  GList *seats, *s;
   GdkDevice *device;
 
   g_return_if_fail (GDK_IS_DISPLAY (display));
 
-  device_manager = gdk_display_get_device_manager (display);
-  devices = gdk_device_manager_list_devices (device_manager, GDK_DEVICE_TYPE_MASTER);
+  seats = gdk_display_list_seats (display);
 
-  /* FIXME: Should this be generic to all backends? */
-  /* FIXME: What happens with extended devices? */
-  for (dev = devices; dev; dev = dev->next)
+  for (s = seats; s; s = s->next)
     {
-      device = dev->data;
-
-      if (gdk_device_get_source (device) != GDK_SOURCE_KEYBOARD)
-        continue;
-
+      device = gdk_seat_get_keyboard (s->data);
+      G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
       gdk_device_ungrab (device, time);
+      G_GNUC_END_IGNORE_DEPRECATIONS;
     }
 
-  g_list_free (devices);
+  g_list_free (seats);
 }
 
 /**
@@ -561,6 +654,7 @@ gdk_display_get_pointer (GdkDisplay      *display,
 			 GdkModifierType *mask)
 {
   GdkScreen *default_screen;
+  GdkSeat *default_seat;
   GdkWindow *root;
   gdouble tmp_x, tmp_y;
   GdkModifierType tmp_mask;
@@ -571,11 +665,12 @@ gdk_display_get_pointer (GdkDisplay      *display,
     return;
 
   default_screen = gdk_display_get_default_screen (display);
+  default_seat = gdk_display_get_default_seat (display);
 
   /* We call _gdk_device_query_state() here manually instead of
    * gdk_device_get_position() because we care about the modifier mask */
 
-  _gdk_device_query_state (display->core_pointer,
+  _gdk_device_query_state (gdk_seat_get_pointer (default_seat),
                            gdk_screen_get_root_window (default_screen),
                            &root, NULL,
                            &tmp_x, &tmp_y,
@@ -617,16 +712,21 @@ gdk_display_get_window_at_pointer (GdkDisplay *display,
 				   gint       *win_x,
 				   gint       *win_y)
 {
+  GdkDevice *pointer;
+
   g_return_val_if_fail (GDK_IS_DISPLAY (display), NULL);
 
-  return gdk_device_get_window_at_position (display->core_pointer, win_x, win_y);
+  pointer = gdk_seat_get_pointer (gdk_display_get_default_seat (display));
+
+  return gdk_device_get_window_at_position (pointer, win_x, win_y);
 }
 
 static void
-generate_grab_broken_event (GdkWindow *window,
-                            GdkDevice *device,
-			    gboolean   implicit,
-			    GdkWindow *grab_window)
+generate_grab_broken_event (GdkDisplay *display,
+                            GdkWindow  *window,
+                            GdkDevice  *device,
+			    gboolean    implicit,
+			    GdkWindow  *grab_window)
 {
   g_return_if_fail (window != NULL);
 
@@ -642,8 +742,7 @@ generate_grab_broken_event (GdkWindow *window,
       gdk_event_set_device (event, device);
       event->grab_broken.keyboard = (gdk_device_get_source (device) == GDK_SOURCE_KEYBOARD) ? TRUE : FALSE;
 
-      gdk_event_put (event);
-      gdk_event_free (event);
+      gdk_display_put_event_nocopy (display, event);
     }
 }
 
@@ -742,7 +841,7 @@ _gdk_display_break_touch_grabs (GdkDisplay *display,
                              GdkTouchGrabInfo, i);
 
       if (info->device == device && info->window != new_grab_window)
-        generate_grab_broken_event (GDK_WINDOW (info->window),
+        generate_grab_broken_event (display, GDK_WINDOW (info->window),
                                     device, TRUE, new_grab_window);
     }
 }
@@ -1032,6 +1131,14 @@ switch_to_pointer_grab (GdkDisplay        *display,
 }
 
 void
+_gdk_display_update_last_event (GdkDisplay     *display,
+                                const GdkEvent *event)
+{
+  if (gdk_event_get_time (event) != GDK_CURRENT_TIME)
+    display->last_event_time = gdk_event_get_time (event);
+}
+
+void
 _gdk_display_device_grab_update (GdkDisplay *display,
                                  GdkDevice  *device,
                                  GdkDevice  *source_device,
@@ -1080,7 +1187,7 @@ _gdk_display_device_grab_update (GdkDisplay *display,
 
       if ((next_grab == NULL && current_grab->implicit_ungrab) ||
           (next_grab != NULL && current_grab->window != next_grab->window))
-        generate_grab_broken_event (GDK_WINDOW (current_grab->window),
+        generate_grab_broken_event (display, GDK_WINDOW (current_grab->window),
                                     device,
                                     current_grab->implicit,
                                     next_grab? next_grab->window : NULL);
@@ -1380,28 +1487,25 @@ gdk_device_grab_info_libgtk_only (GdkDisplay  *display,
 gboolean
 gdk_display_pointer_is_grabbed (GdkDisplay *display)
 {
-  GdkDeviceManager *device_manager;
-  GList *devices, *dev;
+  GList *seats, *s;
   GdkDevice *device;
 
   g_return_val_if_fail (GDK_IS_DISPLAY (display), TRUE);
 
-  device_manager = gdk_display_get_device_manager (display);
-  devices = gdk_device_manager_list_devices (device_manager, GDK_DEVICE_TYPE_MASTER);
+  seats = gdk_display_list_seats (display);
 
-  for (dev = devices; dev; dev = dev->next)
+  for (s = seats; s; s = s->next)
     {
-      device = dev->data;
+      device = gdk_seat_get_pointer (s->data);
 
-      if (gdk_device_get_source (device) == GDK_SOURCE_MOUSE &&
-          gdk_display_device_is_grabbed (display, device))
+      if (gdk_display_device_is_grabbed (display, device))
         {
-          g_list_free (devices);
+          g_list_free (seats);
           return TRUE;
         }
     }
 
-  g_list_free (devices);
+  g_list_free (seats);
 
   return FALSE;
 }
@@ -1443,6 +1547,8 @@ gdk_display_device_is_grabbed (GdkDisplay *display,
  *          or unreferenced.
  *
  * Since: 3.0
+ *
+ * Deprecated: 3.20. Use gdk_display_get_default_seat() and #GdkSeat operations.
  **/
 GdkDeviceManager *
 gdk_display_get_device_manager (GdkDisplay *display)
@@ -1501,6 +1607,7 @@ gdk_display_get_n_screens (GdkDisplay *display)
  * Returns: (transfer none): the #GdkScreen object
  *
  * Since: 2.2
+ * Deprecated: 3.20: There is only one screen; use gdk_display_get_default_screen() to get it.
  */
 GdkScreen *
 gdk_display_get_screen (GdkDisplay *display,
@@ -1685,7 +1792,7 @@ gdk_display_supports_clipboard_persistence (GdkDisplay *display)
  * @display:          a #GdkDisplay
  * @clipboard_window: a #GdkWindow belonging to the clipboard owner
  * @time_:            a timestamp
- * @targets:          (array length=n_targets): an array of targets
+ * @targets:          (array length=n_targets) (nullable): an array of targets
  *                    that should be saved, or %NULL
  *                    if all available targets should be saved.
  * @n_targets:        length of the @targets array
@@ -1791,7 +1898,23 @@ gdk_display_list_devices (GdkDisplay *display)
 {
   g_return_val_if_fail (GDK_IS_DISPLAY (display), NULL);
 
-  return GDK_DISPLAY_GET_CLASS (display)->list_devices (display);
+  if (!display->input_devices)
+    {
+      GdkSeat *seat;
+
+      seat = gdk_display_get_default_seat (display);
+
+      /* For backwards compatibility we only include pointing
+       * devices (the core pointer and the slaves).
+       * We store the list since this deprecated function does
+       * not transfer the list ownership.
+       */
+      display->input_devices = gdk_seat_get_slaves (seat, GDK_SEAT_CAPABILITY_ALL_POINTING);
+      display->input_devices = g_list_prepend (display->input_devices, gdk_seat_get_pointer (seat));
+      g_list_foreach (display->input_devices, (GFunc) g_object_ref, NULL);
+    }
+
+  return display->input_devices;
 }
 
 static GdkAppLaunchContext *
@@ -1978,11 +2101,12 @@ gdk_display_warp_pointer (GdkDisplay *display,
                           gint        x,
                           gint        y)
 {
+  GdkDevice *pointer;
+
   g_return_if_fail (GDK_IS_DISPLAY (display));
 
-  gdk_device_warp (display->core_pointer,
-                   screen,
-                   x, y);
+  pointer = gdk_seat_get_pointer (gdk_display_get_default_seat (display));
+  gdk_device_warp (pointer, screen, x, y);
 }
 
 gulong
@@ -2177,42 +2301,37 @@ void
 gdk_error_trap_push (void)
 {
   GdkDisplayManager *manager;
-  GdkDisplayClass *class;
   GdkGlobalErrorTrap *trap;
+  GSList *displays;
   GSList *l;
 
   manager = gdk_display_manager_get ();
-  class = GDK_DISPLAY_GET_CLASS (gdk_display_manager_get_default_display (manager));
+  displays = gdk_display_manager_list_displays (manager);
 
-  if (class->push_error_trap == NULL)
-    return;
-
-  trap = g_slice_new (GdkGlobalErrorTrap);
-  trap->displays = gdk_display_manager_list_displays (manager);
-
-  g_slist_foreach (trap->displays, (GFunc) g_object_ref, NULL);
-  for (l = trap->displays; l != NULL; l = l->next)
+  trap = g_slice_new0 (GdkGlobalErrorTrap);
+  for (l = displays; l != NULL; l = l->next)
     {
-      class->push_error_trap (l->data);
+      GdkDisplay *display = l->data;
+      GdkDisplayClass *class = GDK_DISPLAY_GET_CLASS (display);
+
+      if (class->push_error_trap != NULL)
+        {
+          class->push_error_trap (display);
+          trap->displays = g_slist_prepend (trap->displays, g_object_ref (display));
+        }
     }
 
   g_queue_push_head (&gdk_error_traps, trap);
+
+  g_slist_free (displays);
 }
 
 static gint
 gdk_error_trap_pop_internal (gboolean need_code)
 {
-  GdkDisplayManager *manager;
-  GdkDisplayClass *class;
   GdkGlobalErrorTrap *trap;
   gint result;
   GSList *l;
-
-  manager = gdk_display_manager_get ();
-  class = GDK_DISPLAY_GET_CLASS (gdk_display_manager_get_default_display (manager));
-
-  if (class->pop_error_trap == NULL)
-    return 0;
 
   trap = g_queue_pop_head (&gdk_error_traps);
 
@@ -2221,9 +2340,9 @@ gdk_error_trap_pop_internal (gboolean need_code)
   result = 0;
   for (l = trap->displays; l != NULL; l = l->next)
     {
-      gint code = 0;
-
-      code = class->pop_error_trap (l->data, !need_code);
+      GdkDisplay *display = l->data;
+      GdkDisplayClass *class = GDK_DISPLAY_GET_CLASS (display);
+      gint code = class->pop_error_trap (display, !need_code);
 
       /* we use the error on the last display listed, why not. */
       if (code != 0)
@@ -2318,4 +2437,314 @@ gdk_display_get_debug_updates (GdkDisplay *display)
     return display->debug_updates;
   else
     return _gdk_debug_updates;
+}
+
+void
+gdk_display_add_seat (GdkDisplay *display,
+                      GdkSeat    *seat)
+{
+  g_return_if_fail (GDK_IS_DISPLAY (display));
+  g_return_if_fail (GDK_IS_SEAT (seat));
+
+  display->seats = g_list_append (display->seats, g_object_ref (seat));
+  g_signal_emit (display, signals[SEAT_ADDED], 0, seat);
+}
+
+void
+gdk_display_remove_seat (GdkDisplay *display,
+                         GdkSeat    *seat)
+{
+  GList *link;
+
+  g_return_if_fail (GDK_IS_DISPLAY (display));
+  g_return_if_fail (GDK_IS_SEAT (seat));
+
+  link = g_list_find (display->seats, seat);
+
+  if (link)
+    {
+      display->seats = g_list_remove_link (display->seats, link);
+      g_signal_emit (display, signals[SEAT_REMOVED], 0, seat);
+      g_object_unref (link->data);
+      g_list_free (link);
+    }
+}
+
+/**
+ * gdk_display_get_default_seat:
+ * @display: a #GdkDisplay
+ *
+ * Returns the default #GdkSeat for this display.
+ *
+ * Returns: (transfer none): the default seat.
+ *
+ * Since: 3.20
+ **/
+GdkSeat *
+gdk_display_get_default_seat (GdkDisplay *display)
+{
+  GdkDisplayClass *display_class;
+
+  g_return_val_if_fail (GDK_IS_DISPLAY (display), NULL);
+
+  display_class = GDK_DISPLAY_GET_CLASS (display);
+
+  return display_class->get_default_seat (display);
+}
+
+/**
+ * gdk_display_list_seats:
+ * @display: a #GdkDisplay
+ *
+ * Returns the list of seats known to @display.
+ *
+ * Returns: (transfer container) (element-type GdkSeat): the
+ *          list of seats known to the #GdkDisplay
+ *
+ * Since: 3.20
+ **/
+GList *
+gdk_display_list_seats (GdkDisplay *display)
+{
+  g_return_val_if_fail (GDK_IS_DISPLAY (display), NULL);
+
+  return g_list_copy (display->seats);
+}
+
+/**
+ * gdk_display_get_n_monitors:
+ * @display: a #GdkDisplay
+ *
+ * Gets the number of monitors that belong to @display.
+ *
+ * The returned number is valid until the next emission of the
+ * #GdkDisplay::monitor-added or #GdkDisplay::monitor-removed signal.
+ *
+ * Returns: the number of monitors
+ * Since: 3.22
+ */
+int
+gdk_display_get_n_monitors (GdkDisplay *display)
+{
+  g_return_val_if_fail (GDK_IS_DISPLAY (display), 0);
+
+  if (GDK_DISPLAY_GET_CLASS (display)->get_n_monitors == NULL)
+    return 1;
+
+  return GDK_DISPLAY_GET_CLASS (display)->get_n_monitors (display);
+}
+
+static GdkMonitor *
+get_fallback_monitor (GdkDisplay *display)
+{
+  static GdkMonitor *monitor = NULL;
+  GdkScreen *screen;
+
+  if (monitor == NULL)
+    {
+      g_warning ("%s does not implement the monitor vfuncs", G_OBJECT_TYPE_NAME (display));
+      monitor = gdk_monitor_new (display);
+      gdk_monitor_set_manufacturer (monitor, "fallback");
+      gdk_monitor_set_position (monitor, 0, 0);
+      gdk_monitor_set_scale_factor (monitor, 1);
+    }
+
+  screen = gdk_display_get_default_screen (display);
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+  gdk_monitor_set_size (monitor,
+                        gdk_screen_get_width (screen),
+                        gdk_screen_get_height (screen));
+  gdk_monitor_set_physical_size (monitor,
+                                 gdk_screen_get_width_mm (screen),
+                                 gdk_screen_get_height_mm (screen));
+G_GNUC_END_IGNORE_DEPRECATIONS
+
+  return monitor;
+}
+
+/**
+ * gdk_display_get_monitor:
+ * @display: a #GdkDisplay
+ * @monitor_num: number of the monitor
+ *
+ * Gets a monitor associated with this display.
+ *
+ * Returns: (nullable) (transfer none): the #GdkMonitor, or %NULL if
+ *    @monitor_num is not a valid monitor number
+ * Since: 3.22
+ */
+GdkMonitor *
+gdk_display_get_monitor (GdkDisplay *display,
+                         gint        monitor_num)
+{
+  g_return_val_if_fail (GDK_IS_DISPLAY (display), NULL);
+
+  if (GDK_DISPLAY_GET_CLASS (display)->get_monitor == NULL)
+    return get_fallback_monitor (display);
+
+  return GDK_DISPLAY_GET_CLASS (display)->get_monitor (display, monitor_num);
+}
+
+/**
+ * gdk_display_get_primary_monitor:
+ * @display: a #GdkDisplay
+ *
+ * Gets the primary monitor for the display.
+ *
+ * The primary monitor is considered the monitor where the “main desktop”
+ * lives. While normal application windows typically allow the window
+ * manager to place the windows, specialized desktop applications
+ * such as panels should place themselves on the primary monitor.
+ *
+ * Returns: (nullable) (transfer none): the primary monitor, or %NULL if no primary
+ *     monitor is configured by the user
+ * Since: 3.22
+ */
+GdkMonitor *
+gdk_display_get_primary_monitor (GdkDisplay *display)
+{
+  g_return_val_if_fail (GDK_IS_DISPLAY (display), NULL);
+
+  if (GDK_DISPLAY_GET_CLASS (display)->get_primary_monitor)
+    return GDK_DISPLAY_GET_CLASS (display)->get_primary_monitor (display);
+
+  return NULL;
+}
+
+/**
+ * gdk_display_get_monitor_at_point:
+ * @display: a #GdkDisplay
+ * @x: the x coordinate of the point
+ * @y: the y coordinate of the point
+ *
+ * Gets the monitor in which the point (@x, @y) is located,
+ * or a nearby monitor if the point is not in any monitor.
+ *
+ * Returns: (transfer none): the monitor containing the point
+ * Since: 3.22
+ */
+GdkMonitor *
+gdk_display_get_monitor_at_point (GdkDisplay *display,
+                                  int         x,
+                                  int         y)
+{
+  GdkMonitor *nearest = NULL;
+  int nearest_dist = G_MAXINT;
+  int n_monitors, i;
+
+  g_return_val_if_fail (GDK_IS_DISPLAY (display), NULL);
+
+  n_monitors = gdk_display_get_n_monitors (display);
+  for (i = 0; i < n_monitors; i++)
+    {
+      GdkMonitor *monitor;
+      GdkRectangle geometry;
+      int dist_x, dist_y, dist;
+
+      monitor = gdk_display_get_monitor (display, i);
+      gdk_monitor_get_geometry (monitor, &geometry);
+
+      if (x < geometry.x)
+        dist_x = geometry.x - x;
+      else if (geometry.x + geometry.width <= x)
+        dist_x = x - (geometry.x + geometry.width) + 1;
+      else
+        dist_x = 0;
+
+      if (y < geometry.y)
+        dist_y = geometry.y - y;
+      else if (geometry.y + geometry.height <= y)
+        dist_y = y - (geometry.y + geometry.height) + 1;
+      else
+        dist_y = 0;
+
+      dist = dist_x + dist_y;
+      if (dist < nearest_dist)
+        {
+          nearest_dist = dist;
+          nearest = monitor;
+        }
+
+      if (nearest_dist == 0)
+        break;
+    }
+
+  return nearest;
+}
+
+/**
+ * gdk_display_get_monitor_at_window:
+ * @display: a #GdkDisplay
+ * @window: a #GdkWindow
+ *
+ * Gets the monitor in which the largest area of @window
+ * resides, or a monitor close to @window if it is outside
+ * of all monitors.
+ *
+ * Returns: (transfer none): the monitor with the largest overlap with @window
+ * Since: 3.22
+ */
+GdkMonitor *
+gdk_display_get_monitor_at_window (GdkDisplay *display,
+                                   GdkWindow  *window)
+{
+  GdkRectangle win;
+  int n_monitors, i;
+  int area = 0;
+  GdkMonitor *best = NULL;
+  GdkDisplayClass *class;
+
+  g_return_val_if_fail (GDK_IS_DISPLAY (display), NULL);
+
+  class = GDK_DISPLAY_GET_CLASS (display);
+  if (class->get_monitor_at_window)
+    {
+      best = class->get_monitor_at_window (display, window);
+
+      if (best)
+        return best;
+    }
+
+  gdk_window_get_geometry (window, &win.x, &win.y, &win.width, &win.height);
+  gdk_window_get_origin (window, &win.x, &win.y);
+
+  n_monitors = gdk_display_get_n_monitors (display);
+  for (i = 0; i < n_monitors; i++)
+    {
+      GdkMonitor *monitor;
+      GdkRectangle mon, intersect;
+      int overlap;
+
+      monitor = gdk_display_get_monitor (display, i);
+      gdk_monitor_get_geometry (monitor, &mon);
+      gdk_rectangle_intersect (&win, &mon, &intersect);
+      overlap = intersect.width *intersect.height;
+      if (overlap > area)
+        {
+          area = overlap;
+          best = monitor;
+        }
+    }
+
+  if (best)
+    return best;
+
+  return gdk_display_get_monitor_at_point (display,
+                                           win.x + win.width / 2,
+                                           win.y + win.height / 2);
+}
+
+void
+gdk_display_monitor_added (GdkDisplay *display,
+                           GdkMonitor *monitor)
+{
+  g_signal_emit (display, signals[MONITOR_ADDED], 0, monitor);
+}
+
+void
+gdk_display_monitor_removed (GdkDisplay *display,
+                             GdkMonitor *monitor)
+{
+  g_signal_emit (display, signals[MONITOR_REMOVED], 0, monitor);
+  gdk_monitor_invalidate (monitor);
 }

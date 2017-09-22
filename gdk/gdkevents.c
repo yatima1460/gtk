@@ -26,6 +26,7 @@
 
 #include "gdkinternals.h"
 #include "gdkdisplayprivate.h"
+#include "gdkdndprivate.h"
 
 #include <string.h>
 #include <math.h>
@@ -65,8 +66,14 @@ static GDestroyNotify _gdk_event_notify = NULL;
 void
 _gdk_event_emit (GdkEvent *event)
 {
+  if (gdk_drag_context_handle_source_event (event))
+    return;
+
   if (_gdk_event_func)
     (*_gdk_event_func) (event, _gdk_event_data);
+
+  if (gdk_drag_context_handle_dest_event (event))
+    return;
 }
 
 /*********************************************
@@ -108,29 +115,10 @@ _gdk_event_queue_find_first (GdkDisplay *display)
             return tmp_list;
         }
 
-      tmp_list = g_list_next (tmp_list);
+      tmp_list = tmp_list->next;
     }
 
   return NULL;
-}
-
-/**
- * _gdk_event_queue_prepend:
- * @display: a #GdkDisplay
- * @event: Event to prepend.
- *
- * Prepends an event before the head of the event queue.
- *
- * Returns: the newly prepended list node.
- **/
-GList*
-_gdk_event_queue_prepend (GdkDisplay *display,
-			  GdkEvent   *event)
-{
-  display->queued_events = g_list_prepend (display->queued_events, event);
-  if (!display->queued_tail)
-    display->queued_tail = display->queued_events;
-  return display->queued_events;
 }
 
 /**
@@ -307,6 +295,7 @@ _gdk_event_queue_handle_motion_compression (GdkDisplay *display)
   while (pending_motions && pending_motions->next != NULL)
     {
       GList *next = pending_motions->next;
+      gdk_event_free (pending_motions->data);
       display->queued_events = g_list_delete_link (display->queued_events,
                                                    pending_motions);
       pending_motions = next;
@@ -562,6 +551,7 @@ gdk_event_new (GdkEventType type)
       new_event->scroll.y_root = 0.;
       new_event->scroll.delta_x = 0.;
       new_event->scroll.delta_y = 0.;
+      new_event->scroll.is_stop = FALSE;
       break;
     case GDK_ENTER_NOTIFY:
     case GDK_LEAVE_NOTIFY:
@@ -569,6 +559,24 @@ gdk_event_new (GdkEventType type)
       new_event->crossing.y = 0.;
       new_event->crossing.x_root = 0.;
       new_event->crossing.y_root = 0.;
+      break;
+    case GDK_TOUCHPAD_SWIPE:
+      new_event->touchpad_swipe.x = 0;
+      new_event->touchpad_swipe.y = 0;
+      new_event->touchpad_swipe.dx = 0;
+      new_event->touchpad_swipe.dy = 0;
+      new_event->touchpad_swipe.x_root = 0;
+      new_event->touchpad_swipe.y_root = 0;
+      break;
+    case GDK_TOUCHPAD_PINCH:
+      new_event->touchpad_pinch.x = 0;
+      new_event->touchpad_pinch.y = 0;
+      new_event->touchpad_pinch.dx = 0;
+      new_event->touchpad_pinch.dy = 0;
+      new_event->touchpad_pinch.angle_delta = 0;
+      new_event->touchpad_pinch.scale = 0;
+      new_event->touchpad_pinch.x_root = 0;
+      new_event->touchpad_pinch.y_root = 0;
       break;
     default:
       break;
@@ -587,8 +595,8 @@ gdk_event_is_allocated (const GdkEvent *event)
 }
 
 void
-_gdk_event_set_pointer_emulated (GdkEvent *event,
-                                 gboolean  emulated)
+gdk_event_set_pointer_emulated (GdkEvent *event,
+                                gboolean  emulated)
 {
   if (gdk_event_is_allocated (event))
     {
@@ -601,8 +609,19 @@ _gdk_event_set_pointer_emulated (GdkEvent *event,
     }
 }
 
+/**
+ * gdk_event_get_pointer_emulated:
+ * #event: a #GdkEvent
+ *
+ * Returns whether this event is an 'emulated' pointer event (typically
+ * from a touch event), as opposed to a real one.
+ *
+ * Returns: %TRUE if this event is emulated
+ *
+ * Since: 3.22
+ */
 gboolean
-_gdk_event_get_pointer_emulated (GdkEvent *event)
+gdk_event_get_pointer_emulated (GdkEvent *event)
 {
   if (gdk_event_is_allocated (event))
     return (((GdkEventPrivate *) event)->flags & GDK_EVENT_POINTER_EMULATED) != 0;
@@ -640,8 +659,10 @@ gdk_event_copy (const GdkEvent *event)
       GdkEventPrivate *private = (GdkEventPrivate *)event;
 
       new_private->screen = private->screen;
-      new_private->device = private->device;
-      new_private->source_device = private->source_device;
+      new_private->device = private->device ? g_object_ref (private->device) : NULL;
+      new_private->source_device = private->source_device ? g_object_ref (private->source_device) : NULL;
+      new_private->seat = private->seat;
+      new_private->tool = private->tool;
     }
 
   switch (event->any.type)
@@ -736,9 +757,17 @@ gdk_event_copy (const GdkEvent *event)
 void
 gdk_event_free (GdkEvent *event)
 {
+  GdkEventPrivate *private;
   GdkDisplay *display;
 
   g_return_if_fail (event != NULL);
+
+  if (gdk_event_is_allocated (event))
+    {
+      private = (GdkEventPrivate *) event;
+      g_clear_object (&private->device);
+      g_clear_object (&private->source_device);
+    }
 
   switch (event->any.type)
     {
@@ -863,6 +892,10 @@ gdk_event_get_time (const GdkEvent *event)
       case GDK_TOUCH_END:
       case GDK_TOUCH_CANCEL:
         return event->touch.time;
+      case GDK_TOUCHPAD_SWIPE:
+        return event->touchpad_swipe.time;
+      case GDK_TOUCHPAD_PINCH:
+        return event->touchpad_pinch.time;
       case GDK_SCROLL:
         return event->scroll.time;
       case GDK_KEY_PRESS:
@@ -887,6 +920,14 @@ gdk_event_get_time (const GdkEvent *event)
       case GDK_DROP_START:
       case GDK_DROP_FINISHED:
 	return event->dnd.time;
+      case GDK_PAD_BUTTON_PRESS:
+      case GDK_PAD_BUTTON_RELEASE:
+        return event->pad_button.time;
+      case GDK_PAD_RING:
+      case GDK_PAD_STRIP:
+        return event->pad_axis.time;
+      case GDK_PAD_GROUP_MODE:
+        return event->pad_group_mode.time;
       case GDK_CLIENT_EVENT:
       case GDK_VISIBILITY_NOTIFY:
       case GDK_CONFIGURE:
@@ -946,6 +987,12 @@ gdk_event_get_state (const GdkEvent        *event,
       case GDK_TOUCH_CANCEL:
         *state = event->touch.state;
         return TRUE;
+      case GDK_TOUCHPAD_SWIPE:
+        *state = event->touchpad_swipe.state;
+        return TRUE;
+      case GDK_TOUCHPAD_PINCH:
+        *state = event->touchpad_pinch.state;
+        return TRUE;
       case GDK_SCROLL:
 	*state =  event->scroll.state;
         return TRUE;
@@ -984,6 +1031,11 @@ gdk_event_get_state (const GdkEvent        *event,
       case GDK_SETTING:
       case GDK_OWNER_CHANGE:
       case GDK_GRAB_BROKEN:
+      case GDK_PAD_BUTTON_PRESS:
+      case GDK_PAD_BUTTON_RELEASE:
+      case GDK_PAD_RING:
+      case GDK_PAD_STRIP:
+      case GDK_PAD_GROUP_MODE:
       case GDK_EVENT_LAST:
         /* no state field */
         break;
@@ -996,8 +1048,8 @@ gdk_event_get_state (const GdkEvent        *event,
 /**
  * gdk_event_get_coords:
  * @event: a #GdkEvent
- * @x_win: (out): location to put event window x coordinate
- * @y_win: (out): location to put event window y coordinate
+ * @x_win: (out) (optional): location to put event window x coordinate
+ * @y_win: (out) (optional): location to put event window y coordinate
  * 
  * Extract the event window relative x/y coordinates from an event.
  * 
@@ -1046,6 +1098,14 @@ gdk_event_get_coords (const GdkEvent *event,
       x = event->motion.x;
       y = event->motion.y;
       break;
+    case GDK_TOUCHPAD_SWIPE:
+      x = event->touchpad_swipe.x;
+      y = event->touchpad_swipe.y;
+      break;
+    case GDK_TOUCHPAD_PINCH:
+      x = event->touchpad_pinch.x;
+      y = event->touchpad_pinch.y;
+      break;
     default:
       fetched = FALSE;
       break;
@@ -1062,8 +1122,8 @@ gdk_event_get_coords (const GdkEvent *event,
 /**
  * gdk_event_get_root_coords:
  * @event: a #GdkEvent
- * @x_root: (out): location to put root window x coordinate
- * @y_root: (out): location to put root window y coordinate
+ * @x_root: (out) (optional): location to put root window x coordinate
+ * @y_root: (out) (optional): location to put root window y coordinate
  * 
  * Extract the root window relative x/y coordinates from an event.
  * 
@@ -1117,6 +1177,14 @@ gdk_event_get_root_coords (const GdkEvent *event,
       x = event->dnd.x_root;
       y = event->dnd.y_root;
       break;
+    case GDK_TOUCHPAD_SWIPE:
+      x = event->touchpad_swipe.x_root;
+      y = event->touchpad_swipe.y_root;
+      break;
+    case GDK_TOUCHPAD_PINCH:
+      x = event->touchpad_pinch.x_root;
+      y = event->touchpad_pinch.y_root;
+      break;
     default:
       fetched = FALSE;
       break;
@@ -1157,6 +1225,10 @@ gdk_event_get_button (const GdkEvent *event,
     case GDK_3BUTTON_PRESS:
     case GDK_BUTTON_RELEASE:
       number = event->button.button;
+      break;
+    case GDK_PAD_BUTTON_PRESS:
+    case GDK_PAD_BUTTON_RELEASE:
+      number = event->pad_button.button;
       break;
     default:
       fetched = FALSE;
@@ -1253,6 +1325,8 @@ gdk_event_get_keyval (const GdkEvent *event,
  * @keycode: (out): location to store the keycode
  *
  * Extracts the hardware keycode from an event.
+ *
+ * Also see gdk_event_get_scancode().
  *
  * Returns: %TRUE if the event delivered a hardware keycode
  *
@@ -1366,6 +1440,28 @@ gdk_event_get_scroll_deltas (const GdkEvent *event,
 }
 
 /**
+ * gdk_event_is_scroll_stop_event
+ * @event: a #GdkEvent
+ *
+ * Check whether a scroll event is a stop scroll event. Scroll sequences
+ * with smooth scroll information may provide a stop scroll event once the
+ * interaction with the device finishes, e.g. by lifting a finger. This
+ * stop scroll event is the signal that a widget may trigger kinetic
+ * scrolling based on the current velocity.
+ *
+ * Stop scroll events always have a a delta of 0/0.
+ *
+ * Returns: %TRUE if the event is a scroll stop event
+ *
+ * Since: 3.20
+ */
+gboolean
+gdk_event_is_scroll_stop_event (const GdkEvent *event)
+{
+  return event->scroll.is_stop;
+}
+
+/**
  * gdk_event_get_axis:
  * @event: a #GdkEvent
  * @axis_use: the axis use to look for
@@ -1475,7 +1571,7 @@ gdk_event_set_device (GdkEvent  *event,
 
   private = (GdkEventPrivate *) event;
 
-  private->device = device;
+  g_set_object (&private->device, device);
 
   switch (event->type)
     {
@@ -1582,22 +1678,20 @@ gdk_event_get_device (const GdkEvent *event)
     case GDK_KEY_RELEASE:
       {
         GdkDisplay *display;
-        GdkDeviceManager *device_manager;
-        GdkDevice *client_pointer;
+        GdkSeat *seat;
 
         g_warning ("Event with type %d not holding a GdkDevice. "
-                   "It is most likely synthesized outside Gdk/GTK+\n",
+                   "It is most likely synthesized outside Gdk/GTK+",
                    event->type);
 
         display = gdk_window_get_display (event->any.window);
-        device_manager = gdk_display_get_device_manager (display);
-        client_pointer = gdk_device_manager_get_client_pointer (device_manager);
+        seat = gdk_display_get_default_seat (display);
 
         if (event->type == GDK_KEY_PRESS ||
             event->type == GDK_KEY_RELEASE)
-          return gdk_device_get_associated_device (client_pointer);
+          return gdk_seat_get_keyboard (seat);
         else
-          return client_pointer;
+          return gdk_seat_get_pointer (seat);
       }
       break;
     default:
@@ -1628,7 +1722,7 @@ gdk_event_set_source_device (GdkEvent  *event,
 
   private = (GdkEventPrivate *) event;
 
-  private->source_device = device;
+  g_set_object (&private->source_device, device);
 }
 
 /**
@@ -2004,12 +2098,6 @@ gdk_get_show_events (void)
   return (_gdk_debug_flags & GDK_DEBUG_EVENTS) != 0;
 }
 
-/* What do we do with G_IO_NVAL?
- */
-#define READ_CONDITION (G_IO_IN | G_IO_HUP | G_IO_ERR)
-#define WRITE_CONDITION (G_IO_OUT | G_IO_ERR)
-#define EXCEPTION_CONDITION (G_IO_PRI)
-
 static void
 gdk_synthesize_click (GdkDisplay *display,
                       GdkEvent   *event,
@@ -2028,9 +2116,11 @@ _gdk_event_button_generate (GdkDisplay *display,
 			    GdkEvent   *event)
 {
   GdkMultipleClickInfo *info;
+  GdkDevice *source_device;
 
   g_return_if_fail (event->type == GDK_BUTTON_PRESS);
 
+  source_device = gdk_event_get_source_device (event);
   info = g_hash_table_lookup (display->multiple_click_info, event->button.device);
 
   if (G_UNLIKELY (!info))
@@ -2045,6 +2135,7 @@ _gdk_event_button_generate (GdkDisplay *display,
   if ((event->button.time < (info->button_click_time[1] + 2 * display->double_click_time)) &&
       (event->button.window == info->button_window[1]) &&
       (event->button.button == info->button_number[1]) &&
+      (source_device == info->last_slave) &&
       (ABS (event->button.x - info->button_x[1]) <= display->double_click_distance) &&
       (ABS (event->button.y - info->button_y[1]) <= display->double_click_distance))
     {
@@ -2058,10 +2149,12 @@ _gdk_event_button_generate (GdkDisplay *display,
       info->button_number[0] = -1;
       info->button_x[0] = info->button_x[1] = 0;
       info->button_y[0] = info->button_y[1] = 0;
+      info->last_slave = NULL;
     }
   else if ((event->button.time < (info->button_click_time[0] + display->double_click_time)) &&
 	   (event->button.window == info->button_window[0]) &&
 	   (event->button.button == info->button_number[0]) &&
+           (source_device == info->last_slave) &&
 	   (ABS (event->button.x - info->button_x[0]) <= display->double_click_distance) &&
 	   (ABS (event->button.y - info->button_y[0]) <= display->double_click_distance))
     {
@@ -2077,6 +2170,7 @@ _gdk_event_button_generate (GdkDisplay *display,
       info->button_x[0] = event->button.x;
       info->button_y[1] = info->button_y[0];
       info->button_y[0] = event->button.y;
+      info->last_slave = source_device;
     }
   else
     {
@@ -2090,15 +2184,36 @@ _gdk_event_button_generate (GdkDisplay *display,
       info->button_x[0] = event->button.x;
       info->button_y[1] = 0;
       info->button_y[0] = event->button.y;
+      info->last_slave = source_device;
     }
+}
+
+static GList *
+gdk_get_pending_window_state_event_link (GdkWindow *window)
+{
+  GdkDisplay *display = gdk_window_get_display (window);
+  GList *tmp_list;
+
+  for (tmp_list = display->queued_events; tmp_list; tmp_list = tmp_list->next)
+    {
+      GdkEventPrivate *event = tmp_list->data;
+
+      if (event->event.type == GDK_WINDOW_STATE &&
+          event->event.window_state.window == window)
+        return tmp_list;
+    }
+
+  return NULL;
 }
 
 void
 _gdk_set_window_state (GdkWindow      *window,
                        GdkWindowState  new_state)
 {
+  GdkDisplay *display = gdk_window_get_display (window);
   GdkEvent temp_event;
   GdkWindowState old;
+  GList *pending_event_link;
 
   g_return_if_fail (window != NULL);
 
@@ -2107,10 +2222,22 @@ _gdk_set_window_state (GdkWindow      *window,
   temp_event.window_state.send_event = FALSE;
   temp_event.window_state.new_window_state = new_state;
 
-  old = window->state;
-
-  if (temp_event.window_state.new_window_state == old)
+  if (temp_event.window_state.new_window_state == window->state)
     return; /* No actual work to do, nothing changed. */
+
+  pending_event_link = gdk_get_pending_window_state_event_link (window);
+  if (pending_event_link)
+    {
+      old = window->old_state;
+      _gdk_event_queue_remove_link (display, pending_event_link);
+      gdk_event_free (pending_event_link->data);
+      g_list_free_1 (pending_event_link);
+    }
+  else
+    {
+      old = window->state;
+      window->old_state = old;
+    }
 
   temp_event.window_state.changed_mask = new_state ^ old;
 
@@ -2133,7 +2260,7 @@ _gdk_set_window_state (GdkWindow      *window,
     {
     case GDK_WINDOW_TOPLEVEL:
     case GDK_WINDOW_TEMP: /* ? */
-      gdk_display_put_event (gdk_window_get_display (window), &temp_event);
+      gdk_display_put_event (display, &temp_event);
       break;
     case GDK_WINDOW_FOREIGN:
     case GDK_WINDOW_ROOT:
@@ -2261,4 +2388,139 @@ gdk_event_get_event_type (const GdkEvent *event)
   g_return_val_if_fail (event != NULL, GDK_NOTHING);
 
   return event->type;
+}
+
+/**
+ * gdk_event_get_seat:
+ * @event: a #GdkEvent
+ *
+ * Returns the #GdkSeat this event was generated for.
+ *
+ * Returns: (transfer none): The #GdkSeat of this event
+ *
+ * Since: 3.20
+ **/
+GdkSeat *
+gdk_event_get_seat (const GdkEvent *event)
+{
+  const GdkEventPrivate *priv;
+
+  if (!gdk_event_is_allocated (event))
+    return NULL;
+
+  priv = (const GdkEventPrivate *) event;
+
+  if (!priv->seat)
+    {
+      GdkDevice *device;
+
+      g_warning ("Event with type %d not holding a GdkSeat. "
+                 "It is most likely synthesized outside Gdk/GTK+",
+                 event->type);
+
+      device = gdk_event_get_device (event);
+
+      return device ? gdk_device_get_seat (device) : NULL;
+    }
+
+  return priv->seat;
+}
+
+void
+gdk_event_set_seat (GdkEvent *event,
+                    GdkSeat  *seat)
+{
+  GdkEventPrivate *priv;
+
+  if (gdk_event_is_allocated (event))
+    {
+      priv = (GdkEventPrivate *) event;
+      priv->seat = seat;
+    }
+}
+
+/**
+ * gdk_event_get_device_tool:
+ * @event: a #GdkEvent
+ *
+ * If the event was generated by a device that supports
+ * different tools (eg. a tablet), this function will
+ * return a #GdkDeviceTool representing the tool that
+ * caused the event. Otherwise, %NULL will be returned.
+ *
+ * Note: the #GdkDeviceTool<!-- -->s will be constant during
+ * the application lifetime, if settings must be stored
+ * persistently across runs, see gdk_device_tool_get_serial()
+ *
+ * Returns: (transfer none): The current device tool, or %NULL
+ *
+ * Since: 3.22
+ **/
+GdkDeviceTool *
+gdk_event_get_device_tool (const GdkEvent *event)
+{
+  GdkEventPrivate *private;
+
+  if (!gdk_event_is_allocated (event))
+    return NULL;
+
+  private = (GdkEventPrivate *) event;
+  return private->tool;
+}
+
+/**
+ * gdk_event_set_device_tool:
+ * @event: a #GdkEvent
+ * @tool: (nullable): tool to set on the event, or %NULL
+ *
+ * Sets the device tool for this event, should be rarely used.
+ *
+ * Since: 3.22
+ **/
+void
+gdk_event_set_device_tool (GdkEvent      *event,
+                           GdkDeviceTool *tool)
+{
+  GdkEventPrivate *private;
+
+  if (!gdk_event_is_allocated (event))
+    return;
+
+  private = (GdkEventPrivate *) event;
+  private->tool = tool;
+}
+
+void
+gdk_event_set_scancode (GdkEvent *event,
+                        guint16 scancode)
+{
+  GdkEventPrivate *private = (GdkEventPrivate *) event;
+
+  private->key_scancode = scancode;
+}
+
+/**
+ * gdk_event_get_scancode:
+ * @event: a #GdkEvent
+ *
+ * Gets the keyboard low-level scancode of a key event.
+ *
+ * This is usually hardware_keycode. On Windows this is the high
+ * word of WM_KEY{DOWN,UP} lParam which contains the scancode and
+ * some extended flags.
+ *
+ * Returns: The associated keyboard scancode or 0
+ *
+ * Since: 3.22
+ **/
+int
+gdk_event_get_scancode (GdkEvent *event)
+{
+  GdkEventPrivate *private;
+
+  if (!gdk_event_is_allocated (event))
+    return 0;
+
+  private = (GdkEventPrivate *) event;
+  return private->key_scancode;
 }

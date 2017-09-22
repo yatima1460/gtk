@@ -40,11 +40,6 @@ struct _GdkBroadwayVisualClass
   GObjectClass parent_class;
 };
 
-static void     gdk_visual_decompose_mask (gulong     mask,
-					   gint      *shift,
-					   gint      *prec);
-
-
 G_DEFINE_TYPE (GdkBroadwayVisual, gdk_broadway_visual, GDK_TYPE_VISUAL)
 
 static void
@@ -89,15 +84,6 @@ _gdk_broadway_screen_init_visuals (GdkScreen *screen)
   visuals[0]->blue_mask = 0xff;
   visuals[0]->colormap_size = 256;
   visuals[0]->bits_per_rgb = 8;
-  gdk_visual_decompose_mask (visuals[0]->red_mask,
-			     &visuals[0]->red_shift,
-			     &visuals[0]->red_prec);
-  gdk_visual_decompose_mask (visuals[0]->green_mask,
-			     &visuals[0]->green_shift,
-			     &visuals[0]->green_prec);
-  gdk_visual_decompose_mask (visuals[0]->blue_mask,
-			     &visuals[0]->blue_shift,
-			     &visuals[0]->blue_prec);
 
   visuals[1] = g_object_new (GDK_TYPE_BROADWAY_VISUAL, NULL);
   visuals[1]->screen = screen;
@@ -109,15 +95,6 @@ _gdk_broadway_screen_init_visuals (GdkScreen *screen)
   visuals[1]->blue_mask = 0xff;
   visuals[1]->colormap_size = 256;
   visuals[1]->bits_per_rgb = 8;
-  gdk_visual_decompose_mask (visuals[1]->red_mask,
-			     &visuals[1]->red_shift,
-			     &visuals[1]->red_prec);
-  gdk_visual_decompose_mask (visuals[1]->green_mask,
-			     &visuals[1]->green_shift,
-			     &visuals[1]->green_prec);
-  gdk_visual_decompose_mask (visuals[1]->blue_mask,
-			     &visuals[1]->blue_shift,
-			     &visuals[1]->blue_prec);
 
   broadway_screen->system_visual = visuals[1];
   broadway_screen->rgba_visual = visuals[0];
@@ -258,31 +235,4 @@ _gdk_broadway_screen_list_visuals (GdkScreen *screen)
     list = g_list_append (list, broadway_screen->visuals[i]);
 
   return list;
-}
-
-static void
-gdk_visual_decompose_mask (gulong  mask,
-			   gint   *shift,
-			   gint   *prec)
-{
-  *shift = 0;
-  *prec = 0;
-
-  if (mask == 0)
-    {
-      g_warning ("Mask is 0 in visual. Server bug ?");
-      return;
-    }
-
-  while (!(mask & 0x1))
-    {
-      (*shift)++;
-      mask >>= 1;
-    }
-
-  while (mask & 0x1)
-    {
-      (*prec)++;
-      mask >>= 1;
-    }
 }

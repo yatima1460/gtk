@@ -17,9 +17,7 @@ drag_begin_cb (GtkWidget      *widget,
 
   pos = gtk_entry_get_current_icon_drag_source (GTK_ENTRY (widget));
   if (pos != -1)
-    gtk_drag_set_icon_name (context, "dialog-info", 2, 2);
-
-  g_print ("drag begin %d\n", pos);
+    gtk_drag_set_icon_name (context, "dialog-information", 2, 2);
 }
 
 static void
@@ -36,20 +34,62 @@ drag_data_get_cb (GtkWidget        *widget,
 
   if (pos == GTK_ENTRY_ICON_PRIMARY)
     {
-#if 0
       gint start, end;
-      
+
       if (gtk_editable_get_selection_bounds (GTK_EDITABLE (widget), &start, &end))
         {
           gchar *str;
-          
+
           str = gtk_editable_get_chars (GTK_EDITABLE (widget), start, end);
           gtk_selection_data_set_text (data, str, -1);
           g_free (str);
         }
-#else
-      gtk_selection_data_set_text (data, "XXX", -1);
-#endif
+      else
+        gtk_selection_data_set_text (data, "XXX", -1);
+    }
+}
+
+static void
+set_blank (GtkWidget *button,
+           GtkEntry  *entry)
+{
+  if (gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON (button)))
+    gtk_entry_set_icon_from_icon_name (entry, GTK_ENTRY_ICON_SECONDARY, NULL);
+}
+
+static void
+set_icon_name (GtkWidget *button,
+               GtkEntry  *entry)
+{
+  if (gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON (button)))
+    gtk_entry_set_icon_from_icon_name (entry, GTK_ENTRY_ICON_SECONDARY, "media-floppy");
+}
+
+static void
+set_gicon (GtkWidget *button,
+           GtkEntry  *entry)
+{
+  GIcon *icon;
+
+ if (gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON (button)))
+    {
+      icon = g_themed_icon_new ("gtk-yes");
+      gtk_entry_set_icon_from_gicon (entry, GTK_ENTRY_ICON_SECONDARY, icon);
+      g_object_unref (icon);
+    }
+}
+
+static void
+set_pixbuf (GtkWidget *button,
+            GtkEntry  *entry)
+{
+  GdkPixbuf *pixbuf;
+
+  if (gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON (button)))
+    {
+      pixbuf = gdk_pixbuf_new_from_resource ("/org/gtk/libgtk/inspector/logo.png", NULL);
+      gtk_entry_set_icon_from_pixbuf (entry, GTK_ENTRY_ICON_SECONDARY, pixbuf);
+      g_object_unref (pixbuf);
     }
 }
 
@@ -60,6 +100,11 @@ main (int argc, char **argv)
   GtkWidget *grid;
   GtkWidget *label;
   GtkWidget *entry;
+  GtkWidget *box;
+  GtkWidget *button1;
+  GtkWidget *button2;
+  GtkWidget *button3;
+  GtkWidget *button4;
   GIcon *icon;
   GtkTargetList *tlist;
 
@@ -146,13 +191,24 @@ main (int argc, char **argv)
   gtk_widget_set_hexpand (entry, TRUE);
   gtk_grid_attach (GTK_GRID (grid), entry, 1, 2, 1, 1);
 
+  gtk_entry_set_placeholder_text (GTK_ENTRY (entry),
+                                  "Type some text, then click an icon");
+
   gtk_entry_set_icon_from_icon_name (GTK_ENTRY (entry),
                                      GTK_ENTRY_ICON_PRIMARY,
                                      "edit-find-symbolic");
 
+  gtk_entry_set_icon_tooltip_text (GTK_ENTRY (entry),
+                                   GTK_ENTRY_ICON_PRIMARY,
+                                   "Clicking the other icon is more interesting!");
+
   gtk_entry_set_icon_from_icon_name (GTK_ENTRY (entry),
                                      GTK_ENTRY_ICON_SECONDARY,
                                      "edit-clear-symbolic");
+
+  gtk_entry_set_icon_tooltip_text (GTK_ENTRY (entry),
+                                   GTK_ENTRY_ICON_SECONDARY,
+                                   "Clear");
 
   g_signal_connect (entry, "icon-press", G_CALLBACK (clear_pressed), NULL);
 
@@ -177,6 +233,10 @@ main (int argc, char **argv)
 				  GTK_ENTRY_ICON_PRIMARY,
 				  FALSE);
 
+  gtk_entry_set_icon_tooltip_text (GTK_ENTRY (entry),
+                                   GTK_ENTRY_ICON_PRIMARY,
+                                   "The password is hidden for security");
+
   /* Name - Does not set any icons. */
   label = gtk_label_new ("Name:");
   gtk_grid_attach (GTK_GRID (grid), label, 0, 4, 1, 1);
@@ -185,7 +245,31 @@ main (int argc, char **argv)
 
   entry = gtk_entry_new ();
   gtk_widget_set_hexpand (entry, TRUE);
+  gtk_entry_set_placeholder_text (GTK_ENTRY (entry),
+                                  "Use the RadioButtons to choose an icon");
+  gtk_entry_set_icon_tooltip_text (GTK_ENTRY (entry),
+                                   GTK_ENTRY_ICON_SECONDARY,
+                                   "Use the RadioButtons to change this icon");
   gtk_grid_attach (GTK_GRID (grid), entry, 1, 4, 1, 1);
+
+  box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
+  gtk_grid_attach (GTK_GRID (grid), box, 0, 5, 3, 1);
+
+  button1 = gtk_radio_button_new_with_label (NULL, "Blank");
+  g_signal_connect (button1, "toggled", G_CALLBACK (set_blank), entry);
+  gtk_container_add (GTK_CONTAINER (box), button1);
+  button2 = gtk_radio_button_new_with_label (NULL, "Icon Name");
+  gtk_radio_button_join_group (GTK_RADIO_BUTTON (button2), GTK_RADIO_BUTTON (button1));
+  g_signal_connect (button2, "toggled", G_CALLBACK (set_icon_name), entry);
+  gtk_container_add (GTK_CONTAINER (box), button2);
+  button3 = gtk_radio_button_new_with_label (NULL, "GIcon");
+  gtk_radio_button_join_group (GTK_RADIO_BUTTON (button3), GTK_RADIO_BUTTON (button1));
+  g_signal_connect (button3, "toggled", G_CALLBACK (set_gicon), entry);
+  gtk_container_add (GTK_CONTAINER (box), button3);
+  button4 = gtk_radio_button_new_with_label (NULL, "Pixbuf");
+  gtk_radio_button_join_group (GTK_RADIO_BUTTON (button4), GTK_RADIO_BUTTON (button1));
+  g_signal_connect (button4, "toggled", G_CALLBACK (set_pixbuf), entry);
+  gtk_container_add (GTK_CONTAINER (box), button4);
 
   gtk_widget_show_all (window);
 

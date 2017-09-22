@@ -77,7 +77,7 @@ create_shader (int         type,
       buffer = g_malloc (log_len + 1);
       glGetShaderInfoLog (shader, log_len, NULL, buffer);
 
-      g_warning ("Compile failure in %s shader:\n%s\n",
+      g_warning ("Compile failure in %s shader:\n%s",
                  type == GL_VERTEX_SHADER ? "vertex" : "fragment",
                  buffer);
 
@@ -93,7 +93,9 @@ create_shader (int         type,
 
 /* Initialize the shaders and link them into a program */
 static void
-init_shaders (GLuint *program_out,
+init_shaders (const char *vertex_path,
+              const char *fragment_path,
+              GLuint *program_out,
               GLuint *mvp_out)
 {
   GLuint vertex, fragment;
@@ -102,7 +104,7 @@ init_shaders (GLuint *program_out,
   int status;
   GBytes *source;
 
-  source = g_resources_lookup_data ("/glarea/glarea-vertex.glsl", 0, NULL);
+  source = g_resources_lookup_data (vertex_path, 0, NULL);
   vertex = create_shader (GL_VERTEX_SHADER, g_bytes_get_data (source, NULL));
   g_bytes_unref (source);
 
@@ -112,7 +114,7 @@ init_shaders (GLuint *program_out,
       return;
     }
 
-  source = g_resources_lookup_data ("/glarea/glarea-fragment.glsl", 0, NULL);
+  source = g_resources_lookup_data (fragment_path, 0, NULL);
   fragment = create_shader (GL_FRAGMENT_SHADER, g_bytes_get_data (source, NULL));
   g_bytes_unref (source);
 
@@ -140,7 +142,7 @@ init_shaders (GLuint *program_out,
       buffer = g_malloc (log_len + 1);
       glGetProgramInfoLog (program, log_len, NULL, buffer);
 
-      g_warning ("Linking failure:\n%s\n", buffer);
+      g_warning ("Linking failure:\n%s", buffer);
 
       g_free (buffer);
 
@@ -218,13 +220,29 @@ static GLuint mvp_location;
 static void
 realize (GtkWidget *widget)
 {
+  const char *vertex_path, *fragment_path;
+  GdkGLContext *context;
+
   gtk_gl_area_make_current (GTK_GL_AREA (widget));
 
   if (gtk_gl_area_get_error (GTK_GL_AREA (widget)) != NULL)
     return;
 
+  context = gtk_gl_area_get_context (GTK_GL_AREA (widget));
+
+  if (gdk_gl_context_get_use_es (context))
+    {
+      vertex_path = "/glarea/glarea-gles.vs.glsl";
+      fragment_path = "/glarea/glarea-gles.fs.glsl";
+    }
+  else
+    {
+      vertex_path = "/glarea/glarea-gl.vs.glsl";
+      fragment_path = "/glarea/glarea-gl.fs.glsl";
+    }
+
   init_buffers (&position_buffer, NULL);
-  init_shaders (&program, &mvp_location);
+  init_shaders (vertex_path, fragment_path, &program, &mvp_location);
 }
 
 /* We should tear down the state when unrealizing */
@@ -315,7 +333,7 @@ create_axis_slider (int axis)
   GtkAdjustment *adj;
   const char *text;
 
-  box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, FALSE);
+  box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 0);
 
   switch (axis)
     {
@@ -373,7 +391,7 @@ create_glarea_window (GtkWidget *do_widget)
 
   window = gtk_window_new (GTK_WINDOW_TOPLEVEL);
   gtk_window_set_screen (GTK_WINDOW (window), gtk_widget_get_screen (do_widget));
-  gtk_window_set_title (GTK_WINDOW (window), "GtkGLArea - Golden Triangle");
+  gtk_window_set_title (GTK_WINDOW (window), "OpenGL Area");
   gtk_window_set_default_size (GTK_WINDOW (window), 400, 600);
   gtk_container_set_border_width (GTK_CONTAINER (window), 12);
   g_signal_connect (window, "destroy", G_CALLBACK (close_window), NULL);

@@ -32,6 +32,7 @@
 #include "gtkplug.h"
 #include "gtkintl.h"
 #include "gtkprivate.h"
+#include "gtkrender.h"
 #include "gtksocketprivate.h"
 #include "gtkwidgetprivate.h"
 #include "gtkwindowgroup.h"
@@ -57,16 +58,14 @@
  *
  * The communication between a #GtkSocket and a #GtkPlug follows the
  * [XEmbed Protocol](http://www.freedesktop.org/Standards/xembed-spec).
- * This protocol has also been implemented in other toolkits,
- * e.g. Qt, allowing the same level of
- * integration when embedding a Qt widget
+ * This protocol has also been implemented in other toolkits, e.g. Qt,
+ * allowing the same level of integration when embedding a Qt widget
  * in GTK+ or vice versa.
  *
  * The #GtkPlug and #GtkSocket widgets are only available when GTK+
  * is compiled for the X11 platform and %GDK_WINDOWING_X11 is defined.
  * They can only be used on a #GdkX11Display. To use #GtkPlug and
- * #GtkSocket, you need to include the `gtk/gtkx.h`
- * header.
+ * #GtkSocket, you need to include the `gtk/gtkx.h` header.
  */
 
 struct _GtkPlugPrivate
@@ -92,8 +91,6 @@ static void            gtk_plug_show                  (GtkWidget        *widget)
 static void            gtk_plug_hide                  (GtkWidget        *widget);
 static void            gtk_plug_map                   (GtkWidget        *widget);
 static void            gtk_plug_unmap                 (GtkWidget        *widget);
-static void            gtk_plug_size_allocate         (GtkWidget        *widget,
-						       GtkAllocation    *allocation);
 static gboolean        gtk_plug_key_press_event       (GtkWidget        *widget,
 						       GdkEventKey      *event);
 static gboolean        gtk_plug_focus_event           (GtkWidget        *widget,
@@ -177,8 +174,6 @@ gtk_plug_class_init (GtkPlugClass *class)
   widget_class->hide = gtk_plug_hide;
   widget_class->map = gtk_plug_map;
   widget_class->unmap = gtk_plug_unmap;
-  widget_class->size_allocate = gtk_plug_size_allocate;
-
   widget_class->focus = gtk_plug_focus;
 
   gtk_widget_class_set_accessible_role (widget_class, ATK_ROLE_PANEL);
@@ -230,7 +225,7 @@ gtk_plug_class_init (GtkPlugClass *class)
 		  G_SIGNAL_RUN_LAST,
 		  G_STRUCT_OFFSET (GtkPlugClass, embedded),
 		  NULL, NULL,
-		  _gtk_marshal_VOID__VOID,
+		  NULL,
 		  G_TYPE_NONE, 0);
 }
 
@@ -238,6 +233,8 @@ static void
 gtk_plug_init (GtkPlug *plug)
 {
   plug->priv = gtk_plug_get_instance_private (plug);
+
+  gtk_window_set_decorated (GTK_WINDOW (plug), FALSE);
 }
 
 /**
@@ -382,7 +379,7 @@ gtk_plug_get_embedded (GtkPlug *plug)
  *
  * Retrieves the socket the plug is embedded in.
  *
- * Returns: (transfer none): the window of the socket, or %NULL
+ * Returns: (nullable) (transfer none): the window of the socket, or %NULL
  *
  * Since: 2.14
  **/
@@ -957,9 +954,9 @@ gtk_plug_filter_func (GdkXEvent *gdk_xevent,
     case KeyRelease:
       {
         GdkModifierType state, consumed;
-        GdkDeviceManager *device_manager;
-        GdkDevice *pointer, *keyboard;
+        GdkDevice *keyboard;
         GdkKeymap *keymap;
+        GdkSeat *seat;
 
         if (xevent->type == KeyPress)
           event->key.type = GDK_KEY_PRESS;
@@ -973,9 +970,8 @@ gtk_plug_filter_func (GdkXEvent *gdk_xevent,
         event->key.hardware_keycode = xevent->xkey.keycode;
         event->key.keyval = GDK_KEY_VoidSymbol;
 
-        device_manager = gdk_display_get_device_manager (display);
-        pointer = gdk_device_manager_get_client_pointer (device_manager);
-        keyboard = gdk_device_get_associated_device (pointer);
+        seat = gdk_display_get_default_seat (display);
+        keyboard = gdk_seat_get_keyboard (seat);
         gdk_event_set_device (event, keyboard);
 
         keymap = gdk_keymap_get_for_display (display);
@@ -1015,8 +1011,13 @@ gtk_plug_realize (GtkWidget *widget)
   const gchar *title;
   gchar *wmclass_name, *wmclass_class;
   gint attributes_mask;
+  GdkScreen *screen;
 
   gtk_widget_set_realized (widget, TRUE);
+
+  screen = gtk_widget_get_screen (widget);
+  if (!GDK_IS_X11_SCREEN (screen))
+    g_warning ("GtkPlug only works under X11");
 
   title = gtk_window_get_title (window);
   _gtk_window_get_wmclass (window, &wmclass_name, &wmclass_class);
@@ -1050,7 +1051,7 @@ gtk_plug_realize (GtkWidget *widget)
       GdkWindow *root_window;
       attributes.window_type = GDK_WINDOW_TOPLEVEL;
 
-      root_window = gdk_screen_get_root_window (gtk_widget_get_screen (widget));
+      root_window = gdk_screen_get_root_window (screen);
 
       gdk_error_trap_push ();
       if (priv->socket_window)
@@ -1096,9 +1097,6 @@ gtk_plug_realize (GtkWidget *widget)
     }
 
   gtk_widget_register_window (widget, gdk_window);
-
-  gtk_style_context_set_background (gtk_widget_get_style_context (widget),
-                                    gdk_window);
 }
 
 static void
@@ -1178,43 +1176,6 @@ gtk_plug_unmap (GtkWidget *widget)
     }
   else
     GTK_WIDGET_CLASS (bin_class)->unmap (widget);
-}
-
-static void
-gtk_plug_size_allocate (GtkWidget     *widget,
-			GtkAllocation *allocation)
-{
-  GtkWidget *child;
-
-  if (gtk_widget_is_toplevel (widget))
-    GTK_WIDGET_CLASS (gtk_plug_parent_class)->size_allocate (widget, allocation);
-  else
-    {
-      GtkBin *bin = GTK_BIN (widget);
-
-      gtk_widget_set_allocation (widget, allocation);
-
-      if (gtk_widget_get_realized (widget))
-        gdk_window_move_resize (gtk_widget_get_window (widget),
-				allocation->x, allocation->y,
-				allocation->width, allocation->height);
-
-      child = gtk_bin_get_child (bin);
-
-      if (child != NULL && gtk_widget_get_visible (child))
-	{
-	  GtkAllocation child_allocation;
-	  
-	  child_allocation.x = child_allocation.y = gtk_container_get_border_width (GTK_CONTAINER (widget));
-	  child_allocation.width =
-	    MAX (1, (gint)allocation->width - child_allocation.x * 2);
-	  child_allocation.height =
-	    MAX (1, (gint)allocation->height - child_allocation.y * 2);
-	  
-	  gtk_widget_size_allocate (child, &child_allocation);
-	}
-      
-    }
 }
 
 static gboolean

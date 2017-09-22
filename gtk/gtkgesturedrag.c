@@ -25,14 +25,15 @@
  *
  * #GtkGestureDrag is a #GtkGesture implementation that recognizes drag
  * operations. The drag operation itself can be tracked throught the
- * #GtkGestureDrag:drag-begin, #GtkGestureDrag:drag-update and
- * #GtkGestureDrag:drag-end signals, or the relevant coordinates be
+ * #GtkGestureDrag::drag-begin, #GtkGestureDrag::drag-update and
+ * #GtkGestureDrag::drag-end signals, or the relevant coordinates be
  * extracted through gtk_gesture_drag_get_offset() and
  * gtk_gesture_drag_get_start_point().
  */
 #include "config.h"
 #include "gtkgesturedrag.h"
 #include "gtkgesturedragprivate.h"
+#include "gtkintl.h"
 
 typedef struct _GtkGestureDragPrivate GtkGestureDragPrivate;
 typedef struct _EventData EventData;
@@ -55,6 +56,26 @@ enum {
 static guint signals[N_SIGNALS] = { 0 };
 
 G_DEFINE_TYPE_WITH_PRIVATE (GtkGestureDrag, gtk_gesture_drag, GTK_TYPE_GESTURE_SINGLE)
+
+static gboolean
+gtk_gesture_drag_filter_event (GtkEventController *controller,
+                               const GdkEvent     *event)
+{
+  /* Let touchpad swipe events go through, only if they match n-points  */
+  if (event->type == GDK_TOUCHPAD_SWIPE)
+    {
+      guint n_points;
+
+      g_object_get (G_OBJECT (controller), "n-points", &n_points, NULL);
+
+      if (event->touchpad_swipe.n_fingers == n_points)
+        return FALSE;
+      else
+        return TRUE;
+    }
+
+  return GTK_EVENT_CONTROLLER_CLASS (gtk_gesture_drag_parent_class)->filter_event (controller, event);
+}
 
 static void
 gtk_gesture_drag_begin (GtkGesture       *gesture,
@@ -110,6 +131,9 @@ static void
 gtk_gesture_drag_class_init (GtkGestureDragClass *klass)
 {
   GtkGestureClass *gesture_class = GTK_GESTURE_CLASS (klass);
+  GtkEventControllerClass *event_controller_class = GTK_EVENT_CONTROLLER_CLASS (klass);
+
+  event_controller_class->filter_event = gtk_gesture_drag_filter_event;
 
   gesture_class->begin = gtk_gesture_drag_begin;
   gesture_class->update = gtk_gesture_drag_update;
@@ -126,7 +150,7 @@ gtk_gesture_drag_class_init (GtkGestureDragClass *klass)
    * Since: 3.14
    */
   signals[DRAG_BEGIN] =
-    g_signal_new ("drag-begin",
+    g_signal_new (I_("drag-begin"),
                   G_TYPE_FROM_CLASS (klass),
                   G_SIGNAL_RUN_LAST,
                   G_STRUCT_OFFSET (GtkGestureDragClass, drag_begin),
@@ -143,7 +167,7 @@ gtk_gesture_drag_class_init (GtkGestureDragClass *klass)
    * Since: 3.14
    */
   signals[DRAG_UPDATE] =
-    g_signal_new ("drag-update",
+    g_signal_new (I_("drag-update"),
                   G_TYPE_FROM_CLASS (klass),
                   G_SIGNAL_RUN_LAST,
                   G_STRUCT_OFFSET (GtkGestureDragClass, drag_update),
@@ -160,7 +184,7 @@ gtk_gesture_drag_class_init (GtkGestureDragClass *klass)
    * Since: 3.14
    */
   signals[DRAG_END] =
-    g_signal_new ("drag-end",
+    g_signal_new (I_("drag-end"),
                   G_TYPE_FROM_CLASS (klass),
                   G_SIGNAL_RUN_LAST,
                   G_STRUCT_OFFSET (GtkGestureDragClass, drag_end),

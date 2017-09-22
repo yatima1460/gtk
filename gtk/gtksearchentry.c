@@ -27,11 +27,13 @@
 
 #include "config.h"
 
-#include "gtkaccessible.h"
 #include "gtksearchentry.h"
-#include "gtkmarshalers.h"
-#include "gtkintl.h"
+
+#include "gtkaccessible.h"
 #include "gtkbindings.h"
+#include "gtkintl.h"
+#include "gtkmarshalers.h"
+#include "gtkstylecontext.h"
 
 /**
  * SECTION:gtksearchentry
@@ -56,11 +58,11 @@
  * be used instead of the #GtkEditable::changed signal.
  *
  * The #GtkSearchEntry::previous-match, #GtkSearchEntry::next-match
- * and #GtkSearchEntry::stop-search signals can be uesd to implement
+ * and #GtkSearchEntry::stop-search signals can be used to implement
  * moving between search results and ending the search.
  *
  * Often, GtkSearchEntry will be fed events by means of being
- * placed inside a #GtkSearchEntry. If that is not the case,
+ * placed inside a #GtkSearchBar. If that is not the case,
  * you can use gtk_search_entry_handle_event() to pass events.
  *
  * Since: 3.6
@@ -176,7 +178,7 @@ gtk_search_entry_class_init (GtkSearchEntryClass *klass)
                   G_SIGNAL_RUN_LAST,
                   G_STRUCT_OFFSET (GtkSearchEntryClass, search_changed),
                   NULL, NULL,
-                  _gtk_marshal_VOID__VOID,
+                  NULL,
                   G_TYPE_NONE, 0);
 
   /**
@@ -200,7 +202,7 @@ gtk_search_entry_class_init (GtkSearchEntryClass *klass)
                   G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
                   G_STRUCT_OFFSET (GtkSearchEntryClass, next_match),
                   NULL, NULL,
-                  _gtk_marshal_VOID__VOID,
+                  NULL,
                   G_TYPE_NONE, 0);
 
   /**
@@ -224,7 +226,7 @@ gtk_search_entry_class_init (GtkSearchEntryClass *klass)
                   G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
                   G_STRUCT_OFFSET (GtkSearchEntryClass, previous_match),
                   NULL, NULL,
-                  _gtk_marshal_VOID__VOID,
+                  NULL,
                   G_TYPE_NONE, 0);
 
   /**
@@ -247,7 +249,7 @@ gtk_search_entry_class_init (GtkSearchEntryClass *klass)
                   G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
                   G_STRUCT_OFFSET (GtkSearchEntryClass, stop_search),
                   NULL, NULL,
-                  _gtk_marshal_VOID__VOID,
+                  NULL,
                   G_TYPE_NONE, 0);
 
   binding_set = gtk_binding_set_by_class (klass);
@@ -367,6 +369,8 @@ gtk_search_entry_init (GtkSearchEntry *entry)
   atk_obj = gtk_widget_get_accessible (GTK_WIDGET (entry));
   if (GTK_IS_ACCESSIBLE (atk_obj))
     atk_object_set_name (atk_obj, _("Search"));
+
+  gtk_style_context_add_class (gtk_widget_get_style_context (GTK_WIDGET (entry)), "search");
 }
 
 /**

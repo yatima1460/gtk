@@ -19,6 +19,12 @@
 #include <string.h>
 #include <gtk/gtk.h>
 #include <gtk/gtkunixprint.h>
+#ifdef GDK_WINDOWING_X11
+#include <gtk/gtkx.h>
+#endif
+#ifdef GDK_WINDOWING_WAYLAND
+#include "gdk/wayland/gdkwayland.h"
+#endif
 
 typedef struct
 {
@@ -382,11 +388,13 @@ test_type (gconstpointer data)
   /* These can't be freely constructed/destroyed */
   if (g_type_is_a (type, GTK_TYPE_APPLICATION) ||
       g_type_is_a (type, GDK_TYPE_PIXBUF_LOADER) ||
+      g_type_is_a (type, GDK_TYPE_DRAWING_CONTEXT) ||
 #ifdef G_OS_UNIX
       g_type_is_a (type, GTK_TYPE_PRINT_JOB) ||
 #endif
       g_type_is_a (type, gdk_pixbuf_simple_anim_iter_get_type ()) ||
       g_str_equal (g_type_name (type), "GdkX11DeviceManagerXI2") ||
+      g_str_equal (g_type_name (type), "GdkX11DeviceManagerCore") ||
       g_str_equal (g_type_name (type), "GdkX11Display") ||
       g_str_equal (g_type_name (type), "GdkX11DisplayManager") ||
       g_str_equal (g_type_name (type), "GdkX11Screen") ||
@@ -401,9 +409,25 @@ test_type (gconstpointer data)
   if (g_type_is_a (type, GTK_TYPE_FILE_CHOOSER_BUTTON) ||
       g_type_is_a (type, GTK_TYPE_FILE_CHOOSER_DIALOG) ||
       g_type_is_a (type, GTK_TYPE_FILE_CHOOSER_WIDGET) ||
+      g_type_is_a (type, GTK_TYPE_FILE_CHOOSER_NATIVE) ||
       g_type_is_a (type, GTK_TYPE_PLACES_SIDEBAR))
     return;
- 
+
+  /* These rely on a d-bus session bus */
+  if (g_type_is_a (type, GTK_TYPE_MOUNT_OPERATION))
+    return;
+
+  /* Backend-specific */
+#ifdef GDK_WINDOWING_X11
+  if (GDK_IS_X11_DISPLAY (gdk_display_get_default ())) ;
+  else if (g_type_is_a (type, GTK_TYPE_PLUG) ||
+           g_type_is_a (type, GTK_TYPE_SOCKET))
+    return;
+#endif
+
+  if (g_type_is_a (type, GTK_TYPE_STATUS_ICON))
+    return;
+
   klass = g_type_class_ref (type);
 
   if (g_type_is_a (type, GTK_TYPE_SETTINGS))
@@ -462,6 +486,10 @@ test_type (gconstpointer data)
            g_str_equal (pspec->name, "expand")
             ))
 	continue;
+
+      if (pspec->owner_type == GTK_TYPE_ENTRY &&
+          g_str_equal (pspec->name, "im-module"))
+        continue;
 
       if (type == GTK_TYPE_SETTINGS)
         continue;
@@ -634,6 +662,28 @@ test_type (gconstpointer data)
       if (type == GTK_TYPE_MODEL_BUTTON &&
           pspec->owner_type == GTK_TYPE_BUTTON)
         continue;
+
+      if (g_type_is_a (type, GTK_TYPE_SHORTCUTS_SHORTCUT) &&
+	  g_str_equal (pspec->name, "accelerator"))
+	continue;
+
+      if (g_type_is_a (type, GTK_TYPE_SHORTCUT_LABEL) &&
+	  g_str_equal (pspec->name, "accelerator"))
+	continue;
+
+      if (g_type_is_a (type, GTK_TYPE_FONT_CHOOSER) &&
+	  g_str_equal (pspec->name, "font"))
+	continue;
+
+      if (g_type_is_a (type, GTK_TYPE_FONT_BUTTON) &&
+	  g_str_equal (pspec->name, "font-name"))
+	continue;
+
+      /* these depend on the min-content- properties in a way that breaks our test */
+      if (g_type_is_a (type, GTK_TYPE_SCROLLED_WINDOW) &&
+	  (g_str_equal (pspec->name, "max-content-width") ||
+	   g_str_equal (pspec->name, "max-content-height")))
+	continue;
 
       if (g_test_verbose ())
         g_print ("Property %s.%s\n", g_type_name (pspec->owner_type), pspec->name);

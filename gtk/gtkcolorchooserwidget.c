@@ -55,6 +55,10 @@
  * The #GtkColorChooserWidget is used in the #GtkColorChooserDialog
  * to provide a dialog for selecting colors.
  *
+ * # CSS names
+ *
+ * GtkColorChooserWidget has a single CSS node with name colorchooser.
+ *
  * Since: 3.4
  */
 
@@ -101,20 +105,20 @@ select_swatch (GtkColorChooserWidget *cc,
     return;
 
   if (cc->priv->current != NULL)
-    {
-      gtk_widget_unset_state_flags (GTK_WIDGET (cc->priv->current), GTK_STATE_FLAG_SELECTED);
-      gtk_widget_queue_draw (GTK_WIDGET (cc->priv->current));
-    }
+    gtk_widget_unset_state_flags (GTK_WIDGET (cc->priv->current), GTK_STATE_FLAG_SELECTED);
 
   gtk_widget_set_state_flags (GTK_WIDGET (swatch), GTK_STATE_FLAG_SELECTED, FALSE);
   cc->priv->current = swatch;
-  gtk_widget_queue_draw (GTK_WIDGET (cc->priv->current));
 
   gtk_color_swatch_get_rgba (swatch, &color);
+
   g_settings_set (cc->priv->settings, "selected-color", "(bdddd)",
                   TRUE, color.red, color.green, color.blue, color.alpha);
 
-  g_object_notify (G_OBJECT (cc), "rgba");
+  if (gtk_widget_get_visible (GTK_WIDGET (cc->priv->editor)))
+    gtk_color_chooser_set_rgba (GTK_COLOR_CHOOSER (cc->priv->editor), &color);
+  else
+    g_object_notify (G_OBJECT (cc), "rgba");
 }
 
 static void
@@ -699,6 +703,8 @@ gtk_color_chooser_widget_class_init (GtkColorChooserWidgetClass *class)
   g_object_class_install_property (object_class, PROP_SHOW_EDITOR,
       g_param_spec_boolean ("show-editor", P_("Show editor"), P_("Show editor"),
                             FALSE, GTK_PARAM_READWRITE));
+
+  gtk_widget_class_set_css_name (GTK_WIDGET_CLASS (class), "colorchooser");
 }
 
 /* GtkColorChooser implementation {{{1 */
@@ -737,6 +743,9 @@ add_custom_color (GtkColorChooserWidget *cc,
   if (g_list_length (children) >= 9)
     {
       last = g_list_last (children)->data;
+      if (last == GTK_WIDGET (cc->priv->current))
+        cc->priv->current = NULL;
+
       gtk_widget_destroy (last);
     }
 

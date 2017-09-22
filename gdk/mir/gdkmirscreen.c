@@ -46,11 +46,17 @@ struct GdkMirScreen
   GdkDisplay *display;
 
   /* Current monitor configuration */
-  MirDisplayConfiguration *display_config;
+  MirDisplayConfig *display_config;
 
+  /* Display format */
   GdkVisual *visual;
 
+  /* Root window */
   GdkWindow *root_window;
+
+  /* Settings */
+  GHashTable *settings_objects;
+  GHashTable *current_settings;
 };
 
 struct GdkMirScreenClass
@@ -67,9 +73,15 @@ get_connection (GdkMirScreen *screen)
 }
 
 static void
-get_screen_size (MirDisplayConfiguration *config, gint *width, gint *height)
+get_screen_size (MirDisplayConfig *config,
+                 gint             *width,
+                 gint             *height)
 {
-  uint32_t i;
+  const MirOutput *output;
+  const MirOutputMode *mode;
+  gint right;
+  gint bottom;
+  gint i;
 
   *width = 0;
   *height = 0;
@@ -77,27 +89,33 @@ get_screen_size (MirDisplayConfiguration *config, gint *width, gint *height)
   if (!config)
     return;
 
-  for (i = 0; i < config->num_outputs; i++)
+  for (i = 0; i < mir_display_config_get_num_outputs (config); i++)
     {
-      MirDisplayOutput *o = &config->outputs[i];
-      gint w, h;
+      output = mir_display_config_get_output (config, i);
 
-      if (!o->used)
+      if (!mir_output_is_enabled (output))
         continue;
 
-      w = o->position_x + o->modes[o->current_mode].horizontal_resolution;
-      if (w > *width)
-        *width = w;
-      h = o->position_y + o->modes[o->current_mode].vertical_resolution;
-      if (h > *height)
-        *height = h;
+      mode = mir_output_get_current_mode (output);
+
+      right = mir_output_get_position_x (output) + mir_output_mode_get_width (mode);
+      bottom = mir_output_get_position_y (output) + mir_output_mode_get_height (mode);
+
+      if (right > *width)
+        *width = right;
+
+      if (bottom > *height)
+        *height = bottom;
     }
 }
 
 static void
-get_screen_size_mm (MirDisplayConfiguration *config, gint *width, gint *height)
+get_screen_size_mm (MirDisplayConfig *config,
+                    gint             *width,
+                    gint             *height)
 {
-  uint32_t i;
+  const MirOutput *output;
+  gint i;
 
   *width = 0;
   *height = 0;
@@ -105,15 +123,15 @@ get_screen_size_mm (MirDisplayConfiguration *config, gint *width, gint *height)
   if (!config)
     return;
 
-  for (i = 0; i < config->num_outputs; i++)
+  for (i = 0; i < mir_display_config_get_num_outputs (config); i++)
     {
-      MirDisplayOutput *o = &config->outputs[i];
+      output = mir_display_config_get_output (config, i);
 
-      if (!o->used)
+      if (!mir_output_is_enabled (output))
         continue;
 
-      *width += o->physical_width_mm;
-      *height += o->physical_height_mm;
+      *width += mir_output_get_physical_width_mm (output);
+      *height += mir_output_get_physical_height_mm (output);
     }
 }
 
@@ -121,8 +139,8 @@ static void
 update_display_config (GdkMirScreen *screen)
 {
   gdk_mir_display_get_mir_connection (GDK_DISPLAY (screen->display));
-  mir_display_config_destroy (screen->display_config);
-  screen->display_config = mir_connection_create_display_config (get_connection (screen));
+  mir_display_config_release (screen->display_config);
+  screen->display_config = mir_connection_create_display_configuration (get_connection (screen));
 }
 
 static void
@@ -156,6 +174,11 @@ _gdk_mir_screen_new (GdkDisplay *display)
 static void
 gdk_mir_screen_dispose (GObject *object)
 {
+  GdkMirScreen *screen = GDK_MIR_SCREEN (object);
+
+  g_clear_pointer (&screen->current_settings, g_hash_table_unref);
+  g_clear_pointer (&screen->settings_objects, g_hash_table_unref);
+
   G_OBJECT_CLASS (gdk_mir_screen_parent_class)->dispose (object);
 }
 
@@ -165,7 +188,7 @@ gdk_mir_screen_finalize (GObject *object)
   GdkMirScreen *screen = GDK_MIR_SCREEN (object);
 
   mir_connection_set_display_config_change_callback (get_connection (screen), NULL, NULL);
-  mir_display_config_destroy (screen->display_config);
+  mir_display_config_release (screen->display_config);
   g_clear_object (&screen->visual);
   g_clear_object (&screen->root_window);
 
@@ -175,25 +198,30 @@ gdk_mir_screen_finalize (GObject *object)
 static GdkDisplay *
 gdk_mir_screen_get_display (GdkScreen *screen)
 {
-  //g_printerr ("gdk_mir_screen_get_display\n");
   return GDK_DISPLAY (GDK_MIR_SCREEN (screen)->display);
 }
 
-static MirDisplayOutput *
-get_output (GdkScreen *screen, gint monitor_num)
+static const MirOutput *
+get_output (GdkScreen *screen,
+            gint       monitor_num)
 {
-  MirDisplayConfiguration *config;
-  uint32_t i, j;
+  MirDisplayConfig *config;
+  const MirOutput *output;
+  gint i;
+  gint j;
 
   config = GDK_MIR_SCREEN (screen)->display_config;
 
-  for (i = 0, j = 0; i < config->num_outputs; i++)
+  for (i = 0, j = 0; i < mir_display_config_get_num_outputs (config); i++)
     {
-      if (!config->outputs[i].used)
+      output = mir_display_config_get_output (config, i);
+
+      if (!mir_output_is_enabled (output))
         continue;
 
       if (j == monitor_num)
-        return &config->outputs[i];
+        return output;
+
       j++;
     }
 
@@ -203,7 +231,6 @@ get_output (GdkScreen *screen, gint monitor_num)
 static gint
 gdk_mir_screen_get_width (GdkScreen *screen)
 {
-  g_printerr ("gdk_mir_screen_get_width\n");
   gint width, height;
   get_screen_size (GDK_MIR_SCREEN (screen)->display_config, &width, &height);
   return width;
@@ -212,7 +239,6 @@ gdk_mir_screen_get_width (GdkScreen *screen)
 static gint
 gdk_mir_screen_get_height (GdkScreen *screen)
 {
-  g_printerr ("gdk_mir_screen_get_height\n");
   gint width, height;
   get_screen_size (GDK_MIR_SCREEN (screen)->display_config, &width, &height);
   return height;
@@ -221,7 +247,6 @@ gdk_mir_screen_get_height (GdkScreen *screen)
 static gint
 gdk_mir_screen_get_width_mm (GdkScreen *screen)
 {
-  g_printerr ("gdk_mir_screen_get_width_mm\n");
   gint width, height;
   get_screen_size_mm (GDK_MIR_SCREEN (screen)->display_config, &width, &height);
   return width;
@@ -230,7 +255,6 @@ gdk_mir_screen_get_width_mm (GdkScreen *screen)
 static gint
 gdk_mir_screen_get_height_mm (GdkScreen *screen)
 {
-  g_printerr ("gdk_mir_screen_get_height_mm\n");
   gint width, height;
   get_screen_size_mm (GDK_MIR_SCREEN (screen)->display_config, &width, &height);
   return height;
@@ -239,7 +263,6 @@ gdk_mir_screen_get_height_mm (GdkScreen *screen)
 static gint
 gdk_mir_screen_get_number (GdkScreen *screen)
 {
-  //g_printerr ("gdk_mir_screen_get_number\n");
   /* There is only one screen... */
   return 0;
 }
@@ -247,7 +270,6 @@ gdk_mir_screen_get_number (GdkScreen *screen)
 static GdkWindow *
 gdk_mir_screen_get_root_window (GdkScreen *screen)
 {
-  //g_printerr ("gdk_mir_screen_get_root_window\n");
   GdkMirScreen *s = GDK_MIR_SCREEN (screen);
   gint width, height;
 
@@ -257,7 +279,6 @@ gdk_mir_screen_get_root_window (GdkScreen *screen)
   get_screen_size (GDK_MIR_SCREEN (screen)->display_config, &width, &height);
 
   s->root_window = _gdk_display_create_window (s->display);
-  s->root_window->impl = _gdk_mir_window_impl_new ();
   s->root_window->impl_window = s->root_window;
   s->root_window->visual = s->visual;
   s->root_window->window_type = GDK_WINDOW_ROOT;
@@ -269,6 +290,7 @@ gdk_mir_screen_get_root_window (GdkScreen *screen)
   s->root_window->width = width;
   s->root_window->height = height;
   s->root_window->viewable = TRUE;
+  s->root_window->impl = _gdk_mir_window_impl_new (s->display, s->root_window, NULL, 0);
 
   return s->root_window;
 }
@@ -276,16 +298,15 @@ gdk_mir_screen_get_root_window (GdkScreen *screen)
 static gint
 gdk_mir_screen_get_n_monitors (GdkScreen *screen)
 {
-  //g_printerr ("gdk_mir_screen_get_n_monitors\n");
-  MirDisplayConfiguration *config;
-  uint32_t i;
+  MirDisplayConfig *config;
   gint count = 0;
+  gint i;
 
   config = GDK_MIR_SCREEN (screen)->display_config;
 
-  for (i = 0; i < config->num_outputs; i++)
-    if (config->outputs[i].used)
-      ++count;
+  for (i = 0; i < mir_display_config_get_num_outputs (config); i++)
+    if (mir_output_is_enabled (mir_display_config_get_output (config, i)))
+      count++;
 
   return count;
 }
@@ -293,7 +314,6 @@ gdk_mir_screen_get_n_monitors (GdkScreen *screen)
 static gint
 gdk_mir_screen_get_primary_monitor (GdkScreen *screen)
 {
-  g_printerr ("gdk_mir_screen_get_primary_monitor\n");
   return 0; //?
 }
 
@@ -301,57 +321,62 @@ static gint
 gdk_mir_screen_get_monitor_width_mm	(GdkScreen *screen,
                                      gint       monitor_num)
 {
-  g_printerr ("gdk_mir_screen_get_monitor_width_mm (%d)\n", monitor_num);
-  MirDisplayOutput *output = get_output (screen, monitor_num);
-  return output ? output->physical_width_mm : 0;
+  const MirOutput *output = get_output (screen, monitor_num);
+
+  return output ? mir_output_get_physical_width_mm (output) : 0;
 }
 
 static gint
 gdk_mir_screen_get_monitor_height_mm (GdkScreen *screen,
                                       gint       monitor_num)
 {
-  g_printerr ("gdk_mir_screen_get_monitor_height_mm (%d)\n", monitor_num);
-  MirDisplayOutput *output = get_output (screen, monitor_num);
-  return output ? output->physical_height_mm : 0;
+  const MirOutput *output = get_output (screen, monitor_num);
+
+  return output ? mir_output_get_physical_height_mm (output) : 0;
 }
 
 static gchar *
 gdk_mir_screen_get_monitor_plug_name (GdkScreen *screen,
                                       gint       monitor_num)
 {
-  g_printerr ("gdk_mir_screen_get_monitor_plug_name (%d)\n", monitor_num);
-  MirDisplayOutput *output = get_output (screen, monitor_num);
+  const MirOutput *output = get_output (screen, monitor_num);
 
   if (output)
     {
-      switch (output->type)
+      switch (mir_output_get_type (output))
         {
-          case mir_display_output_type_unknown:
-            return g_strdup_printf ("None-%u", output->output_id);
-          case mir_display_output_type_vga:
-            return g_strdup_printf ("VGA-%u", output->output_id);
-          case mir_display_output_type_dvii:
-          case mir_display_output_type_dvid:
-          case mir_display_output_type_dvia:
-            return g_strdup_printf ("DVI-%u", output->output_id);
-          case mir_display_output_type_composite:
-            return g_strdup_printf ("Composite-%u", output->output_id);
-          case mir_display_output_type_lvds:
-            return g_strdup_printf ("LVDS-%u", output->output_id);
-          case mir_display_output_type_component:
-            return g_strdup_printf ("CTV-%u", output->output_id);
-          case mir_display_output_type_ninepindin:
-            return g_strdup_printf ("DIN-%u", output->output_id);
-          case mir_display_output_type_displayport:
-            return g_strdup_printf ("DP-%u", output->output_id);
-          case mir_display_output_type_hdmia:
-          case mir_display_output_type_hdmib:
-            return g_strdup_printf ("HDMI-%u", output->output_id);
-          case mir_display_output_type_svideo:
-          case mir_display_output_type_tv:
-            return g_strdup_printf ("TV-%u", output->output_id);
-          case mir_display_output_type_edp:
-            return g_strdup_printf ("eDP-%u", output->output_id);
+          case mir_output_type_unknown:
+            return g_strdup_printf ("None-%u", mir_output_get_id (output));
+          case mir_output_type_vga:
+            return g_strdup_printf ("VGA-%u", mir_output_get_id (output));
+          case mir_output_type_dvii:
+          case mir_output_type_dvid:
+          case mir_output_type_dvia:
+            return g_strdup_printf ("DVI-%u", mir_output_get_id (output));
+          case mir_output_type_composite:
+            return g_strdup_printf ("Composite-%u", mir_output_get_id (output));
+          case mir_output_type_lvds:
+            return g_strdup_printf ("LVDS-%u", mir_output_get_id (output));
+          case mir_output_type_component:
+            return g_strdup_printf ("CTV-%u", mir_output_get_id (output));
+          case mir_output_type_ninepindin:
+            return g_strdup_printf ("DIN-%u", mir_output_get_id (output));
+          case mir_output_type_displayport:
+            return g_strdup_printf ("DP-%u", mir_output_get_id (output));
+          case mir_output_type_hdmia:
+          case mir_output_type_hdmib:
+            return g_strdup_printf ("HDMI-%u", mir_output_get_id (output));
+          case mir_output_type_svideo:
+          case mir_output_type_tv:
+            return g_strdup_printf ("TV-%u", mir_output_get_id (output));
+          case mir_output_type_edp:
+            return g_strdup_printf ("eDP-%u", mir_output_get_id (output));
+          case mir_output_type_virtual:
+            return g_strdup_printf ("Virtual-%u", mir_output_get_id (output));
+          case mir_output_type_dsi:
+            return g_strdup_printf ("DSI-%u", mir_output_get_id (output));
+          case mir_output_type_dpi:
+            return g_strdup_printf ("DPI-%u", mir_output_get_id (output));
         }
     }
 
@@ -363,19 +388,19 @@ gdk_mir_screen_get_monitor_geometry (GdkScreen    *screen,
                                      gint          monitor_num,
                                      GdkRectangle *dest)
 {
-  //g_printerr ("gdk_mir_screen_get_monitor_geometry (%d)\n", monitor_num);
-  MirDisplayOutput *output;
-  MirDisplayMode *mode;
+  const MirOutput *output;
+  const MirOutputMode *mode;
 
   output = get_output (screen, monitor_num);
 
   if (output)
     {
-      mode = &output->modes[output->current_mode];
-      dest->x = output->position_x;
-      dest->y = output->position_y;
-      dest->width = mode->horizontal_resolution;
-      dest->height = mode->vertical_resolution;
+      mode = mir_output_get_current_mode (output);
+
+      dest->x = mir_output_get_position_x (output);
+      dest->y = mir_output_get_position_y (output);
+      dest->width = mir_output_mode_get_width (mode);
+      dest->height = mir_output_mode_get_height (mode);
     }
   else
     {
@@ -391,7 +416,6 @@ gdk_mir_screen_get_monitor_workarea (GdkScreen    *screen,
                                      gint          monitor_num,
                                      GdkRectangle *dest)
 {
-  //g_printerr ("gdk_mir_screen_get_monitor_workarea (%d)\n", monitor_num);
   // FIXME: Don't know what this is
   gdk_mir_screen_get_monitor_geometry (screen, monitor_num, dest);
 }
@@ -399,28 +423,24 @@ gdk_mir_screen_get_monitor_workarea (GdkScreen    *screen,
 static GList *
 gdk_mir_screen_list_visuals (GdkScreen *screen)
 {
-  g_printerr ("gdk_mir_screen_list_visuals\n");
   return g_list_append (NULL, GDK_MIR_SCREEN (screen)->visual);
 }
 
 static GdkVisual *
 gdk_mir_screen_get_system_visual (GdkScreen *screen)
 {
-  //g_printerr ("gdk_mir_screen_get_system_visual\n");
   return GDK_MIR_SCREEN (screen)->visual;
 }
 
 static GdkVisual *
 gdk_mir_screen_get_rgba_visual (GdkScreen *screen)
 {
-  //g_printerr ("gdk_mir_screen_get_rgba_visual\n");
   return GDK_MIR_SCREEN (screen)->visual;
 }
 
 static gboolean
 gdk_mir_screen_is_composited (GdkScreen *screen)
 {
-  //g_printerr ("gdk_mir_screen_is_composited\n");
   /* We're always composited */
   return TRUE;
 }
@@ -428,21 +448,18 @@ gdk_mir_screen_is_composited (GdkScreen *screen)
 static gchar *
 gdk_mir_screen_make_display_name (GdkScreen *screen)
 {
-  g_printerr ("gdk_mir_screen_make_display_name\n");
   return NULL; // FIXME
 }
 
 static GdkWindow *
 gdk_mir_screen_get_active_window (GdkScreen *screen)
 {
-  g_printerr ("gdk_mir_screen_get_active_window\n");
   return NULL; // FIXME
 }
 
 static GList *
 gdk_mir_screen_get_window_stack (GdkScreen *screen)
 {
-  g_printerr ("gdk_mir_screen_get_window_stack\n");
   return NULL; // FIXME
 }
 
@@ -450,244 +467,571 @@ static void
 gdk_mir_screen_broadcast_client_message (GdkScreen *screen,
                                          GdkEvent  *event)
 {
-  g_printerr ("gdk_mir_screen_broadcast_client_message\n");
   // FIXME
 }
+
+static void setting_changed (GSettings    *settings,
+                             const gchar  *key,
+                             GdkMirScreen *screen);
+
+static GSettings *
+get_settings (GdkMirScreen *screen,
+              const gchar  *schema_id)
+{
+  GSettings *settings;
+  GSettingsSchemaSource *source;
+  GSettingsSchema *schema;
+
+  settings = g_hash_table_lookup (screen->settings_objects, schema_id);
+
+  if (settings)
+    return g_object_ref (settings);
+
+  source = g_settings_schema_source_get_default ();
+
+  if (!source)
+    {
+      g_warning ("no schemas installed");
+      return NULL;
+    }
+
+  schema = g_settings_schema_source_lookup (source, schema_id, TRUE);
+
+  if (!schema)
+    {
+      g_warning ("schema not found: %s", schema_id);
+      return NULL;
+    }
+
+  settings = g_settings_new_full (schema, NULL, NULL);
+  g_signal_connect (settings, "changed", G_CALLBACK (setting_changed), screen);
+  g_hash_table_insert (screen->settings_objects, g_strdup (schema_id), g_object_ref (settings));
+  g_settings_schema_unref (schema);
+  return settings;
+}
+
+static GVariant *
+read_setting (GdkMirScreen *screen,
+              const gchar  *schema_id,
+              const gchar  *key)
+{
+  GSettings *settings;
+  GVariant *variant;
+
+  settings = get_settings (screen, schema_id);
+
+  if (!settings)
+    return NULL;
+
+  variant = g_settings_get_value (settings, key);
+  g_object_unref (settings);
+  return variant;
+}
+
+static void
+change_setting (GdkMirScreen *screen,
+                const gchar  *name,
+                GVariant     *variant)
+{
+  GVariant *old_variant;
+  GdkEventSetting event;
+
+  old_variant = g_hash_table_lookup (screen->current_settings, name);
+
+  if (variant == old_variant)
+    return;
+
+  if (variant && old_variant && g_variant_equal (variant, old_variant))
+    return;
+
+  event.type = GDK_SETTING;
+  event.window = gdk_screen_get_root_window (GDK_SCREEN (screen));
+  event.send_event = FALSE;
+  event.name = g_strdup (name);
+
+  if (variant)
+    {
+      event.action = old_variant ? GDK_SETTING_ACTION_CHANGED : GDK_SETTING_ACTION_NEW;
+      g_hash_table_insert (screen->current_settings, g_strdup (name), g_variant_ref_sink (variant));
+    }
+  else
+    {
+      event.action = GDK_SETTING_ACTION_DELETED;
+      g_hash_table_remove (screen->current_settings, name);
+    }
+
+  gdk_event_put ((const GdkEvent *) &event);
+  g_free (event.name);
+}
+
+static const struct
+{
+  const gchar *name;
+  const gchar *schema_id;
+  const gchar *key;
+} SETTINGS_MAP[] = {
+  {
+    "gtk-double-click-time",
+    "org.gnome.settings-daemon.peripherals.mouse",
+    "double-click"
+  },
+  {
+    "gtk-cursor-blink",
+    "org.gnome.desktop.interface",
+    "cursor-blink"
+  },
+  {
+    "gtk-cursor-blink-time",
+    "org.gnome.desktop.interface",
+    "cursor-blink-time"
+  },
+  {
+    "gtk-cursor-blink-timeout",
+    "org.gnome.desktop.interface",
+    "cursor-blink-timeout"
+  },
+  {
+    "gtk-theme-name",
+    "org.gnome.desktop.interface",
+    "gtk-theme"
+  },
+  {
+    "gtk-icon-theme-name",
+    "org.gnome.desktop.interface",
+    "icon-theme"
+  },
+  {
+    "gtk-key-theme-name",
+    "org.gnome.desktop.interface",
+    "gtk-key-theme"
+  },
+  {
+    "gtk-dnd-drag-threshold",
+    "org.gnome.settings-daemon.peripherals.mouse",
+    "drag-threshold"
+  },
+  {
+    "gtk-font-name",
+    "org.gnome.desktop.interface",
+    "font-name"
+  },
+  {
+    "gtk-xft-antialias",
+    "org.gnome.settings-daemon.plugins.xsettings",
+    "antialiasing"
+  },
+  {
+    "gtk-xft-hinting",
+    "org.gnome.settings-daemon.plugins.xsettings",
+    "hinting"
+  },
+  {
+    "gtk-xft-hintstyle",
+    "org.gnome.settings-daemon.plugins.xsettings",
+    "hinting"
+  },
+  {
+    "gtk-xft-rgba",
+    "org.gnome.settings-daemon.plugins.xsettings",
+    "rgba-order"
+  },
+  {
+    "gtk-xft-dpi",
+    "org.gnome.desktop.interface",
+    "text-scaling-factor"
+  },
+  {
+    "gtk-cursor-theme-name",
+    "org.gnome.desktop.interface",
+    "cursor-theme"
+  },
+  {
+    "gtk-cursor-theme-size",
+    "org.gnome.desktop.interface",
+    "cursor-size"
+  },
+  {
+    "gtk-enable-animations",
+    "org.gnome.desktop.interface",
+    "enable-animations"
+  },
+  {
+    "gtk-im-module",
+    "org.gnome.desktop.interface",
+    "gtk-im-module"
+  },
+  {
+    "gtk-recent-files-max-age",
+    "org.gnome.desktop.privacy",
+    "recent-files-max-age"
+  },
+  {
+    "gtk-sound-theme-name",
+    "org.gnome.desktop.sound",
+    "theme-name"
+  },
+  {
+    "gtk-enable-input-feedback-sounds",
+    "org.gnome.desktop.sound",
+    "input-feedback-sounds"
+  },
+  {
+    "gtk-enable-event-sounds",
+    "org.gnome.desktop.sound",
+    "event-sounds"
+  },
+  {
+    "gtk-shell-shows-desktop",
+    "org.gnome.desktop.background",
+    "show-desktop-icons"
+  },
+  {
+    "gtk-decoration-layout",
+    "org.gnome.desktop.wm.preferences",
+    "button-layout"
+  },
+  {
+    "gtk-titlebar-double-click",
+    "org.gnome.desktop.wm.preferences",
+    "action-double-click-titlebar"
+  },
+  {
+    "gtk-titlebar-middle-click",
+    "org.gnome.desktop.wm.preferences",
+    "action-middle-click-titlebar"
+  },
+  {
+    "gtk-titlebar-right-click",
+    "org.gnome.desktop.wm.preferences",
+    "action-right-click-titlebar"
+  },
+  {
+    "gtk-enable-primary-paste",
+    "org.gnome.desktop.interface",
+    "gtk-enable-primary-paste"
+  },
+  {
+    "gtk-recent-files-enabled",
+    "org.gnome.desktop.privacy",
+    "remember-recent-files"
+  },
+  {
+    "gtk-keynav-use-caret",
+    "org.gnome.desktop.a11y",
+    "always-show-text-caret"
+  },
+  { NULL }
+};
+
+static guint
+get_scaling_factor (GdkMirScreen *screen)
+{
+  GVariant *variant;
+  guint scaling_factor;
+
+  variant = read_setting (screen, "org.gnome.desktop.interface", "scaling-factor");
+
+  if (!variant)
+    {
+      g_warning ("no scaling factor: org.gnome.desktop.interface.scaling-factor");
+      variant = g_variant_ref_sink (g_variant_new_uint32 (0));
+    }
+
+  scaling_factor = g_variant_get_uint32 (variant);
+  g_variant_unref (variant);
+
+  if (scaling_factor)
+    return scaling_factor;
+
+  scaling_factor = 1;
+
+  /* TODO: scaling_factor = 2 if HiDPI >= 2 * 96 */
+
+  return scaling_factor;
+}
+
+static void
+update_setting (GdkMirScreen *screen,
+                const gchar  *name)
+{
+  GVariant *variant;
+  GVariant *antialiasing_variant;
+  gboolean gtk_xft_antialias;
+  gboolean gtk_xft_hinting;
+  gdouble text_scaling_factor;
+  gint cursor_size;
+  gint i;
+
+  if (!g_strcmp0 (name, "gtk-modules"))
+    {
+      /* TODO: X-GTK-Module-Enabled-Schema, X-GTK-Module-Enabled-Key */
+      /* TODO: org.gnome.settings-daemon.plugins.xsettings.enabled-gtk-modules */
+      /* TODO: org.gnome.settings-daemon.plugins.xsettings.disabled-gtk-modules */
+      return;
+    }
+  else
+    {
+      for (i = 0; SETTINGS_MAP[i].name; i++)
+        if (!g_strcmp0 (name, SETTINGS_MAP[i].name))
+          break;
+
+      if (!SETTINGS_MAP[i].name)
+        return;
+
+      variant = read_setting (screen, SETTINGS_MAP[i].schema_id, SETTINGS_MAP[i].key);
+
+      if (!variant)
+        {
+          g_warning ("no setting for %s: %s.%s", SETTINGS_MAP[i].name, SETTINGS_MAP[i].schema_id, SETTINGS_MAP[i].key);
+          return;
+        }
+    }
+
+  if (!g_strcmp0 (name, "gtk-xft-antialias"))
+    {
+      gtk_xft_antialias = g_strcmp0 (g_variant_get_string (variant, NULL), "none");
+      g_variant_unref (variant);
+      variant = g_variant_ref_sink (g_variant_new_int32 (gtk_xft_antialias ? 1 : 0));
+    }
+  else if (!g_strcmp0 (name, "gtk-xft-hinting"))
+    {
+      gtk_xft_hinting = g_strcmp0 (g_variant_get_string (variant, NULL), "none");
+      g_variant_unref (variant);
+      variant = g_variant_ref_sink (g_variant_new_int32 (gtk_xft_hinting ? 1 : 0));
+    }
+  else if (!g_strcmp0 (name, "gtk-xft-hintstyle"))
+    {
+      if (!g_strcmp0 (g_variant_get_string (variant, NULL), "none"))
+        {
+          g_variant_unref (variant);
+          variant = g_variant_ref_sink (g_variant_new_string ("hintnone"));
+        }
+      else if (!g_strcmp0 (g_variant_get_string (variant, NULL), "slight"))
+        {
+          g_variant_unref (variant);
+          variant = g_variant_ref_sink (g_variant_new_string ("hintslight"));
+        }
+      else if (!g_strcmp0 (g_variant_get_string (variant, NULL), "medium"))
+        {
+          g_variant_unref (variant);
+          variant = g_variant_ref_sink (g_variant_new_string ("hintmedium"));
+        }
+      else if (!g_strcmp0 (g_variant_get_string (variant, NULL), "full"))
+        {
+          g_variant_unref (variant);
+          variant = g_variant_ref_sink (g_variant_new_string ("hintfull"));
+        }
+      else
+        {
+          g_warning ("unknown org.gnome.settings-daemon.plugins.xsettings.hinting value: %s", g_variant_get_string (variant, NULL));
+          g_variant_unref (variant);
+          return;
+        }
+    }
+  else if (!g_strcmp0 (name, "gtk-xft-rgba"))
+    {
+      antialiasing_variant = read_setting (screen, "org.gnome.settings-daemon.plugins.xsettings", "antialiasing");
+
+      if (g_strcmp0 (g_variant_get_string (antialiasing_variant, NULL), "rgba"))
+        {
+          g_variant_unref (variant);
+          variant = g_variant_ref_sink (g_variant_new_string ("none"));
+        }
+      else if (g_strcmp0 (g_variant_get_string (variant, NULL), "rgba"))
+        {
+          g_variant_unref (variant);
+          variant = g_variant_ref_sink (g_variant_new_string ("rgb"));
+        }
+
+      g_variant_unref (antialiasing_variant);
+    }
+  else if (!g_strcmp0 (name, "gtk-xft-dpi"))
+    {
+      text_scaling_factor = g_variant_get_double (variant);
+      g_variant_unref (variant);
+      variant = g_variant_ref_sink (g_variant_new_int32 (1024 * get_scaling_factor (screen) * text_scaling_factor + 0.5));
+    }
+  else if (!g_strcmp0 (name, "gtk-cursor-theme-size"))
+    {
+      cursor_size = g_variant_get_int32 (variant);
+      g_variant_unref (variant);
+      variant = g_variant_ref_sink (g_variant_new_int32 (get_scaling_factor (screen) * cursor_size));
+    }
+  else if (!g_strcmp0 (name, "gtk-enable-animations"))
+    {
+      /* TODO: disable under vnc/vino/llvmpipe */
+    }
+
+  change_setting (screen, name, variant);
+  g_variant_unref (variant);
+}
+
+static void
+setting_changed (GSettings    *settings,
+                 const gchar  *key,
+                 GdkMirScreen *screen)
+{
+  gchar *schema_id;
+  gint i;
+
+  g_object_get (settings, "schema-id", &schema_id, NULL);
+
+  for (i = 0; SETTINGS_MAP[i].name; i++)
+    if (!g_strcmp0 (schema_id, SETTINGS_MAP[i].schema_id) && !g_strcmp0 (key, SETTINGS_MAP[i].key))
+      update_setting (screen, SETTINGS_MAP[i].name);
+
+  if (!g_strcmp0 (schema_id, "org.gnome.settings-daemon.plugins.xsettings"))
+    {
+      if (!g_strcmp0 (key, "enabled-gtk-modules"))
+        update_setting (screen, "gtk-modules");
+      else if (!g_strcmp0 (key, "disabled-gtk-modules"))
+        update_setting (screen, "gtk-modules");
+      else if (!g_strcmp0 (key, "antialiasing"))
+        update_setting (screen, "rgba-order");
+    }
+  else if (!g_strcmp0 (schema_id, "org.gnome.desktop.interface"))
+    {
+      if (!g_strcmp0 (key, "scaling-factor"))
+        {
+          update_setting (screen, "gtk-xft-dpi");
+          update_setting (screen, "gtk-cursor-theme-size");
+        }
+    }
+
+  g_free (schema_id);
+}
+
+static const gchar * const KNOWN_SETTINGS[] =
+{
+  "gtk-double-click-time",
+  "gtk-double-click-distance",
+  "gtk-cursor-blink",
+  "gtk-cursor-blink-time",
+  "gtk-cursor-blink-timeout",
+  "gtk-split-cursor",
+  "gtk-theme-name",
+  "gtk-icon-theme-name",
+  "gtk-fallback-icon-theme",
+  "gtk-key-theme-name",
+  "gtk-menu-bar-accel",
+  "gtk-dnd-drag-threshold",
+  "gtk-font-name",
+  "gtk-icon-sizes",
+  "gtk-modules",
+  "gtk-xft-antialias",
+  "gtk-xft-hinting",
+  "gtk-xft-hintstyle",
+  "gtk-xft-rgba",
+  "gtk-xft-dpi",
+  "gtk-cursor-theme-name",
+  "gtk-cursor-theme-size",
+  "gtk-alternative-button-order",
+  "gtk-alternative-sort-arrows",
+  "gtk-show-input-method-menu",
+  "gtk-show-unicode-menu",
+  "gtk-timeout-initial",
+  "gtk-timeout-repeat",
+  "gtk-timeout-expand",
+  "gtk-color-scheme",
+  "gtk-enable-animations",
+  "gtk-touchscreen-mode",
+  "gtk-tooltip-timeout",
+  "gtk-tooltip-browse-timeout",
+  "gtk-tooltip-browse-mode-timeout",
+  "gtk-keynav-cursor-only",
+  "gtk-keynav-wrap-around",
+  "gtk-error-bell",
+  "color-hash",
+  "gtk-file-chooser-backend",
+  "gtk-print-backends",
+  "gtk-print-preview-command",
+  "gtk-enable-mnemonics",
+  "gtk-enable-accels",
+  "gtk-recent-files-limit",
+  "gtk-im-module",
+  "gtk-recent-files-max-age",
+  "gtk-fontconfig-timestamp",
+  "gtk-sound-theme-name",
+  "gtk-enable-input-feedback-sounds",
+  "gtk-enable-event-sounds",
+  "gtk-enable-tooltips",
+  "gtk-toolbar-style",
+  "gtk-toolbar-icon-size",
+  "gtk-auto-mnemonics",
+  "gtk-primary-button-warps-slider",
+  "gtk-visible-focus",
+  "gtk-application-prefer-dark-theme",
+  "gtk-button-images",
+  "gtk-entry-select-on-focus",
+  "gtk-entry-password-hint-timeout",
+  "gtk-menu-images",
+  "gtk-menu-bar-popup-delay",
+  "gtk-scrolled-window-placement",
+  "gtk-can-change-accels",
+  "gtk-menu-popup-delay",
+  "gtk-menu-popdown-delay",
+  "gtk-label-select-on-focus",
+  "gtk-color-palette",
+  "gtk-im-preedit-style",
+  "gtk-im-status-style",
+  "gtk-shell-shows-app-menu",
+  "gtk-shell-shows-menubar",
+  "gtk-shell-shows-desktop",
+  "gtk-decoration-layout",
+  "gtk-titlebar-double-click",
+  "gtk-titlebar-middle-click",
+  "gtk-titlebar-right-click",
+  "gtk-dialogs-use-header",
+  "gtk-enable-primary-paste",
+  "gtk-recent-files-enabled",
+  "gtk-long-press-time",
+  "gtk-keynav-use-caret",
+  NULL
+};
 
 static gboolean
 gdk_mir_screen_get_setting (GdkScreen   *screen,
                             const gchar *name,
                             GValue      *value)
 {
-  //g_printerr ("gdk_mir_screen_get_setting (\"%s\")\n", name);
+  GdkMirScreen *mir_screen;
+  GVariant *variant;
 
-  if (strcmp (name, "gtk-theme-name") == 0)
+  mir_screen = GDK_MIR_SCREEN (screen);
+  variant = g_hash_table_lookup (mir_screen->current_settings, name);
+
+  if (!variant)
+    update_setting (mir_screen, name);
+
+  variant = g_hash_table_lookup (mir_screen->current_settings, name);
+
+  if (!variant)
     {
-      g_value_set_string (value, "Ambiance");
-      return TRUE;
+      if (!g_strv_contains (KNOWN_SETTINGS, name))
+        g_warning ("unknown setting: %s", name);
+
+      return FALSE;
     }
 
-  if (strcmp (name, "gtk-font-name") == 0)
-    {
-      g_value_set_string (value, "Ubuntu");
-      return TRUE;
-    }
-
-  if (strcmp (name, "gtk-enable-animations") == 0)
-    {
-      g_value_set_boolean (value, TRUE);
-      return TRUE;
-    }
-
-  if (strcmp (name, "gtk-xft-dpi") == 0)
-    {
-      g_value_set_int (value, 96 * 1024);
-      return TRUE;
-    }
-
-  if (strcmp (name, "gtk-xft-antialias") == 0)
-    {
-      g_value_set_int (value, TRUE);
-      return TRUE;
-    }
-
-  if (strcmp (name, "gtk-xft-hinting") == 0)
-    {
-      g_value_set_int (value, TRUE);
-      return TRUE;
-    }
-
-  if (strcmp (name, "gtk-xft-hintstyle") == 0)
-    {
-      g_value_set_static_string (value, "hintfull");
-      return TRUE;
-    }
-
-  if (strcmp (name, "gtk-xft-rgba") == 0)
-    {
-      g_value_set_static_string (value, "rgba");
-      return TRUE;
-    }
-
-  if (g_str_equal (name, "gtk-modules"))
-    {
-      g_value_set_string (value, NULL);
-      return TRUE;
-    }
-
-  if (g_str_equal (name, "gtk-application-prefer-dark-theme"))
-    {
-      g_value_set_boolean (value, FALSE);
-      return TRUE;
-    }
-
-  if (g_str_equal (name, "gtk-key-theme-name"))
-    {
-      g_value_set_string (value, NULL);
-      return TRUE;
-    }
-
-  if (g_str_equal (name, "gtk-double-click-time"))
-    {
-      g_value_set_int (value, 250);
-      return TRUE;
-    }
-
-  if (g_str_equal (name, "gtk-double-click-distance"))
-    {
-      g_value_set_int (value, 5);
-      return TRUE;
-    }
-
-  if (g_str_equal (name, "gtk-cursor-theme-name"))
-    {
-      g_value_set_string (value, "Raleigh");
-      return TRUE;
-    }
-
-  if (g_str_equal (name, "gtk-cursor-theme-size"))
-    {
-      g_value_set_int (value, 128);
-      return TRUE;
-    }
-
-  if (g_str_equal (name, "gtk-icon-theme-name"))
-    {
-      g_value_set_string (value, "hicolor");
-      return TRUE;
-    }
-
-  if (g_str_equal (name, "gtk-shell-shows-app-menu"))
-    {
-      g_value_set_boolean (value, FALSE);
-      return TRUE;
-    }
-
-  if (g_str_equal (name, "gtk-shell-shows-menubar"))
-    {
-      g_value_set_boolean (value, FALSE);
-      return TRUE;
-    }
-
-  if (g_str_equal (name, "gtk-shell-shows-desktop"))
-    {
-      g_value_set_boolean (value, FALSE);
-      return TRUE;
-    }
-
-  if (g_str_equal (name, "gtk-recent-files-enabled"))
-    {
-      g_value_set_boolean (value, FALSE);
-      return TRUE;
-    }
-
-  if (g_str_equal (name, "gtk-alternative-sort-arrows"))
-    {
-      g_value_set_boolean (value, FALSE);
-      return TRUE;
-    }
-
-  if (g_str_equal (name, "gtk-enable-accels"))
-    {
-      g_value_set_boolean (value, TRUE);
-      return TRUE;
-    }
-
-  if (g_str_equal (name, "gtk-enable-mnemonics"))
-    {
-      g_value_set_boolean (value, TRUE);
-      return TRUE;
-    }
-
-  if (g_str_equal (name, "gtk-menu-images"))
-    {
-      g_value_set_boolean (value, FALSE);
-      return TRUE;
-    }
-
-  if (g_str_equal (name, "gtk-button-images"))
-    {
-      g_value_set_boolean (value, FALSE);
-      return TRUE;
-    }
-
-  if (g_str_equal (name, "gtk-split-cursor"))
-    {
-      g_value_set_boolean (value, TRUE);
-      return TRUE;
-    }
-
-  if (g_str_equal (name, "gtk-im-module"))
-    {
-      g_value_set_string (value, NULL);
-      return TRUE;
-    }
-
-  if (g_str_equal (name, "gtk-menu-bar-accel"))
-    {
-      g_value_set_string (value, "F10");
-      return TRUE;
-    }
-
-  if (g_str_equal (name, "gtk-cursor-blink"))
-    {
-      g_value_set_boolean (value, TRUE);
-      return TRUE;
-    }
-
-  if (g_str_equal (name, "gtk-cursor-blink-time"))
-    {
-      g_value_set_int (value, 1200);
-      return TRUE;
-    }
-
-  if (g_str_equal (name, "gtk-cursor-blink-timeout"))
-    {
-      g_value_set_int (value, 10);
-      return TRUE;
-    }
-
-  if (g_str_equal (name, "gtk-entry-select-on-focus"))
-    {
-      g_value_set_boolean (value, FALSE);
-      return TRUE;
-    }
-
-  if (g_str_equal (name, "gtk-error-bell"))
-    {
-      g_value_set_boolean (value, FALSE);
-      return TRUE;
-    }
-
-  if (g_str_equal (name, "gtk-label-select-on-focus"))
-    {
-      g_value_set_boolean (value, FALSE);
-      return TRUE;
-    }
-
-  g_warning ("unknown property %s", name);
-
-  return FALSE;
+  g_dbus_gvariant_to_gvalue (variant, value);
+  return TRUE;
 }
 
 static gint
 gdk_mir_screen_visual_get_best_depth (GdkScreen *screen)
 {
-  g_printerr ("gdk_mir_screen_visual_get_best_depth\n");
   return VISUAL_DEPTH;
 }
 
 static GdkVisualType
 gdk_mir_screen_visual_get_best_type (GdkScreen *screen)
 {
-  g_printerr ("gdk_mir_screen_visual_get_best_type\n");
   return VISUAL_TYPE;
 }
 
 static GdkVisual*
 gdk_mir_screen_visual_get_best (GdkScreen *screen)
 {
-  g_printerr ("gdk_mir_screen_visual_get_best\n");
   return GDK_MIR_SCREEN (screen)->visual;
 }
 
@@ -695,7 +1039,6 @@ static GdkVisual*
 gdk_mir_screen_visual_get_best_with_depth (GdkScreen *screen,
                                            gint       depth)
 {
-  g_printerr ("gdk_mir_screen_visual_get_best_with_depth (%d)\n", depth);
   return GDK_MIR_SCREEN (screen)->visual;
 }
 
@@ -703,7 +1046,6 @@ static GdkVisual*
 gdk_mir_screen_visual_get_best_with_type (GdkScreen     *screen,
                                           GdkVisualType  visual_type)
 {
-  g_printerr ("gdk_mir_screen_visual_get_best_with_type (%d)\n", visual_type);
   return GDK_MIR_SCREEN (screen)->visual;
 }
 
@@ -712,7 +1054,6 @@ gdk_mir_screen_visual_get_best_with_both (GdkScreen     *screen,
                                           gint           depth,
                                           GdkVisualType  visual_type)
 {
-  g_printerr ("gdk_mir_screen_visual_get_best_with_both\n");
   return GDK_MIR_SCREEN (screen)->visual;
 }
 
@@ -721,7 +1062,6 @@ gdk_mir_screen_query_depths (GdkScreen  *screen,
                              gint      **depths,
                              gint       *count)
 {
-  g_printerr ("gdk_mir_screen_query_depths\n");
   static gint supported_depths[] = { VISUAL_DEPTH };
   *depths = supported_depths;
   *count = 1;
@@ -732,7 +1072,6 @@ gdk_mir_screen_query_visual_types (GdkScreen      *screen,
                                    GdkVisualType **visual_types,
                                    gint           *count)
 {
-  g_printerr ("gdk_mir_screen_query_visual_types\n");
   static GdkVisualType supported_visual_types[] = { VISUAL_TYPE };
   *visual_types = supported_visual_types;
   *count = 1;
@@ -742,7 +1081,6 @@ static gint
 gdk_mir_screen_get_monitor_scale_factor (GdkScreen *screen,
                                          gint       monitor_num)
 {
-  //g_printerr ("gdk_mir_screen_get_monitor_scale_factor (%d)\n", monitor_num);
   /* Don't support monitor scaling */
   return 1;
 }
@@ -754,6 +1092,9 @@ gdk_mir_screen_init (GdkMirScreen *screen)
   screen->visual->screen = GDK_SCREEN (screen);
   screen->visual->type = VISUAL_TYPE;
   screen->visual->depth = VISUAL_DEPTH;
+
+  screen->settings_objects = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_object_unref);
+  screen->current_settings = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, (GDestroyNotify) g_variant_unref);
 }
 
 static void

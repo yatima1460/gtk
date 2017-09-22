@@ -155,12 +155,14 @@ _gdk_x11_window_grab_check_unmap (GdkWindow *window,
   GdkDeviceManager *device_manager;
   GList *devices, *d;
 
+  G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
   device_manager = gdk_display_get_device_manager (display);
 
   /* Get all devices */
   devices = gdk_device_manager_list_devices (device_manager, GDK_DEVICE_TYPE_MASTER);
   devices = g_list_concat (devices, gdk_device_manager_list_devices (device_manager, GDK_DEVICE_TYPE_SLAVE));
   devices = g_list_concat (devices, gdk_device_manager_list_devices (device_manager, GDK_DEVICE_TYPE_FLOATING));
+  G_GNUC_END_IGNORE_DEPRECATIONS;
 
   /* End all grabs on the newly hidden window */
   for (d = devices; d; d = d->next)
@@ -184,12 +186,14 @@ _gdk_x11_window_grab_check_destroy (GdkWindow *window)
   GdkDeviceGrabInfo *grab;
   GList *devices, *d;
 
+  G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
   device_manager = gdk_display_get_device_manager (display);
 
   /* Get all devices */
   devices = gdk_device_manager_list_devices (device_manager, GDK_DEVICE_TYPE_MASTER);
   devices = g_list_concat (devices, gdk_device_manager_list_devices (device_manager, GDK_DEVICE_TYPE_SLAVE));
   devices = g_list_concat (devices, gdk_device_manager_list_devices (device_manager, GDK_DEVICE_TYPE_FLOATING));
+  G_GNUC_END_IGNORE_DEPRECATIONS;
 
   for (d = devices; d; d = d->next)
     {
@@ -241,7 +245,7 @@ gdk_x_io_error (Display *display)
    */
   if (errno == EPIPE)
     {
-      g_warning ("The application '%s' lost its connection to the display %s;\n"
+      g_message ("The application '%s' lost its connection to the display %s;\n"
                  "most likely the X server was shut down or you killed/destroyed\n"
                  "the application.\n",
                  g_get_prgname (),
@@ -249,7 +253,7 @@ gdk_x_io_error (Display *display)
     }
   else
     {
-      g_warning ("%s: Fatal IO error %d (%s) on X server %s.\n",
+      g_message ("%s: Fatal IO error %d (%s) on X server %s.\n",
                  g_get_prgname (),
                  errno, g_strerror (errno),
                  display ? DisplayString (display) : gdk_get_display_arg_name ());
@@ -430,7 +434,7 @@ gdk_x11_ungrab_server (void)
 gint
 gdk_x11_get_default_screen (void)
 {
-  return gdk_screen_get_number (gdk_screen_get_default ());
+  return gdk_x11_screen_get_number (gdk_screen_get_default ());
 }
 
 /**

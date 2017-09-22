@@ -68,7 +68,7 @@ parse_four_numbers (GtkCssShorthandProperty  *shorthand,
 
   for (i = 0; i < 4; i++)
     {
-      if (!_gtk_css_parser_has_number (parser))
+      if (!gtk_css_number_value_can_parse (parser))
         break;
 
       values[i] = _gtk_css_number_value_parse (parser, flags);
@@ -138,7 +138,7 @@ parse_border_radius (GtkCssShorthandProperty  *shorthand,
 
   for (i = 0; i < 4; i++)
     {
-      if (!_gtk_css_parser_has_number (parser))
+      if (!gtk_css_number_value_can_parse (parser))
         break;
       x[i] = _gtk_css_number_value_parse (parser,
                                           GTK_CSS_POSITIVE_ONLY
@@ -156,7 +156,8 @@ parse_border_radius (GtkCssShorthandProperty  *shorthand,
     }
 
   /* The magic (i - 1) >> 1 below makes it take the correct value
-   * according to spec. Feel free to check the 4 cases */
+   * according to spec. Feel free to check the 4 cases
+   */
   for (; i < 4; i++)
     x[i] = _gtk_css_value_ref (x[(i - 1) >> 1]);
 
@@ -164,7 +165,7 @@ parse_border_radius (GtkCssShorthandProperty  *shorthand,
     {
       for (i = 0; i < 4; i++)
         {
-          if (!_gtk_css_parser_has_number (parser))
+          if (!gtk_css_number_value_can_parse (parser))
             break;
           y[i] = _gtk_css_number_value_parse (parser,
                                               GTK_CSS_POSITIVE_ONLY
@@ -316,7 +317,8 @@ parse_border_image (GtkCssShorthandProperty  *shorthand,
         {
           /* We parsed everything and there's still stuff left?
            * Pretend we didn't notice and let the normal code produce
-           * a 'junk at end of value' error */
+           * a 'junk at end of value' error
+           */
           break;
         }
     }
@@ -333,7 +335,7 @@ parse_border_side (GtkCssShorthandProperty  *shorthand,
   do
   {
     if (values[0] == NULL &&
-         _gtk_css_parser_has_number (parser))
+        gtk_css_number_value_can_parse (parser))
       {
         values[0] = _gtk_css_number_value_parse (parser,
                                                  GTK_CSS_POSITIVE_ONLY
@@ -357,7 +359,8 @@ parse_border_side (GtkCssShorthandProperty  *shorthand,
       {
         /* We parsed and there's still stuff left?
          * Pretend we didn't notice and let the normal code produce
-         * a 'junk at end of value' error */
+         * a 'junk at end of value' error
+         */
         break;
       }
   }
@@ -374,7 +377,7 @@ parse_border (GtkCssShorthandProperty  *shorthand,
   do
   {
     if (values[0] == NULL &&
-         _gtk_css_parser_has_number (parser))
+        gtk_css_number_value_can_parse (parser))
       {
         values[0] = _gtk_css_number_value_parse (parser,
                                                  GTK_CSS_POSITIVE_ONLY
@@ -407,22 +410,24 @@ parse_border (GtkCssShorthandProperty  *shorthand,
       {
         /* We parsed everything and there's still stuff left?
          * Pretend we didn't notice and let the normal code produce
-         * a 'junk at end of value' error */
+         * a 'junk at end of value' error
+         */
         break;
       }
   }
   while (!value_is_done_parsing (parser));
 
   /* Note that border-image values are not set: according to the spec
-     they just need to be reset when using the border shorthand */
+   * they just need to be reset when using the border shorthand
+   */
 
   return TRUE;
 }
 
 static gboolean
-parse_font (GtkCssShorthandProperty  *shorthand,
-            GtkCssValue             **values,
-            GtkCssParser             *parser)
+parse_font_with_pango (GtkCssShorthandProperty  *shorthand,
+                       GtkCssValue             **values,
+                       GtkCssParser             *parser)
 {
   PangoFontDescription *desc;
   guint mask;
@@ -465,6 +470,62 @@ parse_font (GtkCssShorthandProperty  *shorthand,
   pango_font_description_free (desc);
 
   return TRUE;
+}
+
+static gboolean
+parse_font (GtkCssShorthandProperty  *shorthand,
+            GtkCssValue             **values,
+            GtkCssParser             *parser)
+{
+  gboolean parsed_one;
+
+  do
+    {
+      parsed_one = FALSE;
+
+      if (values[1] == NULL)
+        {
+          values[1] = _gtk_css_font_style_value_try_parse (parser);
+          parsed_one = parsed_one || values[1] != NULL;
+        }
+
+      if (values[2] == NULL)
+        {
+          values[2] = _gtk_css_font_variant_value_try_parse (parser);
+          parsed_one = parsed_one || values[2] != NULL;
+        }
+
+      if (values[3] == NULL)
+        {
+          values[3] = _gtk_css_font_weight_value_try_parse (parser);
+          parsed_one = parsed_one || values[3] != NULL;
+        }
+
+      if (values[4] == NULL)
+        {
+          values[4] = _gtk_css_font_stretch_value_try_parse (parser);
+          parsed_one = parsed_one || values[4] != NULL;
+        }
+    }
+  while (parsed_one && !value_is_done_parsing (parser));
+
+  values[5] = gtk_css_font_size_value_parse (parser);
+
+  if (values[1] == NULL && values[2] == NULL && values[3] == NULL &&
+      values[4] == NULL && values[5] == NULL)
+    {
+      if (parse_font_with_pango (shorthand, values, parser))
+        {
+          _gtk_css_parser_error_full (parser,
+                                      GTK_CSS_PROVIDER_ERROR_DEPRECATED,
+                                      "Using Pango syntax for the font: style property is deprecated; please use CSS syntax");
+          return TRUE;
+        }
+    }
+
+  values[0] = gtk_css_font_family_value_parse (parser);
+
+  return values[0] != NULL && values[5] != NULL;
 }
 
 static gboolean
@@ -540,7 +601,8 @@ parse_one_background (GtkCssShorthandProperty  *shorthand,
         {
           /* We parsed everything and there's still stuff left?
            * Pretend we didn't notice and let the normal code produce
-           * a 'junk at end of value' error */
+           * a 'junk at end of value' error
+           */
           break;
         }
     }
@@ -614,7 +676,7 @@ parse_one_transition (GtkCssShorthandProperty  *shorthand,
     {
       /* the image part */
       if (values[2] == NULL &&
-          _gtk_css_parser_has_number (parser) && !_gtk_css_parser_begins_with (parser, '-'))
+          gtk_css_number_value_can_parse (parser) && !_gtk_css_parser_begins_with (parser, '-'))
         {
           GtkCssValue *number = _gtk_css_number_value_parse (parser, GTK_CSS_PARSE_TIME);
 
@@ -648,7 +710,8 @@ parse_one_transition (GtkCssShorthandProperty  *shorthand,
         {
           /* We parsed everything and there's still stuff left?
            * Pretend we didn't notice and let the normal code produce
-           * a 'junk at end of value' error */
+           * a 'junk at end of value' error
+           */
           break;
         }
     }
@@ -718,7 +781,7 @@ parse_one_animation (GtkCssShorthandProperty  *shorthand,
           values[1] = _gtk_css_number_value_new (HUGE_VAL, GTK_CSS_NUMBER);
         }
       else if ((values[1] == NULL || values[3] == NULL) &&
-          _gtk_css_parser_has_number (parser))
+               gtk_css_number_value_can_parse (parser))
         {
           GtkCssValue *value;
           
@@ -729,7 +792,7 @@ parse_one_animation (GtkCssShorthandProperty  *shorthand,
           if (value == NULL)
             return FALSE;
 
-          if (_gtk_css_number_value_get_unit (value) == GTK_CSS_NUMBER)
+          if (gtk_css_number_value_get_dimension (value) == GTK_CSS_DIMENSION_NUMBER)
             values[1] = value;
           else if (values[2] == NULL)
             values[2] = value;
@@ -819,6 +882,44 @@ parse_animation (GtkCssShorthandProperty  *shorthand,
       values[i] = _gtk_css_array_value_new_from_array ((GtkCssValue **) arrays[i]->pdata, arrays[i]->len);
       g_ptr_array_unref (arrays[i]);
     }
+
+  return TRUE;
+}
+
+static gboolean
+parse_text_decoration (GtkCssShorthandProperty  *shorthand,
+                       GtkCssValue             **values,
+                       GtkCssParser             *parser)
+{
+  do
+  {
+    if (values[0] == NULL &&
+        (values[0] = _gtk_css_text_decoration_line_value_try_parse (parser)))
+      {
+        if (values[0] == NULL)
+          return FALSE;
+      }
+    else if (values[1] == NULL &&
+        (values[1] = _gtk_css_text_decoration_style_value_try_parse (parser)))
+      {
+        if (values[1] == NULL)
+          return FALSE;
+      }
+    else if (values[2] == NULL)
+      {
+        values[2] = _gtk_css_color_value_parse (parser);
+        if (values[2] == NULL)
+          return FALSE;
+      }
+    else
+      {
+        /* We parsed and there's still stuff left?
+         * Pretend we didn't notice and let the normal code produce
+         * a 'junk at end of value' error */
+        break;
+      }
+  }
+  while (!value_is_done_parsing (parser));
 
   return TRUE;
 }
@@ -1012,9 +1113,13 @@ unpack_font_description (GtkCssShorthandProperty *shorthand,
 
   if (mask & PANGO_FONT_MASK_SIZE)
     {
-      g_value_init (&v, G_TYPE_DOUBLE);
-      g_value_set_double (&v, (double) pango_font_description_get_size (description) / PANGO_SCALE);
+      double size;
 
+      g_value_init (&v, G_TYPE_DOUBLE);
+      size = pango_font_description_get_size (description) / PANGO_SCALE;
+      if (!pango_font_description_get_size_is_absolute (description))
+        size = size * 96.0 / 72.0;
+      g_value_set_double (&v, size);
       prop = _gtk_style_property_lookup ("font-size");
       _gtk_style_property_assign (prop, props, state, &v);
       g_value_unset (&v);
@@ -1029,6 +1134,7 @@ pack_font_description (GtkCssShorthandProperty *shorthand,
 {
   PangoFontDescription *description;
   GtkCssValue *v;
+  double dpi;
 
   description = pango_font_description_new ();
 
@@ -1039,9 +1145,11 @@ pack_font_description (GtkCssShorthandProperty *shorthand,
       pango_font_description_set_family (description, _gtk_css_string_value_get (_gtk_css_array_value_get_nth (v, 0)));
     }
 
+  v = (* query_func) (_gtk_css_style_property_get_id (GTK_CSS_STYLE_PROPERTY (_gtk_style_property_lookup ("-gtk-dpi"))), query_data);
+  dpi = _gtk_css_number_value_get (v, 96);
   v = (* query_func) (_gtk_css_style_property_get_id (GTK_CSS_STYLE_PROPERTY (_gtk_style_property_lookup ("font-size"))), query_data);
   if (v)
-    pango_font_description_set_size (description, round (_gtk_css_number_value_get (v, 100) * PANGO_SCALE));
+    pango_font_description_set_size (description, round (_gtk_css_number_value_get (v, 100) * PANGO_SCALE * 72 / dpi));
 
   v = (* query_func) (_gtk_css_style_property_get_id (GTK_CSS_STYLE_PROPERTY (_gtk_style_property_lookup ("font-style"))), query_data);
   if (v)
@@ -1170,6 +1278,7 @@ _gtk_css_shorthand_property_init_properties (void)
   const char *transition_subproperties[] = { "transition-property", "transition-duration", "transition-delay", "transition-timing-function", NULL };
   const char *animation_subproperties[] = { "animation-name", "animation-iteration-count", "animation-duration", "animation-delay", 
                                             "animation-timing-function", "animation-direction", "animation-fill-mode", NULL };
+  const char *text_decoration_subproperties[] = { "text-decoration-line", "text-decoration-style", "text-decoration-color", NULL };
 
   const char **all_subproperties;
 
@@ -1251,12 +1360,13 @@ _gtk_css_shorthand_property_init_properties (void)
                                           parse_border,
                                           NULL,
                                           NULL);
-  _gtk_css_shorthand_property_register   ("outline-radius",
+  _gtk_css_shorthand_property_register   ("-gtk-outline-radius",
                                           G_TYPE_INT,
                                           outline_radius_subproperties,
                                           parse_border_radius,
                                           unpack_border_radius,
                                           pack_border_radius);
+  _gtk_style_property_add_alias ("-gtk-outline-radius", "outline-radius");
   _gtk_css_shorthand_property_register   ("outline",
                                           G_TYPE_NONE,
                                           outline_subproperties,
@@ -1279,6 +1389,12 @@ _gtk_css_shorthand_property_init_properties (void)
                                           G_TYPE_NONE,
                                           animation_subproperties,
                                           parse_animation,
+                                          NULL,
+                                          NULL);
+  _gtk_css_shorthand_property_register   ("text-decoration",
+                                          G_TYPE_NONE,
+                                          text_decoration_subproperties,
+                                          parse_text_decoration,
                                           NULL,
                                           NULL);
 

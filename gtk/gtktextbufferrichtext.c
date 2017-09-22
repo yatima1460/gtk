@@ -335,7 +335,7 @@ gtk_text_buffer_deserialize_set_can_create_tags (GtkTextBuffer *buffer,
 
   formats = g_object_get_qdata (G_OBJECT (buffer), deserialize_quark ());
 
-  for (list = formats; list; list = g_list_next (list))
+  for (list = formats; list; list = list->next)
     {
       GtkRichTextFormat *fmt = list->data;
 
@@ -378,7 +378,7 @@ gtk_text_buffer_deserialize_get_can_create_tags (GtkTextBuffer *buffer,
 
   formats = g_object_get_qdata (G_OBJECT (buffer), deserialize_quark ());
 
-  for (list = formats; list; list = g_list_next (list))
+  for (list = formats; list; list = list->next)
     {
       GtkRichTextFormat *fmt = list->data;
 
@@ -497,7 +497,7 @@ gtk_text_buffer_serialize (GtkTextBuffer     *register_buffer,
   formats = g_object_get_qdata (G_OBJECT (register_buffer),
                                 serialize_quark ());
 
-  for (list = formats; list; list = g_list_next (list))
+  for (list = formats; list; list = list->next)
     {
       GtkRichTextFormat *fmt = list->data;
 
@@ -543,8 +543,8 @@ gtk_text_buffer_deserialize (GtkTextBuffer  *register_buffer,
                              gsize           length,
                              GError        **error)
 {
-  GList    *formats;
-  GList    *list;
+  GList *formats;
+  GList *l;
 
   g_return_val_if_fail (GTK_IS_TEXT_BUFFER (register_buffer), FALSE);
   g_return_val_if_fail (GTK_IS_TEXT_BUFFER (content_buffer), FALSE);
@@ -554,12 +554,11 @@ gtk_text_buffer_deserialize (GtkTextBuffer  *register_buffer,
   g_return_val_if_fail (length > 0, FALSE);
   g_return_val_if_fail (error == NULL || *error == NULL, FALSE);
 
-  formats = g_object_get_qdata (G_OBJECT (register_buffer),
-                                deserialize_quark ());
+  formats = g_object_get_qdata (G_OBJECT (register_buffer), deserialize_quark ());
 
-  for (list = formats; list; list = g_list_next (list))
+  for (l = formats; l; l = l->next)
     {
-      GtkRichTextFormat *fmt = list->data;
+      GtkRichTextFormat *fmt = l->data;
 
       if (fmt->atom == format)
         {
@@ -584,12 +583,12 @@ gtk_text_buffer_deserialize (GtkTextBuffer  *register_buffer,
             {
               GtkTextTag *tag = list->data;
 
-              list = g_slist_next (list);
+              list = list->next;
 
-              /*  If a tag begins at the insertion point, ignore it
+              /*  If a tag starts at the insertion point, ignore it
                *  because it doesn't affect the pasted text
                */
-              if (gtk_text_iter_begins_tag (iter, tag))
+              if (gtk_text_iter_starts_tag (iter, tag))
                 split_tags = g_slist_remove (split_tags, tag);
             }
 
@@ -603,7 +602,7 @@ gtk_text_buffer_deserialize (GtkTextBuffer  *register_buffer,
               right_start = gtk_text_buffer_create_mark (content_buffer,
                                                          NULL, iter, FALSE);
 
-              for (list = split_tags; list; list = g_slist_next (list))
+              for (list = split_tags; list; list = list->next)
                 {
                   GtkTextTag  *tag             = list->data;
                   GtkTextIter *backward_toggle = gtk_text_iter_copy (iter);
@@ -665,12 +664,12 @@ gtk_text_buffer_deserialize (GtkTextBuffer  *register_buffer,
                                                 &right_s, right_start);
 
               for (list = split_tags,
-                     left_list = left_start_list,
-                     right_list = right_end_list;
+                   left_list = left_start_list,
+                   right_list = right_end_list;
                    list && left_list && right_list;
-                   list = g_slist_next (list),
-                     left_list = g_slist_next (left_list),
-                     right_list = g_slist_next (right_list))
+                   list = list->next,
+                   left_list = left_list->next,
+                   right_list = right_list->next)
                 {
                   GtkTextTag  *tag        = list->data;
                   GtkTextMark *left_start = left_list->data;
@@ -746,7 +745,7 @@ unregister_format (GList   *formats,
 {
   GList *list;
 
-  for (list = formats; list; list = g_list_next (list))
+  for (list = formats; list; list = list->next)
     {
       GtkRichTextFormat *format = list->data;
 
@@ -772,7 +771,7 @@ get_formats (GList *formats,
   *n_formats = g_list_length (formats);
   array = g_new0 (GdkAtom, *n_formats);
 
-  for (list = formats, i = 0; list; list = g_list_next (list), i++)
+  for (list = formats, i = 0; list; list = list->next, i++)
     {
       GtkRichTextFormat *format = list->data;
 

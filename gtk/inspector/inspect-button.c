@@ -214,13 +214,14 @@ select_widget (GtkInspectorWindow *iw,
                GtkWidget          *widget)
 {
   GtkInspectorObjectTree *wt = GTK_INSPECTOR_OBJECT_TREE (iw->object_tree);
-  GtkTreeIter iter;
 
   iw->selected_widget = widget;
 
-  if (!gtk_inspector_object_tree_find_object (wt, G_OBJECT (widget), &iter))
-    gtk_inspector_object_tree_scan (wt, gtk_widget_get_toplevel (widget));
-  gtk_inspector_object_tree_select_object (wt, G_OBJECT (widget));
+  if (!gtk_inspector_object_tree_select_object (wt, G_OBJECT (widget)))
+    {
+      gtk_inspector_object_tree_scan (wt, gtk_widget_get_toplevel (widget));
+      gtk_inspector_object_tree_select_object (wt, G_OBJECT (widget));
+    }
 }
 
 static void
@@ -315,16 +316,13 @@ property_query_event (GtkWidget *widget,
                       gpointer   data)
 {
   GtkInspectorWindow *iw = (GtkInspectorWindow *)data;
-  GdkDevice *device;
 
   if (event->type == GDK_BUTTON_RELEASE)
     {
-      device = gdk_event_get_device (event);
-
       g_signal_handlers_disconnect_by_func (widget, property_query_event, data);
       gtk_grab_remove (widget);
       if (iw->grabbed)
-        gdk_device_ungrab (device, GDK_CURRENT_TIME);
+        gdk_seat_ungrab (gdk_event_get_seat (event));
       reemphasize_window (GTK_WIDGET (iw));
 
       on_inspect_widget (widget, event, data);
@@ -341,9 +339,8 @@ property_query_event (GtkWidget *widget,
         {
           g_signal_handlers_disconnect_by_func (widget, property_query_event, data);
           gtk_grab_remove (widget);
-          device = gdk_device_get_associated_device (gdk_event_get_device (event));
           if (iw->grabbed)
-            gdk_device_ungrab (device, GDK_CURRENT_TIME);
+            gdk_seat_ungrab (gdk_event_get_seat (event));
           reemphasize_window (GTK_WIDGET (iw));
 
           clear_flash (iw);
@@ -358,7 +355,6 @@ gtk_inspector_on_inspect (GtkWidget          *button,
                           GtkInspectorWindow *iw)
 {
   GdkDisplay *display;
-  GdkDevice *device;
   GdkCursor *cursor;
   GdkGrabStatus status;
 
@@ -376,13 +372,11 @@ gtk_inspector_on_inspect (GtkWidget          *button,
     }
 
   display = gdk_display_get_default ();
-  cursor = gdk_cursor_new_for_display (display, GDK_CROSSHAIR);
-  device = gdk_device_manager_get_client_pointer (gdk_display_get_device_manager (display));
-  status = gdk_device_grab (device,
-                            gtk_widget_get_window (iw->invisible),
-                            GDK_OWNERSHIP_NONE, TRUE,
-                            GDK_BUTTON_RELEASE_MASK | GDK_POINTER_MOTION_MASK,
-                            cursor, GDK_CURRENT_TIME);
+  cursor = gdk_cursor_new_from_name (display, "crosshair");
+  status = gdk_seat_grab (gdk_display_get_default_seat (display),
+                          gtk_widget_get_window (iw->invisible),
+                          GDK_SEAT_CAPABILITY_ALL_POINTING, TRUE,
+                          cursor, NULL, NULL, NULL);
   g_object_unref (cursor);
   iw->grabbed = status == GDK_GRAB_SUCCESS;
 
@@ -404,10 +398,14 @@ draw_flash (GtkWidget          *widget,
 
   if (GTK_IS_WINDOW (widget))
     {
+      GtkWidget *child = gtk_bin_get_child (GTK_BIN (widget));
       /* We don't want to draw the drag highlight around the
        * CSD window decorations
        */
-      gtk_widget_get_allocation (gtk_bin_get_child (GTK_BIN (widget)), &alloc);
+      if (child == NULL)
+        return FALSE;
+
+      gtk_widget_get_allocation (child, &alloc);
     }
   else
     {
@@ -482,13 +480,11 @@ void
 gtk_inspector_window_select_widget_under_pointer (GtkInspectorWindow *iw)
 {
   GdkDisplay *display;
-  GdkDeviceManager *dm;
   GdkDevice *device;
   GtkWidget *widget;
 
   display = gdk_display_get_default ();
-  dm = gdk_display_get_device_manager (display);
-  device = gdk_device_manager_get_client_pointer (dm);
+  device = gdk_seat_get_pointer (gdk_display_get_default_seat (display));
 
   widget = find_widget_at_pointer (device);
 

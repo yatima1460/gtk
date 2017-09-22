@@ -30,6 +30,8 @@
 #include "gdkinternals.h"
 #include "gdkintl.h"
 
+#include "gdkresources.h"
+
 #include "gdk-private.h"
 
 #ifndef HAVE_XCONVERTCASE
@@ -130,6 +132,7 @@ static int gdk_initialized = 0;                     /* 1 if the library is initi
                                                      */
 
 static gchar  *gdk_progclass = NULL;
+static gboolean gdk_progclass_overridden;
 
 static GMutex gdk_threads_mutex;
 
@@ -137,30 +140,32 @@ static GCallback gdk_threads_lock = NULL;
 static GCallback gdk_threads_unlock = NULL;
 
 static const GDebugKey gdk_gl_keys[] = {
-  {"disable",               GDK_GL_DISABLE},
-  {"always",                GDK_GL_ALWAYS},
-  {"software-draw",         GDK_GL_SOFTWARE_DRAW_GL | GDK_GL_SOFTWARE_DRAW_SURFACE},
-  {"software-draw-gl",      GDK_GL_SOFTWARE_DRAW_GL},
-  {"software-draw-surface", GDK_GL_SOFTWARE_DRAW_SURFACE},
-  {"texture-rectangle",     GDK_GL_TEXTURE_RECTANGLE},
+  { "disable",               GDK_GL_DISABLE },
+  { "always",                GDK_GL_ALWAYS },
+  { "software-draw",         GDK_GL_SOFTWARE_DRAW_GL | GDK_GL_SOFTWARE_DRAW_SURFACE} ,
+  { "software-draw-gl",      GDK_GL_SOFTWARE_DRAW_GL },
+  { "software-draw-surface", GDK_GL_SOFTWARE_DRAW_SURFACE },
+  { "texture-rectangle",     GDK_GL_TEXTURE_RECTANGLE },
+  { "legacy",                GDK_GL_LEGACY },
+  { "gles",                  GDK_GL_GLES },
 };
 
 #ifdef G_ENABLE_DEBUG
 static const GDebugKey gdk_debug_keys[] = {
-  {"events",        GDK_DEBUG_EVENTS},
-  {"misc",          GDK_DEBUG_MISC},
-  {"dnd",           GDK_DEBUG_DND},
-  {"xim",           GDK_DEBUG_XIM},
-  {"nograbs",       GDK_DEBUG_NOGRABS},
-  {"input",         GDK_DEBUG_INPUT},
-  {"cursor",        GDK_DEBUG_CURSOR},
-  {"multihead",     GDK_DEBUG_MULTIHEAD},
-  {"xinerama",      GDK_DEBUG_XINERAMA},
-  {"draw",          GDK_DEBUG_DRAW},
-  {"eventloop",     GDK_DEBUG_EVENTLOOP},
-  {"frames",        GDK_DEBUG_FRAMES},
-  {"settings",      GDK_DEBUG_SETTINGS},
-  {"opengl",        GDK_DEBUG_OPENGL},
+  { "events",        GDK_DEBUG_EVENTS },
+  { "misc",          GDK_DEBUG_MISC },
+  { "dnd",           GDK_DEBUG_DND },
+  { "xim",           GDK_DEBUG_XIM },
+  { "nograbs",       GDK_DEBUG_NOGRABS },
+  { "input",         GDK_DEBUG_INPUT },
+  { "cursor",        GDK_DEBUG_CURSOR },
+  { "multihead",     GDK_DEBUG_MULTIHEAD },
+  { "xinerama",      GDK_DEBUG_XINERAMA },
+  { "draw",          GDK_DEBUG_DRAW },
+  { "eventloop",     GDK_DEBUG_EVENTLOOP },
+  { "frames",        GDK_DEBUG_FRAMES },
+  { "settings",      GDK_DEBUG_SETTINGS },
+  { "opengl",        GDK_DEBUG_OPENGL }
 };
 
 static gboolean
@@ -208,6 +213,7 @@ static gboolean
 gdk_arg_class_cb (const char *key, const char *value, gpointer user_data, GError **error)
 {
   gdk_set_program_class (value);
+  gdk_progclass_overridden = TRUE;
 
   return TRUE;
 }
@@ -227,9 +233,11 @@ static const GOptionEntry gdk_args[] = {
   { "name",         0, 0,                     G_OPTION_ARG_CALLBACK, gdk_arg_name_cb,
     /* Description of --name=NAME in --help output */          N_("Program name as used by the window manager"),
     /* Placeholder in --name=NAME in --help output */          N_("NAME") },
+#ifndef G_OS_WIN32
   { "display",      0, G_OPTION_FLAG_IN_MAIN, G_OPTION_ARG_STRING,   &_gdk_display_name,
     /* Description of --display=DISPLAY in --help output */    N_("X display to use"),
     /* Placeholder in --display=DISPLAY in --help output */    N_("DISPLAY") },
+#endif
 #ifdef G_ENABLE_DEBUG
   { "gdk-debug",    0, 0, G_OPTION_ARG_CALLBACK, gdk_arg_debug_cb,  
     /* Description of --gdk-debug=FLAGS in --help output */    N_("GDK debugging flags to set"),
@@ -263,6 +271,22 @@ gdk_add_option_entries_libgtk_only (GOptionGroup *group)
   gdk_add_option_entries (group);
 }
 
+static gpointer
+register_resources (gpointer dummy G_GNUC_UNUSED)
+{
+  _gdk_register_resource ();
+
+  return NULL;
+}
+
+static void
+gdk_ensure_resources (void)
+{
+  static GOnce register_resources_once = G_ONCE_INIT;
+
+  g_once (&register_resources_once, register_resources, NULL);
+}
+
 void
 gdk_pre_parse (void)
 {
@@ -270,6 +294,8 @@ gdk_pre_parse (void)
   const gchar *gl_string;
 
   gdk_initialized = TRUE;
+
+  gdk_ensure_resources ();
 
   /* We set the fallback program class here, rather than lazily in
    * gdk_get_program_class, since we don't want -name to override it.
@@ -1025,10 +1051,16 @@ gdk_get_program_class (void)
  * Sets the program class. The X11 backend uses the program class to set
  * the class name part of the `WM_CLASS` property on
  * toplevel windows; see the ICCCM.
+ *
+ * The program class can still be overridden with the --class command
+ * line option.
  */
 void
 gdk_set_program_class (const char *program_class)
 {
+  if (gdk_progclass_overridden)
+    return;
+
   g_free (gdk_progclass);
 
   gdk_progclass = g_strdup (program_class);

@@ -27,7 +27,7 @@
  * win32_x/win32_y < -16383) after scrolling. They needed to be moved
  * back to the real position determined by gdk_window_compute_position().
  * This is handled in gdk_window_postmove().
- * 
+ *
  * The X11 version by Owen Taylor <otaylor@redhat.com>
  * Copyright Red Hat, Inc. 2000
  * Win32 hack by Tor Lillqvist <tml@iki.fi>
@@ -46,8 +46,25 @@
 
 typedef struct _GdkWindowParentPos GdkWindowParentPos;
 
-static void tmp_unset_bg (GdkWindow *window);
-static void tmp_reset_bg (GdkWindow *window);
+static void
+tmp_unset_bg (GdkWindow *window)
+{
+  GdkWindowImplWin32 *impl;
+
+  impl = GDK_WINDOW_IMPL_WIN32 (window->impl);
+
+  impl->no_bg = TRUE;
+}
+
+static void
+tmp_reset_bg (GdkWindow *window)
+{
+  GdkWindowImplWin32 *impl;
+
+  impl = GDK_WINDOW_IMPL_WIN32 (window->impl);
+
+  impl->no_bg = FALSE;
+}
 
 void
 _gdk_window_move_resize_child (GdkWindow *window,
@@ -56,40 +73,49 @@ _gdk_window_move_resize_child (GdkWindow *window,
 			       gint       width,
 			       gint       height)
 {
+  GdkWindowImplWin32 *impl;
+
   g_return_if_fail (window != NULL);
   g_return_if_fail (GDK_IS_WINDOW (window));
 
+  impl = GDK_WINDOW_IMPL_WIN32 (window->impl);
   GDK_NOTE (MISC, g_print ("_gdk_window_move_resize_child: %s@%+d%+d %dx%d@%+d%+d\n",
 			   _gdk_win32_window_description (window),
 			   window->x, window->y, width, height, x, y));
 
-  if (width > 65535 || height > 65535)
-  {
-    g_warning ("Native children wider or taller than 65535 pixels are not supported.");
+  if (width * impl->window_scale > 65535 || height * impl->window_scale > 65535)
+    {
+      g_warning ("Native children wider or taller than 65535 pixels are not supported.");
 
-    if (width > 65535)
-      width = 65535;
-    if (height > 65535)
-      height = 65535;
-  }
+      if (width * impl->window_scale > 65535)
+        width = 65535 / impl->window_scale;
+      if (height * impl->window_scale > 65535)
+        height = 65535 /impl->window_scale;
+    }
 
   window->x = x;
   window->y = y;
   window->width = width;
   window->height = height;
+  impl->unscaled_width = width * impl->window_scale;
+  impl->unscaled_height = height * impl->window_scale;
 
   _gdk_win32_window_tmp_unset_parent_bg (window);
   _gdk_win32_window_tmp_unset_bg (window, TRUE);
-  
+
   GDK_NOTE (MISC, g_print ("... SetWindowPos(%p,NULL,%d,%d,%d,%d,"
 			   "NOACTIVATE|NOZORDER)\n",
 			   GDK_WINDOW_HWND (window),
-			   window->x + window->parent->abs_x, window->y + window->parent->abs_y, 
-			   width, height));
+			   (window->x + window->parent->abs_x) * impl->window_scale,
+			   (window->y + window->parent->abs_y) * impl->window_scale,
+			   impl->unscaled_width,
+			   impl->unscaled_height));
 
   API_CALL (SetWindowPos, (GDK_WINDOW_HWND (window), NULL,
-			   window->x + window->parent->abs_x, window->y + window->parent->abs_y, 
-			   width, height,
+			   (window->x + window->parent->abs_x) * impl->window_scale,
+			   (window->y + window->parent->abs_y) * impl->window_scale,
+			   impl->unscaled_width,
+			   impl->unscaled_height,
 			   SWP_NOACTIVATE | SWP_NOZORDER));
 
   _gdk_win32_window_tmp_reset_bg (window, TRUE);
@@ -119,26 +145,6 @@ _gdk_win32_window_tmp_unset_bg (GdkWindow *window,
       for (l = window->children; l != NULL; l = l->next)
 	_gdk_win32_window_tmp_unset_bg (l->data, TRUE);
     }
-}
-
-static void
-tmp_unset_bg (GdkWindow *window)
-{
-  GdkWindowImplWin32 *impl;
-
-  impl = GDK_WINDOW_IMPL_WIN32 (window->impl);
-
-  impl->no_bg = TRUE;
-}
-
-static void
-tmp_reset_bg (GdkWindow *window)
-{
-  GdkWindowImplWin32 *impl;
-
-  impl = GDK_WINDOW_IMPL_WIN32 (window->impl);
-
-  impl->no_bg = FALSE;
 }
 
 void

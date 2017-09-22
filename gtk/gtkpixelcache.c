@@ -18,7 +18,10 @@
 #include "config.h"
 
 #include "gtkdebug.h"
+#include "gtkprivate.h"
 #include "gtkpixelcacheprivate.h"
+#include "gtkrenderbackgroundprivate.h"
+#include "gtkstylecontextprivate.h"
 
 #define BLOW_CACHE_TIMEOUT_SEC 20
 
@@ -28,8 +31,8 @@
 
 /* When resizing viewport we allow this extra
    size to avoid constantly reallocating when resizing */
-#define ALLOW_SMALLER_SIZE 32
-#define ALLOW_LARGER_SIZE 32
+#define ALLOW_SMALLER_SIZE_FACTOR 0.5
+#define ALLOW_LARGER_SIZE_FACTOR  1.25
 
 struct _GtkPixelCache {
   cairo_surface_t *surface;
@@ -45,10 +48,13 @@ struct _GtkPixelCache {
   /* may be null if not dirty */
   cairo_region_t *surface_dirty;
 
-  guint timeout_tag;
+  GSource *timeout_source;
 
   guint extra_width;
   guint extra_height;
+
+  guint always_cache : 1;
+  guint is_opaque : 1;
 };
 
 GtkPixelCache *
@@ -69,22 +75,17 @@ _gtk_pixel_cache_free (GtkPixelCache *cache)
   if (cache == NULL)
     return;
 
-  if (cache->timeout_tag ||
+  if (cache->timeout_source ||
       cache->surface ||
       cache->surface_dirty)
     {
-      g_warning ("pixel cache freed that wasn't unmapped: tag %u surface %p sirty %p",
-                 cache->timeout_tag, cache->surface, cache->surface_dirty);
+      g_warning ("pixel cache freed that wasn't unmapped: tag %u surface %p dirty %p",
+                 g_source_get_id (cache->timeout_source), cache->surface, cache->surface_dirty);
     }
 
-  if (cache->timeout_tag)
-    g_source_remove (cache->timeout_tag);
-
-  if (cache->surface != NULL)
-    cairo_surface_destroy (cache->surface);
-
-  if (cache->surface_dirty != NULL)
-    cairo_region_destroy (cache->surface_dirty);
+  g_clear_pointer (&cache->timeout_source, g_source_destroy);
+  g_clear_pointer (&cache->surface, cairo_surface_destroy);
+  g_clear_pointer (&cache->surface_dirty, cairo_region_destroy);
 
   g_free (cache);
 }
@@ -179,24 +180,19 @@ _gtk_pixel_cache_create_surface_if_needed (GtkPixelCache         *cache,
   cairo_rectangle_int_t rect;
   int surface_w, surface_h;
   cairo_content_t content;
-  cairo_pattern_t *bg;
-  double red, green, blue, alpha;
 
 #ifdef G_ENABLE_DEBUG
-  if (gtk_get_debug_flags () & GTK_DEBUG_NO_PIXEL_CACHE)
+  if (GTK_DISPLAY_DEBUG_CHECK (gdk_window_get_display (window), NO_PIXEL_CACHE))
     return;
 #endif
 
   content = cache->content;
   if (!content)
     {
-      content = CAIRO_CONTENT_COLOR_ALPHA;
-      bg = gdk_window_get_background_pattern (window);
-      if (bg != NULL &&
-          cairo_pattern_get_type (bg) == CAIRO_PATTERN_TYPE_SOLID &&
-          cairo_pattern_get_rgba (bg, &red, &green, &blue, &alpha) == CAIRO_STATUS_SUCCESS &&
-          alpha == 1.0)
+      if (cache->is_opaque)
         content = CAIRO_CONTENT_COLOR;
+      else
+        content = CAIRO_CONTENT_COLOR_ALPHA;
     }
 
   surface_w = view_rect->width;
@@ -210,10 +206,10 @@ _gtk_pixel_cache_create_surface_if_needed (GtkPixelCache         *cache,
   /* If current surface can't fit view_rect or is too large, kill it */
   if (cache->surface != NULL &&
       (cairo_surface_get_content (cache->surface) != content ||
-       cache->surface_w < MAX(view_rect->width, surface_w - ALLOW_SMALLER_SIZE) ||
-       cache->surface_w > surface_w + ALLOW_LARGER_SIZE ||
-       cache->surface_h < MAX(view_rect->height, surface_h - ALLOW_SMALLER_SIZE) ||
-       cache->surface_h > surface_h + ALLOW_LARGER_SIZE ||
+       cache->surface_w < MAX(view_rect->width, surface_w * ALLOW_SMALLER_SIZE_FACTOR) ||
+       cache->surface_w > surface_w * ALLOW_LARGER_SIZE_FACTOR ||
+       cache->surface_h < MAX(view_rect->height, surface_h * ALLOW_SMALLER_SIZE_FACTOR) ||
+       cache->surface_h > surface_h * ALLOW_LARGER_SIZE_FACTOR ||
        cache->surface_scale != gdk_window_get_scale_factor (window)))
     {
       cairo_surface_destroy (cache->surface);
@@ -224,10 +220,12 @@ _gtk_pixel_cache_create_surface_if_needed (GtkPixelCache         *cache,
     }
 
   /* Don't allocate a surface if view >= canvas, as we won't
-     be scrolling then anyway */
+   * be scrolling then anyway, unless the widget requested it.
+   */
   if (cache->surface == NULL &&
-      (view_rect->width < canvas_rect->width ||
-       view_rect->height < canvas_rect->height))
+      (cache->always_cache ||
+       (view_rect->width < canvas_rect->width ||
+        view_rect->height < canvas_rect->height)))
     {
       cache->surface_x = -canvas_rect->x;
       cache->surface_y = -canvas_rect->y;
@@ -327,6 +325,7 @@ _gtk_pixel_cache_set_position (GtkPixelCache         *cache,
 
 static void
 _gtk_pixel_cache_repaint (GtkPixelCache         *cache,
+                          GdkWindow             *window,
                           GtkPixelCacheDrawFunc  draw,
                           cairo_rectangle_int_t *view_rect,
                           cairo_rectangle_int_t *canvas_rect,
@@ -359,7 +358,7 @@ _gtk_pixel_cache_repaint (GtkPixelCache         *cache,
       cairo_restore (backing_cr);
 
 #ifdef G_ENABLE_DEBUG
-      if (gtk_get_debug_flags () & GTK_DEBUG_PIXEL_CACHE)
+      if (GTK_DISPLAY_DEBUG_CHECK (gdk_window_get_display (window), PIXEL_CACHE))
         {
           GdkRGBA colors[] = {
             { 1, 0, 0, 0.08},
@@ -386,20 +385,9 @@ _gtk_pixel_cache_repaint (GtkPixelCache         *cache,
 static void
 gtk_pixel_cache_blow_cache (GtkPixelCache *cache)
 {
-  if (cache->timeout_tag)
-    {
-      g_source_remove (cache->timeout_tag);
-      cache->timeout_tag = 0;
-    }
-
-  if (cache->surface)
-    {
-      cairo_surface_destroy (cache->surface);
-      cache->surface = NULL;
-      if (cache->surface_dirty)
-        cairo_region_destroy (cache->surface_dirty);
-      cache->surface_dirty = NULL;
-    }
+  g_clear_pointer (&cache->timeout_source, g_source_destroy);
+  g_clear_pointer (&cache->surface, cairo_surface_destroy);
+  g_clear_pointer (&cache->surface_dirty, cairo_region_destroy);
 }
 
 static gboolean
@@ -407,7 +395,7 @@ blow_cache_cb  (gpointer user_data)
 {
   GtkPixelCache *cache = user_data;
 
-  cache->timeout_tag = 0;
+  cache->timeout_source = NULL;
 
   gtk_pixel_cache_blow_cache (cache);
 
@@ -437,17 +425,26 @@ _gtk_pixel_cache_draw (GtkPixelCache         *cache,
                        GtkPixelCacheDrawFunc  draw,
                        gpointer               user_data)
 {
-  if (cache->timeout_tag)
-    g_source_remove (cache->timeout_tag);
+  if (cache->timeout_source)
+    {
+      gint64 deadline;
 
-  cache->timeout_tag = g_timeout_add_seconds (BLOW_CACHE_TIMEOUT_SEC,
-                                              blow_cache_cb, cache);
-  g_source_set_name_by_id (cache->timeout_tag, "[gtk+] blow_cache_cb");
+      deadline = g_get_monotonic_time () + (BLOW_CACHE_TIMEOUT_SEC * G_USEC_PER_SEC);
+      g_source_set_ready_time (cache->timeout_source, deadline);
+    }
+  else
+    {
+      guint tag;
+
+      tag = g_timeout_add_seconds (BLOW_CACHE_TIMEOUT_SEC, blow_cache_cb, cache);
+      cache->timeout_source = g_main_context_find_source_by_id (NULL, tag);
+      g_source_set_name (cache->timeout_source, "[gtk+] blow_cache_cb");
+    }
 
   _gtk_pixel_cache_create_surface_if_needed (cache, window,
                                              view_rect, canvas_rect);
   _gtk_pixel_cache_set_position (cache, view_rect, canvas_rect);
-  _gtk_pixel_cache_repaint (cache, draw, view_rect, canvas_rect, user_data);
+  _gtk_pixel_cache_repaint (cache, window, draw, view_rect, canvas_rect, user_data);
 
   if (cache->surface && context_is_unscaled (cr) &&
       /* Don't use backing surface if rendering elsewhere */
@@ -482,4 +479,28 @@ void
 _gtk_pixel_cache_unmap (GtkPixelCache *cache)
 {
   gtk_pixel_cache_blow_cache (cache);
+}
+
+gboolean
+_gtk_pixel_cache_get_always_cache (GtkPixelCache *cache)
+{
+  return cache->always_cache;
+}
+
+void
+_gtk_pixel_cache_set_always_cache (GtkPixelCache *cache,
+                                   gboolean       always_cache)
+{
+  cache->always_cache = !!always_cache;
+}
+
+void
+gtk_pixel_cache_set_is_opaque (GtkPixelCache *cache,
+                               gboolean       is_opaque)
+{
+  if (cache->is_opaque == is_opaque)
+    return;
+
+  cache->is_opaque = is_opaque;
+  _gtk_pixel_cache_invalidate (cache, NULL);
 }

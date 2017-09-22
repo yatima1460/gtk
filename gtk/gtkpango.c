@@ -1289,3 +1289,35 @@ _gtk_pango_get_text_at (PangoLayout     *layout,
 
   return g_utf8_substring (text, start, end);
 }
+
+static gboolean
+attr_list_merge_filter (PangoAttribute *attribute,
+                        gpointer        list)
+{
+  pango_attr_list_change (list, pango_attribute_copy (attribute));
+  return FALSE;
+}
+
+/*
+ * _gtk_pango_attr_list_merge:
+ * @into: a #PangoAttrList where attributes are merged or %NULL
+ * @from: a #PangoAttrList with the attributes to merge or %NULL
+ *
+ * Merges attributes from @from into @into.
+ *
+ * Returns: the merged list.
+ */
+PangoAttrList *
+_gtk_pango_attr_list_merge (PangoAttrList *into,
+                            PangoAttrList *from)
+{
+  if (from)
+    {
+      if (into)
+        pango_attr_list_filter (from, attr_list_merge_filter, into);
+      else
+       return pango_attr_list_ref (from);
+    }
+
+  return into;
+}

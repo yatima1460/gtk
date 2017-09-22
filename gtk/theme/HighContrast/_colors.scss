@@ -2,23 +2,31 @@
 // it gets @if ed depending on $variant
 
 
-$base_color: #fff;
-$bg_color: #fff;
-$fg_color: #000;
+$base_color: if($variant == 'light', #fff, #111);
+$bg_color: if($variant == 'light', #fff, #000);
+$fg_color: if($variant == 'light', #000, #fff);
 
-$selected_fg_color: #fff;
-$selected_bg_color: #000; //#4a90d9;
-$selected_borders_color: #000;
+$selected_fg_color: if($variant == 'light', #fff, #000);
+$selected_bg_color: if($variant == 'light', #000, #ddd); //#4a90d9;
+$selected_borders_color: if($variant == 'light', #000, #aaa);
+$popover_bg_color: $bg_color;
+$popover_hover_color: lighten($bg_color, 5%);
 
 $borders_color: mix($bg_color,$fg_color,50%);
-$borders_edge: #fff;
+$borders_edge: if($variant == 'light', #fff, #000);
 $link_color: $selected_bg_color;
+
+$scrollbar_bg_color: if($variant == 'light', mix($bg_color, $fg_color, 95%), mix($base_color, $bg_color, 60%));
+$scrollbar_slider_color: mix($fg_color, $bg_color, 60%);
+$scrollbar_slider_hover_color: mix($fg_color, $bg_color, 80%);
+$scrollbar_slider_active_color: if($variant=='light', darken($selected_bg_color, 10%), lighten($selected_bg_color, 10%));
 
 $suggested_color: #4a90d9;
 $warning_color: #f57900;
 $error_color: #cc0000;
 $success_color: #73d216;
 $destructive_color: #ef2929;
+$dark_fill: if($variant == 'light', mix($fg_color, $bg_color, 50%), mix($fg_color, $bg_color, 10%));
 
 $osd_fg_color: #fff;
 $osd_bg_color: transparentize(#000,0.2);
@@ -27,13 +35,16 @@ $osd_borders_color: transparentize(#fff,0.8);
 //insensitive state derived colors
 $insensitive_fg_color: mix($fg_color, $bg_color, 50%);
 $insensitive_bg_color: mix($bg_color, $base_color, 60%);
-$insensitive_borders_color: $borders_color;
+$insensitive_borders_color: mix($borders_color, $base_color, 50%);
 
 //colors for the backdrop state, derived from the main colors.
 $backdrop_base_color: $base_color;
 $backdrop_bg_color: $bg_color;
 $backdrop_fg_color: $fg_color;
 $backdrop_borders_color: mix($borders_color, $bg_color, 90%);
+$backdrop_dark_fill: mix($fg_color, $bg_color, 30%);
+$backdrop_scrollbar_bg_color: darken($backdrop_bg_color, 3%);
+$backdrop_scrollbar_slider_color: mix($backdrop_fg_color, $backdrop_bg_color, 40%);
 
 //apps rely on some named colors to be exported
 /* GTK NAMED COLORS */
@@ -50,13 +61,13 @@ $backdrop_borders_color: mix($borders_color, $bg_color, 90%);
 @define-color theme_unfocused_base_color #{"" + $backdrop_base_color};
 @define-color theme_unfocused_selected_bg_color #{"" + $selected_bg_color};
 @define-color theme_unfocused_selected_fg_color #{"" + $selected_fg_color};
+@define-color unfocused_insensitive_color #{"" + $insensitive_fg_color};
 @define-color borders #{"" + $borders_color};
 @define-color unfocused_borders #{"" + $backdrop_borders_color};
 
 @define-color warning_color #{"" + $warning_color};
 @define-color error_color #{"" + $error_color};
 @define-color success_color #{"" + $success_color};
-//@define-color desctructive_color $destructive_color
 
 //WM
 

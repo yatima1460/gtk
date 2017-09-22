@@ -30,6 +30,7 @@
 #include "gdk/gdk.h"
 
 #include "gtkdnd.h"
+#include "gtkdndprivate.h"
 #include "deprecated/gtkiconfactory.h"
 #include "gtkicontheme.h"
 #include "gtkimageprivate.h"
@@ -42,10 +43,9 @@
 #include "gdk/quartz/gdkquartz.h"
 #include "gtkselectionprivate.h"
 #include "gtksettings.h"
+#include "gtkiconhelperprivate.h"
 
-typedef struct _GtkDragSourceSite GtkDragSourceSite;
 typedef struct _GtkDragSourceInfo GtkDragSourceInfo;
-typedef struct _GtkDragDestSite GtkDragDestSite;
 typedef struct _GtkDragDestInfo GtkDragDestInfo;
 typedef struct _GtkDragFindData GtkDragFindData;
 
@@ -62,27 +62,10 @@ static void gtk_drag_source_site_destroy        (gpointer           data);
 static GtkDragSourceInfo *gtk_drag_get_source_info (GdkDragContext *context,
 						    gboolean        create);
 
+static void gtk_drag_drop_finished (GtkDragSourceInfo *info,
+                                   GtkDragResult      result);
+
 extern GdkDragContext *gdk_quartz_drag_source_context (); /* gdk/quartz/gdkdnd-quartz.c */
-
-struct _GtkDragSourceSite 
-{
-  GdkModifierType    start_button_mask;
-  GtkTargetList     *target_list;        /* Targets for drag data */
-  GdkDragAction      actions;            /* Possible actions */
-
-  /* Drag icon */
-  GtkImageType icon_type;
-  union
-  {
-    GtkImagePixbufData pixbuf;
-    GtkImageStockData stock;
-    GtkImageIconNameData name;
-  } icon_data;
-
-  /* Stored button press information to detect drag beginning */
-  gint               state;
-  gint               x, y;
-};
 
 struct _GtkDragSourceInfo 
 {
@@ -93,18 +76,9 @@ struct _GtkDragSourceInfo
   GdkDragContext    *context;	  /* drag context */
   NSEvent           *nsevent;     /* what started it */
   gint hot_x, hot_y;		  /* Hot spot for drag */
-  GdkPixbuf         *icon_pixbuf;
+  cairo_surface_t   *icon_surface;
   gboolean           success;
   gboolean           delete;
-};
-
-struct _GtkDragDestSite 
-{
-  GtkDestDefaults    flags;
-  GtkTargetList     *target_list;
-  GdkDragAction      actions;
-  guint              have_drag : 1;
-  guint              track_motion : 1;
 };
 
 struct _GtkDragDestInfo 
@@ -353,42 +327,6 @@ gtk_drag_get_source_widget (GdkDragContext *context)
   return info->source_widget;
 }
 
-/*************************************************************
- * gtk_drag_highlight_draw:
- *     Callback for expose_event for highlighted widgets.
- *   arguments:
- *     widget:
- *     event:
- *     data:
- *   results:
- *************************************************************/
-
-static gboolean
-gtk_drag_highlight_draw (GtkWidget *widget,
-                         cairo_t   *cr,
-			 gpointer   data)
-{
-  int width = gtk_widget_get_allocated_width (widget);
-  int height = gtk_widget_get_allocated_height (widget);
-  GtkStyleContext *context = gtk_widget_get_style_context (widget);
-
-  gtk_style_context_save (context);
-  gtk_style_context_add_class (context, GTK_STYLE_CLASS_DND);
-
-  gtk_render_frame (context, cr, 0, 0, width, height);
-
-  gtk_style_context_restore (context);
-
-  cairo_set_source_rgb (cr, 0.0, 0.0, 0.0); /* black */
-  cairo_set_line_width (cr, 1.0);
-  cairo_rectangle (cr,
-                   0.5, 0.5,
-                   width - 1, height - 1);
-  cairo_stroke (cr);
- 
-  return FALSE;
-}
-
 /**
  * gtk_drag_highlight: (method)
  * @widget: a widget to highlight
@@ -398,11 +336,7 @@ gtk_drag_highlight (GtkWidget  *widget)
 {
   g_return_if_fail (GTK_IS_WIDGET (widget));
 
-  g_signal_connect_after (widget, "draw",
-			  G_CALLBACK (gtk_drag_highlight_draw),
-			  NULL);
-
-  gtk_widget_queue_draw (widget);
+  gtk_widget_set_state_flags (widget, GTK_STATE_FLAG_DROP_ACTIVE, FALSE);
 }
 
 /**
@@ -414,11 +348,7 @@ gtk_drag_unhighlight (GtkWidget *widget)
 {
   g_return_if_fail (GTK_IS_WIDGET (widget));
 
-  g_signal_handlers_disconnect_by_func (widget,
-					gtk_drag_highlight_draw,
-					NULL);
-  
-  gtk_widget_queue_draw (widget);
+  gtk_widget_unset_state_flags (widget, GTK_STATE_FLAG_DROP_ACTIVE);
 }
 
 static NSWindow *
@@ -1159,7 +1089,8 @@ gtk_drag_begin_idle (gpointer arg)
   /* FIXME: If the event isn't a mouse event, use the global cursor position instead */
   point = [info->nsevent locationInWindow];
 
-  drag_image = _gtk_quartz_create_image_from_pixbuf (info->icon_pixbuf);
+  drag_image = _gtk_quartz_create_image_from_surface (info->icon_surface);
+
   if (drag_image == NULL)
     {
       g_object_unref (info->context);
@@ -1167,7 +1098,7 @@ gtk_drag_begin_idle (gpointer arg)
     }
 
   point.x -= info->hot_x;
-  point.y -= info->hot_y;
+  point.y -= [drag_image size].height - info->hot_y;
 
   [nswindow dragImage:drag_image
                    at:point
@@ -1192,15 +1123,15 @@ gtk_drag_begin_idle (gpointer arg)
 - (GdkWindow *)gdkWindow;
 @end
 
-static GdkDragContext *
+GdkDragContext *
 gtk_drag_begin_internal (GtkWidget         *widget,
-			 GtkDragSourceSite *site,
+			 GtkImageDefinition *icon,
 			 GtkTargetList     *target_list,
 			 GdkDragAction      actions,
 			 gint               button,
-			 GdkEvent          *event,
-			 gint               x,
-			 gint               y)
+			 const GdkEvent    *event,
+			 int               x,
+			 int               y)
 {
   GtkDragSourceInfo *info;
   GdkDevice *pointer;
@@ -1287,36 +1218,33 @@ gtk_drag_begin_internal (GtkWidget         *widget,
    * application may have set one in ::drag_begin, or it may
    * not have set one.
    */
-  if (!info->icon_pixbuf)
+  if (!info->icon_surface && icon)
     {
-      if (!site || site->icon_type == GTK_IMAGE_EMPTY)
-        gtk_drag_set_icon_default (context);
-      else
+      switch (gtk_image_definition_get_storage_type (icon))
         {
-          switch (site->icon_type)
-            {
-              case GTK_IMAGE_PIXBUF:
-                  gtk_drag_set_icon_pixbuf (context,
-                                            site->icon_data.pixbuf.pixbuf,
-                                            -2, -2);
-                  break;
-              case GTK_IMAGE_STOCK:
-                  gtk_drag_set_icon_stock (context,
-                                           site->icon_data.stock.stock_id,
-                                           -2, -2);
-                  break;
-              case GTK_IMAGE_ICON_NAME:
-                  gtk_drag_set_icon_name (context,
-                                          site->icon_data.name.icon_name,
-                                          -2, -2);
-                  break;
-              case GTK_IMAGE_EMPTY:
-              default:
-                  g_assert_not_reached();
-                  break;
-            }
+          case GTK_IMAGE_PIXBUF:
+              gtk_drag_set_icon_pixbuf (context,
+                                        gtk_image_definition_get_pixbuf (icon),
+                                        -2, -2);
+              break;
+          case GTK_IMAGE_STOCK:
+              gtk_drag_set_icon_stock (context,
+                                       gtk_image_definition_get_stock (icon),
+                                       -2, -2);
+              break;
+          case GTK_IMAGE_ICON_NAME:
+              gtk_drag_set_icon_name (context,
+                                      gtk_image_definition_get_icon_name (icon),
+                                      -2, -2);
+              break;
+          default:
+              break;
         }
     }
+
+  /* no image def or no supported type -> set the default */
+  if (!info->icon_surface)
+    gtk_drag_set_icon_default (context);
 
   /* drag will begin in an idle handler to avoid nested run loops */
 
@@ -1383,371 +1311,21 @@ gtk_drag_begin (GtkWidget         *widget,
 }
 
 
-static gboolean
-gtk_drag_source_event_cb (GtkWidget      *widget,
-			  GdkEvent       *event,
-			  gpointer        data)
-{
-  GtkDragSourceSite *site;
-  gboolean retval = FALSE;
-  site = (GtkDragSourceSite *)data;
-
-  switch (event->type)
-    {
-    case GDK_BUTTON_PRESS:
-      if ((GDK_BUTTON1_MASK << (event->button.button - 1)) & site->start_button_mask)
-	{
-	  site->state |= (GDK_BUTTON1_MASK << (event->button.button - 1));
-	  site->x = event->button.x;
-	  site->y = event->button.y;
-	}
-      break;
-      
-    case GDK_BUTTON_RELEASE:
-      if ((GDK_BUTTON1_MASK << (event->button.button - 1)) & site->start_button_mask)
-	site->state &= ~(GDK_BUTTON1_MASK << (event->button.button - 1));
-      break;
-      
-    case GDK_MOTION_NOTIFY:
-      if (site->state & event->motion.state & site->start_button_mask)
-	{
-	  /* FIXME: This is really broken and can leave us
-	   * with a stuck grab
-	   */
-	  int i;
-	  for (i=1; i<6; i++)
-	    {
-	      if (site->state & event->motion.state &
-		  GDK_BUTTON1_MASK << (i - 1))
-		break;
-	    }
-
-	  if (gtk_drag_check_threshold (widget, site->x, site->y,
-					event->motion.x, event->motion.y))
-	    {
-	      site->state = 0;
-	      gtk_drag_begin_internal (widget, site, site->target_list,
-				       site->actions, i, event, -1, -1);
-
-	      retval = TRUE;
-	    }
-	}
-      break;
-      
-    default:			/* hit for 2/3BUTTON_PRESS */
-      break;
-    }
-  
-  return retval;
-}
-
 /**
- * gtk_drag_source_set: (method)
- * @widget: a #GtkWidget
- * @start_button_mask: the bitmask of buttons that can start the drag
- * @targets: (allow-none) (array length=n_targets): the table of targets that the drag will support,
- *     may be %NULL
- * @n_targets: the number of items in @targets
- * @actions: the bitmask of possible actions for a drag from this widget
- */
-void 
-gtk_drag_source_set (GtkWidget            *widget,
-		     GdkModifierType       start_button_mask,
-		     const GtkTargetEntry *targets,
-		     gint                  n_targets,
-		     GdkDragAction         actions)
-{
-  GtkDragSourceSite *site;
-
-  g_return_if_fail (GTK_IS_WIDGET (widget));
-
-  site = g_object_get_data (G_OBJECT (widget), "gtk-site-data");
-
-  gtk_widget_add_events (widget,
-			 gtk_widget_get_events (widget) |
-			 GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK |
-			 GDK_BUTTON_MOTION_MASK);
-
-  if (site)
-    {
-      if (site->target_list)
-	gtk_target_list_unref (site->target_list);
-    }
-  else
-    {
-      site = g_new0 (GtkDragSourceSite, 1);
-
-      site->icon_type = GTK_IMAGE_EMPTY;
-      
-      g_signal_connect (widget, "button-press-event",
-			G_CALLBACK (gtk_drag_source_event_cb),
-			site);
-      g_signal_connect (widget, "button-release-event",
-			G_CALLBACK (gtk_drag_source_event_cb),
-			site);
-      g_signal_connect (widget, "motion-notify-event",
-			G_CALLBACK (gtk_drag_source_event_cb),
-			site);
-      
-      g_object_set_data_full (G_OBJECT (widget),
-			      I_("gtk-site-data"), 
-			      site, gtk_drag_source_site_destroy);
-    }
-
-  site->start_button_mask = start_button_mask;
-
-  site->target_list = gtk_target_list_new (targets, n_targets);
-
-  site->actions = actions;
-}
-
-/**
- * gtk_drag_source_unset: (method)
- * @widget: a #GtkWidget
- */
-void 
-gtk_drag_source_unset (GtkWidget *widget)
-{
-  GtkDragSourceSite *site;
-
-  g_return_if_fail (GTK_IS_WIDGET (widget));
-
-  site = g_object_get_data (G_OBJECT (widget), "gtk-site-data");
-
-  if (site)
-    {
-      g_signal_handlers_disconnect_by_func (widget,
-					    gtk_drag_source_event_cb,
-					    site);
-      g_object_set_data (G_OBJECT (widget), I_("gtk-site-data"), NULL);
-    }
-}
-
-/**
- * gtk_drag_source_get_target_list: (method)
- * @widget: a #GtkWidget
+ * gtk_drag_cancel:
+ * @context: a #GdkDragContext, as e.g. returned by gtk_drag_begin_with_coordinates()
  *
- * Returns: (transfer none):
- */
-GtkTargetList *
-gtk_drag_source_get_target_list (GtkWidget *widget)
-{
-  GtkDragSourceSite *site;
-
-  g_return_val_if_fail (GTK_IS_WIDGET (widget), NULL);
-
-  site = g_object_get_data (G_OBJECT (widget), "gtk-site-data");
-
-  return site ? site->target_list : NULL;
-
-}
-
-/**
- * gtk_drag_source_set_target_list: (method)
- * @widget: a #GtkWidget that’s a drag source
- * @target_list: (allow-none): list of draggable targets, or %NULL for none
  */
 void
-gtk_drag_source_set_target_list (GtkWidget     *widget,
-                                 GtkTargetList *target_list)
+gtk_drag_cancel (GdkDragContext *context)
 {
-  GtkDragSourceSite *site;
+  GtkDragSourceInfo *info;
 
-  g_return_if_fail (GTK_IS_WIDGET (widget));
+  g_return_if_fail (GDK_IS_DRAG_CONTEXT (context));
 
-  site = g_object_get_data (G_OBJECT (widget), "gtk-site-data");
-  if (site == NULL)
-    {
-      g_warning ("gtk_drag_source_set_target_list() requires the widget "
-		 "to already be a drag source.");
-      return;
-    }
-
-  if (target_list)
-    gtk_target_list_ref (target_list);
-
-  if (site->target_list)
-    gtk_target_list_unref (site->target_list);
-
-  site->target_list = target_list;
-}
-
-/**
- * gtk_drag_source_add_text_targets: (method)
- * @widget: a #GtkWidget that’s is a drag source
- *
- * Add the text targets supported by #GtkSelection to
- * the target list of the drag source.  The targets
- * are added with @info = 0. If you need another value, 
- * use gtk_target_list_add_text_targets() and
- * gtk_drag_source_set_target_list().
- * 
- * Since: 2.6
- **/
-void
-gtk_drag_source_add_text_targets (GtkWidget *widget)
-{
-  GtkTargetList *target_list;
-
-  target_list = gtk_drag_source_get_target_list (widget);
-  if (target_list)
-    gtk_target_list_ref (target_list);
-  else
-    target_list = gtk_target_list_new (NULL, 0);
-  gtk_target_list_add_text_targets (target_list, 0);
-  gtk_drag_source_set_target_list (widget, target_list);
-  gtk_target_list_unref (target_list);
-}
-
-/**
- * gtk_drag_source_add_image_targets: (method)
- * @widget: a #GtkWidget that’s is a drag source
- */
-void
-gtk_drag_source_add_image_targets (GtkWidget *widget)
-{
-  GtkTargetList *target_list;
-
-  target_list = gtk_drag_source_get_target_list (widget);
-  if (target_list)
-    gtk_target_list_ref (target_list);
-  else
-    target_list = gtk_target_list_new (NULL, 0);
-  gtk_target_list_add_image_targets (target_list, 0, TRUE);
-  gtk_drag_source_set_target_list (widget, target_list);
-  gtk_target_list_unref (target_list);
-}
-
-/**
- * gtk_drag_source_add_uri_targets: (method)
- * @widget: a #GtkWidget that’s is a drag source
- */
-void
-gtk_drag_source_add_uri_targets (GtkWidget *widget)
-{
-  GtkTargetList *target_list;
-
-  target_list = gtk_drag_source_get_target_list (widget);
-  if (target_list)
-    gtk_target_list_ref (target_list);
-  else
-    target_list = gtk_target_list_new (NULL, 0);
-  gtk_target_list_add_uri_targets (target_list, 0);
-  gtk_drag_source_set_target_list (widget, target_list);
-  gtk_target_list_unref (target_list);
-}
-
-static void
-gtk_drag_source_unset_icon (GtkDragSourceSite *site)
-{
-  switch (site->icon_type)
-    {
-    case GTK_IMAGE_EMPTY:
-      break;
-    case GTK_IMAGE_PIXBUF:
-      g_object_unref (site->icon_data.pixbuf.pixbuf);
-      break;
-    case GTK_IMAGE_STOCK:
-      g_free (site->icon_data.stock.stock_id);
-      break;
-    case GTK_IMAGE_ICON_NAME:
-      g_free (site->icon_data.name.icon_name);
-      break;
-    default:
-      g_assert_not_reached();
-      break;
-    }
-  site->icon_type = GTK_IMAGE_EMPTY;
-}
-
-static void 
-gtk_drag_source_site_destroy (gpointer data)
-{
-  GtkDragSourceSite *site = data;
-
-  if (site->target_list)
-    gtk_target_list_unref (site->target_list);
-
-  gtk_drag_source_unset_icon (site);
-  g_free (site);
-}
-
-/**
- * gtk_drag_source_set_icon_pixbuf: (method)
- * @widget: a #GtkWidget
- * @pixbuf: the #GdkPixbuf for the drag icon
- */
-void 
-gtk_drag_source_set_icon_pixbuf (GtkWidget   *widget,
-				 GdkPixbuf   *pixbuf)
-{
-  GtkDragSourceSite *site;
-
-  g_return_if_fail (GTK_IS_WIDGET (widget));
-  g_return_if_fail (GDK_IS_PIXBUF (pixbuf));
-
-  site = g_object_get_data (G_OBJECT (widget), "gtk-site-data");
-  g_return_if_fail (site != NULL); 
-  g_object_ref (pixbuf);
-
-  gtk_drag_source_unset_icon (site);
-
-  site->icon_type = GTK_IMAGE_PIXBUF;
-  site->icon_data.pixbuf.pixbuf = pixbuf;
-}
-
-/**
- * gtk_drag_source_set_icon_stock: (method)
- * @widget: a #GtkWidget
- * @stock_id: the ID of the stock icon to use
- *
- * Sets the icon that will be used for drags from a particular source
- * to a stock icon. 
- **/
-void 
-gtk_drag_source_set_icon_stock (GtkWidget   *widget,
-				const gchar *stock_id)
-{
-  GtkDragSourceSite *site;
-
-  g_return_if_fail (GTK_IS_WIDGET (widget));
-  g_return_if_fail (stock_id != NULL);
-
-  site = g_object_get_data (G_OBJECT (widget), "gtk-site-data");
-  g_return_if_fail (site != NULL);
-  
-  gtk_drag_source_unset_icon (site);
-
-  site->icon_type = GTK_IMAGE_STOCK;
-  site->icon_data.stock.stock_id = g_strdup (stock_id);
-}
-
-/**
- * gtk_drag_source_set_icon_name: (method)
- * @widget: a #GtkWidget
- * @icon_name: name of icon to use
- * 
- * Sets the icon that will be used for drags from a particular source
- * to a themed icon. See the docs for #GtkIconTheme for more details.
- *
- * Since: 2.8
- **/
-void 
-gtk_drag_source_set_icon_name (GtkWidget   *widget,
-			       const gchar *icon_name)
-{
-  GtkDragSourceSite *site;
-
-  g_return_if_fail (GTK_IS_WIDGET (widget));
-  g_return_if_fail (icon_name != NULL);
-
-  site = g_object_get_data (G_OBJECT (widget), "gtk-site-data");
-  g_return_if_fail (site != NULL);
-
-  gtk_drag_source_unset_icon (site);
-
-  site->icon_type = GTK_IMAGE_ICON_NAME;
-  site->icon_data.name.icon_name = g_strdup (icon_name);
+  info = gtk_drag_get_source_info (context, FALSE);
+  if (info != NULL)
+    gtk_drag_drop_finished (info, GTK_DRAG_RESULT_ERROR);
 }
 
 
@@ -1784,6 +1362,8 @@ set_icon_stock_pixbuf (GdkDragContext    *context,
 		       gint               hot_y)
 {
   GtkDragSourceInfo *info;
+  cairo_surface_t *surface;
+  cairo_t *cr;
 
   info = gtk_drag_get_source_info (context, FALSE);
 
@@ -1801,11 +1381,56 @@ set_icon_stock_pixbuf (GdkDragContext    *context,
   else
     g_object_ref (pixbuf);
 
-  if (info->icon_pixbuf)
-    g_object_unref (info->icon_pixbuf);
-  info->icon_pixbuf = pixbuf;
-  info->hot_x = hot_x;
-  info->hot_y = hot_y;
+  surface = cairo_image_surface_create (CAIRO_FORMAT_ARGB32,
+                                        gdk_pixbuf_get_width (pixbuf),
+                                        gdk_pixbuf_get_height (pixbuf));
+
+  cr = cairo_create (surface);
+  gdk_cairo_set_source_pixbuf (cr, pixbuf, 0, 0);
+  cairo_paint (cr);
+  cairo_destroy (cr);
+  g_object_unref (pixbuf);
+
+  cairo_surface_set_device_offset (surface, -hot_x, -hot_y);
+  gtk_drag_set_icon_surface (context, surface);
+  cairo_surface_destroy (surface);
+}
+
+void
+gtk_drag_set_icon_definition (GdkDragContext     *context,
+                              GtkImageDefinition *def,
+                              gint                hot_x,
+                              gint                hot_y)
+{
+  switch (gtk_image_definition_get_storage_type (def))
+    {
+    case GTK_IMAGE_EMPTY:
+      gtk_drag_set_icon_default (context);
+      break;
+
+    case GTK_IMAGE_PIXBUF:
+      gtk_drag_set_icon_pixbuf (context,
+                                gtk_image_definition_get_pixbuf (def),
+                                hot_x, hot_y);
+      break;
+
+    case GTK_IMAGE_STOCK:
+      gtk_drag_set_icon_stock (context,
+                               gtk_image_definition_get_stock (def),
+                               hot_x, hot_y);
+      break;
+
+    case GTK_IMAGE_ICON_NAME:
+      gtk_drag_set_icon_name (context,
+                              gtk_image_definition_get_icon_name (def),
+                              hot_x, hot_y);
+      break;
+
+    default:
+      g_warning ("FIXME: setting drag icon of type %u not implemented, using default.", gtk_image_definition_get_storage_type (def));
+      gtk_drag_set_icon_default (context);
+      break;
+  }
 }
 
 /**
@@ -1853,44 +1478,6 @@ gtk_drag_set_icon_stock  (GdkDragContext *context,
   set_icon_stock_pixbuf (context, stock_id, NULL, hot_x, hot_y);
 }
 
-
-/* XXX: This function is in gdk, too. Should it be in Cairo? */
-static gboolean
-_gtk_cairo_surface_extents (cairo_surface_t *surface,
-                            GdkRectangle *extents)
-{
-  double x1, x2, y1, y2;
-  cairo_t *cr;
-
-  g_return_val_if_fail (surface != NULL, FALSE);
-  g_return_val_if_fail (extents != NULL, FALSE);
-
-  cr = cairo_create (surface);
-  cairo_clip_extents (cr, &x1, &y1, &x2, &y2);
-
-  x1 = floor (x1);
-  y1 = floor (y1);
-  x2 = ceil (x2);
-  y2 = ceil (y2);
-  x2 -= x1;
-  y2 -= y1;
-  
-  if (x1 < G_MININT || x1 > G_MAXINT ||
-      y1 < G_MININT || y1 > G_MAXINT ||
-      x2 > G_MAXINT || y2 > G_MAXINT)
-    {
-      extents->x = extents->y = extents->width = extents->height = 0;
-      return FALSE;
-    }
-
-  extents->x = x1;
-  extents->y = y1;
-  extents->width = x2;
-  extents->height = y2;
-
-  return TRUE;
-}
-
 /**
  * gtk_drag_set_icon_surface:
  * @context: the context for a drag. (This must be called
@@ -1910,21 +1497,22 @@ void
 gtk_drag_set_icon_surface (GdkDragContext  *context,
                            cairo_surface_t *surface)
 {
-  GdkPixbuf *pixbuf;
-  GdkRectangle extents;
   double x_offset, y_offset;
+  GtkDragSourceInfo *info;
 
   g_return_if_fail (GDK_IS_DRAG_CONTEXT (context));
   g_return_if_fail (surface != NULL);
 
-  _gtk_cairo_surface_extents (surface, &extents);
   cairo_surface_get_device_offset (surface, &x_offset, &y_offset);
+  info = gtk_drag_get_source_info (context, FALSE);
+  cairo_surface_reference (surface);
 
-  pixbuf = gdk_pixbuf_get_from_surface (surface,
-                                        extents.x, extents.y,
-                                        extents.width, extents.height);
-  gtk_drag_set_icon_pixbuf (context, pixbuf, -x_offset, -y_offset);
-  g_object_unref (pixbuf);
+  if (info->icon_surface)
+    cairo_surface_destroy (info->icon_surface);
+
+  info->icon_surface = surface;
+  info->hot_x = -x_offset;
+  info->hot_y = -y_offset;
 }
 
 /**
@@ -1950,7 +1538,6 @@ gtk_drag_set_icon_name (GdkDragContext *context,
 			gint            hot_y)
 {
   GdkScreen *screen;
-  GtkSettings *settings;
   GtkIconTheme *icon_theme;
   GdkPixbuf *pixbuf;
   gint width, height, icon_size;
@@ -1961,13 +1548,8 @@ gtk_drag_set_icon_name (GdkDragContext *context,
   screen = gdk_window_get_screen (gdk_drag_context_get_source_window (context));
   g_return_if_fail (screen != NULL);
 
-  settings = gtk_settings_get_for_screen (screen);
-  if (gtk_icon_size_lookup_for_settings (settings,
-					 GTK_ICON_SIZE_DND,
-					 &width, &height))
-    icon_size = MAX (width, height);
-  else 
-    icon_size = 32; /* default value for GTK_ICON_SIZE_DND */ 
+  gtk_icon_size_lookup (GTK_ICON_SIZE_DND, &width, &height);
+  icon_size = MAX (width, height);
 
   icon_theme = gtk_icon_theme_get_for_screen (screen);
 
@@ -2001,8 +1583,8 @@ gtk_drag_source_info_destroy (GtkDragSourceInfo *info)
   NSPasteboard *pasteboard;
   NSAutoreleasePool *pool;
 
-  if (info->icon_pixbuf)
-    g_object_unref (info->icon_pixbuf);
+  if (info->icon_surface)
+    cairo_surface_destroy (info->icon_surface);
 
   g_signal_emit_by_name (info->widget, "drag-end", 
 			 info->context);
@@ -2035,14 +1617,23 @@ gtk_drag_source_info_destroy (GtkDragSourceInfo *info)
 static gboolean
 drag_drop_finished_idle_cb (gpointer data)
 {
-  gtk_drag_source_info_destroy (data);
+  GtkDragSourceInfo* info = (GtkDragSourceInfo*) data;
+  if (info->success)
+    gtk_drag_source_info_destroy (data);
   return G_SOURCE_REMOVE;
 }
 
 static void
-gtk_drag_drop_finished (GtkDragSourceInfo *info)
+gtk_drag_drop_finished (GtkDragSourceInfo *info,
+                        GtkDragResult      result)
 {
-  if (info->success && info->delete)
+  gboolean success = (result == GTK_DRAG_RESULT_SUCCESS);
+
+  if (!success)
+    g_signal_emit_by_name (info->source_widget, "drag-failed",
+                           info->context, result, &success);
+
+  if (success && info->delete)
     g_signal_emit_by_name (info->source_widget, "drag-data-delete",
                            info->context);
 
@@ -2070,6 +1661,7 @@ _gtk_drag_source_handle_event (GtkWidget *widget,
 {
   GtkDragSourceInfo *info;
   GdkDragContext *context;
+  GtkDragResult result;
 
   g_return_if_fail (widget != NULL);
   g_return_if_fail (event != NULL);
@@ -2082,7 +1674,8 @@ _gtk_drag_source_handle_event (GtkWidget *widget,
   switch (event->type)
     {
     case GDK_DROP_FINISHED:
-      gtk_drag_drop_finished (info);
+      result = (gdk_drag_context_get_dest_window (context) != NULL) ? GTK_DRAG_RESULT_SUCCESS : GTK_DRAG_RESULT_NO_TARGET;
+      gtk_drag_drop_finished (info, result);
       break;
     default:
       g_assert_not_reached ();

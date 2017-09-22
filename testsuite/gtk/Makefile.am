@@ -3,6 +3,7 @@ include $(top_srcdir)/Makefile.decl
 NULL =
 
 AM_CPPFLAGS = \
+	-DGTK_LOCALEDIR=\"$(localedir)\"\
 	-I$(top_srcdir)			\
 	-I$(top_builddir)/gdk		\
 	-I$(top_srcdir)/gdk		\
@@ -23,6 +24,10 @@ LDADD = \
 	$(top_builddir)/gdk/libgdk-3.la	\
 	$(GTK_DEP_LIBS)
 
+BUILT_SOURCES =
+
+CLEANFILES =
+
 noinst_PROGRAMS = $(TEST_PROGS)
 
 TESTS_ENVIRONMENT = \
@@ -40,10 +45,11 @@ TEST_PROGS += 			\
 	builderparser		\
 	cellarea		\
 	check-icon-names	\
+	check-cursor-names	\
 	clipboard		\
+	cssprovider		\
 	defaultvalue		\
 	entry			\
-	expander		\
 	firefox-stylecontext	\
 	floating		\
 	focus			\
@@ -61,6 +67,7 @@ TEST_PROGS += 			\
 	rbtree			\
 	recentmanager		\
 	regression-tests	\
+	scrolledwindow		\
 	spinbutton		\
 	stylecontext		\
 	templates		\
@@ -72,21 +79,27 @@ TEST_PROGS += 			\
 	typename		\
 	window			\
 	displayclose		\
+	revealer-size \
 	$(NULL)
 
 if OS_UNIX
 #TEST_PROGS			+= defaultvalue
 endif
 
-#TEST_PROGS			+= testing
-#TEST_PROGS			+= treeview-scrolling
-#TEST_PROGS			+= object
-#TEST_PROGS			+= filechooser
+if HAVE_CXX
 
-# this doesn't work in make distcheck, since running
-# on a naked X server creates slightly different event
-# sequences than running on a normal desktop
-# TEST_PROGS			+= crossingevents
+AM_CXXFLAGS = $(AM_CPPFLAGS)
+
+TEST_PROGS += autotestkeywords
+
+autotestkeywords_SOURCES = autotestkeywords.cc
+autotestkeywords_CPPFLAGS = -I$(srcdir)/dummy-headers
+
+if HAVE_OBJC
+autotestkeywords_CPPFLAGS += -DHAVE_OBJC=1 -x objective-c++
+endif
+
+endif
 
 treemodel_SOURCES = 		\
 	treemodel.h 		\
@@ -106,18 +119,25 @@ rbtree_CFLAGS  = -DGTK_COMPILATION -UG_ENABLE_DEBUG
 rbtree_LDADD = $(GTK_DEP_LIBS)
 rbtree_SOURCES = 			\
 	rbtree.c 			\
-	$(top_srcdir)/gtk/gtkrbtree.h 	\
-	$(top_srcdir)/gtk/gtkrbtree.c	\
+	gtkrbtree.c			\
 	$(NULL)
+
+gtkrbtree.c: $(top_srcdir)/gtk/gtkrbtree.c
+	$(AM_V_GEN) $(LN_S) $^ $@
+
+CLEANFILES += gtkrbtree.c
 
 bitmask_CFLAGS  = -DGTK_COMPILATION -UG_ENABLE_DEBUG
 bitmask_LDADD = $(GTK_DEP_LIBS)
-bitmask_SOURCES = 					\
-	bitmask.c 					\
-	$(top_srcdir)/gtk/gtkbitmaskprivate.h 		\
-	$(top_srcdir)/gtk/gtkallocatedbitmaskprivate.h 	\
-	$(top_srcdir)/gtk/gtkallocatedbitmask.c		\
+bitmask_SOURCES = 			\
+	bitmask.c 			\
+	gtkallocatedbitmask.c		\
 	$(NULL)
+
+gtkallocatedbitmask.c: $(top_srcdir)/gtk/gtkallocatedbitmask.c
+	$(AM_V_GEN) $(LN_S) $^ $@
+
+CLEANFILES += gtkallocatedbitmask.c
 
 keyhash_CFLAGS =					\
 	-DGTK_COMPILATION 				\
@@ -127,16 +147,23 @@ keyhash_CFLAGS =					\
 	-DGTK_SYSCONFDIR=\"$(sysconfdir)\"		\
 	$(NULL)
 
-keyhash_SOURCES	=					\
-	keyhash.c 					\
-	$(top_srcdir)/gtk/gtkkeyhash.c 			\
-	$(top_srcdir)/gtk/gtkkeyhash.h 			\
-	$(top_builddir)/gtk/gtkresources.c 		\
-	$(top_builddir)/gtk/gtkresources.h 		\
-	$(top_srcdir)/gtk/gtkprivate.c 			\
-	$(top_srcdir)/gtk/gtkprivate.h			\
+keyhash_SOURCES	=		\
+	keyhash.c 		\
+	gtkkeyhash.c 		\
+	gtkresources.c 		\
+	gtkprivate.c 		\
 	$(NULL)
 
+gtkkeyhash.c: $(top_srcdir)/gtk/gtkkeyhash.c
+	$(AM_V_GEN) $(LN_S) $^ $@
+
+gtkresources.c: $(top_builddir)/gtk/gtkresources.c
+	$(AM_V_GEN) $(LN_S) $^ $@
+
+gtkprivate.c: $(top_srcdir)/gtk/gtkprivate.c
+	$(AM_V_GEN) $(LN_S) $^ $@
+
+CLEANFILES += gtkkeyhash.c gtkresources.c gtkprivate.c
 
 test_icontheme =					\
 	icons/index.theme				\
@@ -153,6 +180,7 @@ test_icontheme =					\
 	icons/scalable/everything-justsymbolic-symbolic.svg	\
 	icons/scalable/everything.svg			\
 	icons/scalable/everything-symbolic.svg		\
+	icons/scalable/nonsquare-symbolic.svg		\
 	icons/15/size-test.png				\
 	icons/16-22/size-test.png			\
 	icons/25+/size-test.svg				\
@@ -173,6 +201,63 @@ test_ui =						\
 	ui/test5.ui ui/test5.expected			\
 	ui/test6.ui ui/test6.expected			\
 	ui/test7.ui ui/test7.expected			\
+	ui/label1.ui ui/label1.expected			\
+	ui/label2.ui ui/label2.expected			\
+	ui/label3.ui ui/label3.expected			\
+	ui/label4.ui ui/label4.expected			\
+	ui/label5.ui ui/label5.expected			\
+	ui/celllayout1.ui ui/celllayout1.expected	\
+	ui/celllayout2.ui ui/celllayout2.expected	\
+	ui/celllayout3.ui ui/celllayout3.expected	\
+	ui/celllayout4.ui ui/celllayout4.expected	\
+	ui/celllayout5.ui ui/celllayout5.expected	\
+	ui/celllayout6.ui ui/celllayout6.expected	\
+	ui/celllayout7.ui ui/celllayout7.expected	\
+	ui/container1.ui ui/container1.expected		\
+	ui/container2.ui ui/container2.expected		\
+	ui/container3.ui ui/container3.expected		\
+	ui/container4.ui ui/container4.expected		\
+	ui/container5.ui ui/container5.expected		\
+	ui/container6.ui ui/container6.expected		\
+	ui/container7.ui ui/container7.expected		\
+	ui/container8.ui ui/container8.expected		\
+	ui/scale1.ui ui/scale1.expected			\
+	ui/scale2.ui ui/scale2.expected			\
+	ui/scale3.ui ui/scale3.expected			\
+	ui/scale4.ui ui/scale4.expected			\
+	ui/scale5.ui ui/scale5.expected			\
+	ui/scale6.ui ui/scale6.expected			\
+	ui/scale7.ui ui/scale7.expected			\
+	ui/levelbar1.ui ui/levelbar1.expected 		\
+	ui/levelbar2.ui ui/levelbar2.expected 		\
+	ui/levelbar3.ui ui/levelbar3.expected 		\
+	ui/levelbar4.ui ui/levelbar4.expected 		\
+	ui/levelbar5.ui ui/levelbar5.expected 		\
+	ui/levelbar6.ui ui/levelbar6.expected 		\
+	ui/dialog1.ui ui/dialog1.expected 		\
+	ui/dialog2.ui ui/dialog2.expected 		\
+	ui/dialog3.ui ui/dialog3.expected 		\
+	ui/dialog4.ui ui/dialog4.expected 		\
+	ui/dialog5.ui ui/dialog5.expected 		\
+	ui/dialog6.ui ui/dialog6.expected 		\
+	ui/filefilter1.ui ui/filefilter1.expected	\
+	ui/filefilter2.ui ui/filefilter2.expected 	\
+	ui/filefilter3.ui ui/filefilter3.expected 	\
+	ui/filefilter4.ui ui/filefilter4.expected 	\
+	ui/filefilter5.ui ui/filefilter5.expected 	\
+	ui/filefilter6.ui ui/filefilter6.expected 	\
+	ui/filefilter7.ui ui/filefilter7.expected 	\
+	ui/filefilter8.ui ui/filefilter8.expected 	\
+	ui/filefilter9.ui ui/filefilter9.expected 	\
+	ui/filefilter10.ui ui/filefilter10.expected 	\
+	ui/infobar1.ui ui/infobar1.expected	 	\
+	ui/infobar2.ui ui/infobar2.expected	 	\
+	ui/infobar3.ui ui/infobar3.expected	 	\
+	ui/infobar4.ui ui/infobar4.expected	 	\
+	ui/infobar5.ui ui/infobar5.expected	 	\
+	ui/infobar6.ui ui/infobar6.expected	 	\
+	ui/image1.ui ui/image1.expected		 	\
+	ui/image2.ui ui/image2.expected		 	\
 	$(NULL)
 
 EXTRA_DIST +=				\
@@ -187,9 +272,9 @@ GTK_GSETTINGS_SCHEMAS = \
 	$(top_srcdir)/gtk/org.gtk.Settings.FileChooser.gschema.xml \
 	$(NULL)
 
-BUILT_SOURCES = gschemas.compiled
+BUILT_SOURCES += gschemas.compiled
 
-CLEANFILES = gschemas.compiled
+CLEANFILES += gschemas.compiled
 
 gschemas.compiled: $(GTK_GSETTINGS_SCHEMAS)
 	$(AM_V_GEN) $(GLIB_COMPILE_SCHEMAS) \
@@ -206,7 +291,8 @@ nobase_insttest_DATA = $(test_icontheme) $(test_ui)
 %.test: %$(EXEEXT) Makefile
 	$(AM_V_GEN) (echo '[Test]' > $@.tmp; \
 	echo 'Type=session' >> $@.tmp; \
-	echo 'Exec=env G_ENABLE_DIAGNOSTIC=0 $(insttestdir)/$<' >> $@.tmp; \
+	echo 'Output=TAP' >> $@.tmp; \
+	echo 'Exec=env G_ENABLE_DIAGNOSTIC=0 $(insttestdir)/$< --tap' >> $@.tmp; \
 	mv $@.tmp $@)
 
 test_files = $(TEST_PROGS:=.test)

@@ -41,7 +41,8 @@ static void             gtk_action_helper_action_added                  (GtkActi
                                                                          GVariant           *state,
                                                                          gboolean            should_emit_signals);
 
-static void             gtk_action_helper_action_removed                (GtkActionHelper    *helper);
+static void             gtk_action_helper_action_removed                (GtkActionHelper    *helper,
+                                                                         gboolean            should_emit_signals);
 
 static void             gtk_action_helper_action_enabled_changed        (GtkActionHelper    *helper,
                                                                          gboolean            enabled);
@@ -138,7 +139,7 @@ gtk_action_helper_action_added (GtkActionHelper    *helper,
                                 GVariant           *state,
                                 gboolean            should_emit_signals)
 {
-  GTK_NOTE(ACTIONS, g_message("actionhelper: %s added", helper->action_name));
+  GTK_NOTE(ACTIONS, g_message("%s: action %s added", "actionhelper", helper->action_name));
 
   /* we can only activate if we have the correct type of parameter */
   helper->can_activate = (helper->target == NULL && parameter_type == NULL) ||
@@ -147,19 +148,20 @@ gtk_action_helper_action_added (GtkActionHelper    *helper,
 
   if (!helper->can_activate)
     {
-      GTK_NOTE(ACTIONS, g_message("actionhelper: %s found, but disabled due to parameter type mismatch",
-                                  helper->action_name));
+      g_warning ("%s: action %s can't be activated due to parameter type mismatch "
+                 "(parameter type %s, target type %s)",
+                 "actionhelper",
+                 helper->action_name,
+                 parameter_type ? g_variant_type_peek_string (parameter_type) : "NULL",
+                 helper->target ? g_variant_get_type_string (helper->target) : "NULL");
       return;
     }
 
-  GTK_NOTE(ACTIONS, g_message ("actionhelper: %s can be activated", helper->action_name));
+  GTK_NOTE(ACTIONS, g_message ("%s: %s can be activated", "actionhelper", helper->action_name));
 
   helper->enabled = enabled;
 
-  if (!enabled)
-    GTK_NOTE(ACTIONS, g_message("actionhelper: %s found, but disabled due to disabled action", helper->action_name));
-  else
-    GTK_NOTE(ACTIONS, g_message("actionhelper: %s found and enabled", helper->action_name));
+  GTK_NOTE(ACTIONS, g_message ("%s: action %s is %s", "actionhelper", helper->action_name, enabled ? "enabled" : "disabled"));
 
   if (helper->target != NULL && state != NULL)
     {
@@ -189,9 +191,10 @@ gtk_action_helper_action_added (GtkActionHelper    *helper,
 }
 
 static void
-gtk_action_helper_action_removed (GtkActionHelper *helper)
+gtk_action_helper_action_removed (GtkActionHelper *helper,
+                                  gboolean         should_emit_signals)
 {
-  GTK_NOTE(ACTIONS, g_message ("actionhelper: %s was removed", helper->action_name));
+  GTK_NOTE(ACTIONS, g_message ("%s: action %s was removed", "actionhelper", helper->action_name));
 
   if (!helper->can_activate)
     return;
@@ -201,13 +204,17 @@ gtk_action_helper_action_removed (GtkActionHelper *helper)
   if (helper->enabled)
     {
       helper->enabled = FALSE;
-      gtk_action_helper_report_change (helper, PROP_ENABLED);
+
+      if (should_emit_signals)
+        gtk_action_helper_report_change (helper, PROP_ENABLED);
     }
 
   if (helper->active)
     {
       helper->active = FALSE;
-      gtk_action_helper_report_change (helper, PROP_ACTIVE);
+
+      if (should_emit_signals)
+        gtk_action_helper_report_change (helper, PROP_ACTIVE);
     }
 }
 
@@ -215,7 +222,7 @@ static void
 gtk_action_helper_action_enabled_changed (GtkActionHelper *helper,
                                           gboolean         enabled)
 {
-  GTK_NOTE(ACTIONS, g_message ("actionhelper: %s enabled changed: %d", helper->action_name, enabled));
+  GTK_NOTE(ACTIONS, g_message ("%s: action %s: enabled changed to %d", "actionhelper",  helper->action_name, enabled));
 
   if (!helper->can_activate)
     return;
@@ -233,7 +240,7 @@ gtk_action_helper_action_state_changed (GtkActionHelper *helper,
 {
   gboolean was_active;
 
-  GTK_NOTE(ACTIONS, g_message ("actionhelper: %s state changed", helper->action_name));
+  GTK_NOTE(ACTIONS, g_message ("%s: %s state changed", "actionhelper", helper->action_name));
 
   if (!helper->can_activate)
     return;
@@ -326,7 +333,7 @@ gtk_action_helper_observer_action_removed (GtkActionObserver   *observer,
                                            GtkActionObservable *observable,
                                            const gchar         *action_name)
 {
-  gtk_action_helper_action_removed (GTK_ACTION_HELPER (observer));
+  gtk_action_helper_action_removed (GTK_ACTION_HELPER (observer), TRUE);
 }
 
 static void
@@ -380,22 +387,17 @@ GtkActionHelper *
 gtk_action_helper_new (GtkActionable *widget)
 {
   GtkActionHelper *helper;
+  GParamSpec *pspec;
 
   g_return_val_if_fail (GTK_IS_ACTIONABLE (widget), NULL);
   helper = g_object_new (GTK_TYPE_ACTION_HELPER, NULL);
 
   helper->widget = GTK_WIDGET (widget);
+  helper->enabled = gtk_widget_get_sensitive (GTK_WIDGET (helper->widget));
 
-  if (helper->widget)
-    {
-      GParamSpec *pspec;
-
-      helper->enabled = gtk_widget_get_sensitive (GTK_WIDGET (helper->widget));
-
-      pspec = g_object_class_find_property (G_OBJECT_GET_CLASS (helper->widget), "active");
-      if (pspec && G_PARAM_SPEC_VALUE_TYPE (pspec) == G_TYPE_BOOLEAN)
-        g_object_get (G_OBJECT (helper->widget), "active", &helper->active, NULL);
-    }
+  pspec = g_object_class_find_property (G_OBJECT_GET_CLASS (helper->widget), "active");
+  if (pspec && G_PARAM_SPEC_VALUE_TYPE (pspec) == G_TYPE_BOOLEAN)
+    g_object_get (G_OBJECT (helper->widget), "active", &helper->active, NULL);
 
   helper->action_context = _gtk_widget_get_action_muxer (GTK_WIDGET (widget), TRUE);
 
@@ -415,23 +417,10 @@ gtk_action_helper_set_action_name (GtkActionHelper *helper,
     return;
 
   GTK_NOTE(ACTIONS,
-           if (!strchr (action_name, '.'))
-             g_message ("actionhelper: action name %s doesn't look like 'app.' or 'win.' "
-                        "which means that it will probably not work properly.", action_name));
-
-  if (helper->action_name)
-    {
-      gtk_action_observable_unregister_observer (GTK_ACTION_OBSERVABLE (helper->action_context),
-                                                 helper->action_name,
-                                                 GTK_ACTION_OBSERVER (helper));
-      g_free (helper->action_name);
-    }
-
-  helper->action_name = g_strdup (action_name);
-
-  gtk_action_observable_register_observer (GTK_ACTION_OBSERVABLE (helper->action_context),
-                                           helper->action_name,
-                                           GTK_ACTION_OBSERVER (helper));
+           if (action_name == NULL || !strchr (action_name, '.'))
+             g_message ("%s: action name %s doesn't look like 'app.' or 'win.'; "
+                        "it is unlikely to work",
+                        "actionhelper", action_name));
 
   /* Start by recording the current state of our properties so we know
    * what notify signals we will need to send.
@@ -439,20 +428,38 @@ gtk_action_helper_set_action_name (GtkActionHelper *helper,
   was_enabled = helper->enabled;
   was_active = helper->active;
 
-  if (g_action_group_query_action (G_ACTION_GROUP (helper->action_context), helper->action_name,
-                                   &enabled, &parameter_type, NULL, NULL, &state))
+  if (helper->action_name)
     {
-      GTK_NOTE(ACTIONS, g_message ("actionhelper: %s existed from the start", helper->action_name));
-
-      gtk_action_helper_action_added (helper, enabled, parameter_type, state, FALSE);
-
-      if (state)
-        g_variant_unref (state);
+      gtk_action_helper_action_removed (helper, FALSE);
+      gtk_action_observable_unregister_observer (GTK_ACTION_OBSERVABLE (helper->action_context),
+                                                 helper->action_name,
+                                                 GTK_ACTION_OBSERVER (helper));
+      g_clear_pointer (&helper->action_name, g_free);
     }
-  else
+
+  if (action_name)
     {
-      GTK_NOTE(ACTIONS, g_message ("actionhelper: %s missing from the start", helper->action_name));
-      helper->enabled = FALSE;
+      helper->action_name = g_strdup (action_name);
+
+      gtk_action_observable_register_observer (GTK_ACTION_OBSERVABLE (helper->action_context),
+                                               helper->action_name,
+                                               GTK_ACTION_OBSERVER (helper));
+
+      if (g_action_group_query_action (G_ACTION_GROUP (helper->action_context), helper->action_name,
+                                       &enabled, &parameter_type, NULL, NULL, &state))
+        {
+          GTK_NOTE(ACTIONS, g_message ("%s: action %s existed from the start", "actionhelper", helper->action_name));
+
+          gtk_action_helper_action_added (helper, enabled, parameter_type, state, FALSE);
+
+          if (state)
+            g_variant_unref (state);
+        }
+      else
+        {
+          GTK_NOTE(ACTIONS, g_message ("%s: action %s missing from the start", "actionhelper", helper->action_name));
+          helper->enabled = FALSE;
+        }
     }
 
   /* Send the notifies for the properties that changed.

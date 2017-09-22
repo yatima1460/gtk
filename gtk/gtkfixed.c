@@ -27,6 +27,7 @@
  * @Short_description: A container which allows you to position
  * widgets at fixed coordinates
  * @Title: GtkFixed
+ * @See_also: #GtkLayout
  *
  * The #GtkFixed widget is a container which can place child widgets
  * at fixed positions and with fixed sizes, given in pixels. #GtkFixed
@@ -43,18 +44,19 @@
  * - Fonts other than the one you used to write the app will of course
  *   change the size of widgets containing text; keep in mind that
  *   users may use a larger font because of difficulty reading the
- *   default, or they may be using Windows or the framebuffer port of
- *   GTK+, where different fonts are available.
+ *   default, or they may be using a different OS that provides different fonts.
  *
  * - Translation of text into other languages changes its size. Also,
  *   display of non-English text will use a different font in many
  *   cases.
  *
- * In addition, the fixed widget can’t properly be mirrored in
- * right-to-left languages such as Hebrew and Arabic. i.e. normally
- * GTK+ will flip the interface to put labels to the right of the
- * thing they label, but it can’t do that with #GtkFixed. So your
- * application will not be usable in right-to-left languages.
+ * In addition, #GtkFixed does not pay attention to text direction and thus may
+ * produce unwanted results if your app is run under right-to-left languages
+ * such as Hebrew or Arabic. That is: normally GTK+ will order containers
+ * appropriately for the text direction, e.g. to put labels to the right of the
+ * thing they label when using an RTL language, but it can’t do that with
+ * #GtkFixed. So if you need to reorder widgets depending on the text direction,
+ * you would need to manually detect it and adjust child positions accordingly.
  *
  * Finally, fixed positioning makes it kind of annoying to add/remove
  * GUI elements, since you have to reposition all the other
@@ -64,6 +66,9 @@
  * If you know none of these things are an issue for your application,
  * and prefer the simplicity of #GtkFixed, by all means use the
  * widget. But you should be aware of the tradeoffs.
+ *
+ * See also #GtkLayout, which shares the ability to perform fixed positioning
+ * of child widgets and additionally adds custom drawing and scrollability.
  */
 
 #include "config.h"
@@ -94,6 +99,7 @@ static void gtk_fixed_get_preferred_height (GtkWidget *widget,
                                             gint      *natural);
 static void gtk_fixed_size_allocate (GtkWidget        *widget,
                                      GtkAllocation    *allocation);
+static void gtk_fixed_style_updated (GtkWidget        *widget);
 static gboolean gtk_fixed_draw      (GtkWidget        *widget,
                                      cairo_t          *cr);
 static void gtk_fixed_add           (GtkContainer     *container,
@@ -133,6 +139,7 @@ gtk_fixed_class_init (GtkFixedClass *class)
   widget_class->get_preferred_height = gtk_fixed_get_preferred_height;
   widget_class->size_allocate = gtk_fixed_size_allocate;
   widget_class->draw = gtk_fixed_draw;
+  widget_class->style_updated = gtk_fixed_style_updated;
 
   container_class->add = gtk_fixed_add;
   container_class->remove = gtk_fixed_remove;
@@ -345,6 +352,31 @@ gtk_fixed_get_child_property (GtkContainer *container,
 }
 
 static void
+set_background (GtkWidget *widget)
+{
+  if (gtk_widget_get_realized (widget))
+    {
+      /* We still need to call gtk_style_context_set_background() here for
+       * GtkFixed, since subclasses like EmacsFixed depend on the X window
+       * background to be set.
+       * This should be revisited next time we have a major API break.
+       */
+      G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
+      gtk_style_context_set_background (gtk_widget_get_style_context (widget),
+                                        gtk_widget_get_window (widget));
+      G_GNUC_END_IGNORE_DEPRECATIONS;
+    }
+}
+
+static void
+gtk_fixed_style_updated (GtkWidget *widget)
+{
+  GTK_WIDGET_CLASS (gtk_fixed_parent_class)->style_updated (widget);
+
+  set_background (widget);
+}
+
+static void
 gtk_fixed_realize (GtkWidget *widget)
 {
   GtkAllocation allocation;
@@ -377,8 +409,7 @@ gtk_fixed_realize (GtkWidget *widget)
       gtk_widget_set_window (widget, window);
       gtk_widget_register_window (widget, window);
 
-      gtk_style_context_set_background (gtk_widget_get_style_context (widget),
-                                        window);
+      set_background (widget);
     }
 }
 

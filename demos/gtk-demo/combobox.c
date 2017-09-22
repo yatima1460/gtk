@@ -36,12 +36,9 @@ create_icon_store (void)
     N_("Open")
   };
 
-  GtkWidget *cellview;
   GtkTreeIter iter;
   GtkListStore *store;
   gint i;
-
-  cellview = gtk_cell_view_new ();
 
   store = gtk_list_store_new (2, G_TYPE_STRING, G_TYPE_STRING);
 
@@ -64,8 +61,6 @@ create_icon_store (void)
                               -1);
         }
     }
-
-  gtk_widget_destroy (cellview);
 
   return GTK_TREE_MODEL (store);
 }
@@ -318,11 +313,10 @@ do_combobox (GtkWidget *do_widget)
     window = gtk_window_new (GTK_WINDOW_TOPLEVEL);
     gtk_window_set_screen (GTK_WINDOW (window),
                            gtk_widget_get_screen (do_widget));
-    gtk_window_set_title (GTK_WINDOW (window), "Combo boxes");
+    gtk_window_set_title (GTK_WINDOW (window), "Combo Boxes");
 
     g_signal_connect (window, "destroy",
-                      G_CALLBACK (gtk_widget_destroyed),
-                      &window);
+                      G_CALLBACK (gtk_widget_destroyed), &window);
 
     gtk_container_set_border_width (GTK_CONTAINER (window), 10);
 
@@ -400,8 +394,7 @@ do_combobox (GtkWidget *do_widget)
     gtk_tree_path_free (path);
     gtk_combo_box_set_active_iter (GTK_COMBO_BOX (combo), &iter);
 
-    /* A GtkComboBoxEntry with validation.
-     */
+    /* A GtkComboBoxEntry with validation */
     frame = gtk_frame_new ("Editable");
     gtk_box_pack_start (GTK_BOX (vbox), frame, FALSE, FALSE, 0);
 
@@ -441,14 +434,9 @@ do_combobox (GtkWidget *do_widget)
   }
 
   if (!gtk_widget_get_visible (window))
-    {
-      gtk_widget_show_all (window);
-    }
+    gtk_widget_show_all (window);
   else
-    {
-      gtk_widget_destroy (window);
-      window = NULL;
-    }
+    gtk_widget_destroy (window);
 
   return window;
 }

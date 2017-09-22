@@ -97,11 +97,31 @@ void            gtk_popover_bind_model      (GtkPopover            *popover,
                                              GMenuModel            *model,
                                              const gchar           *action_namespace);
 
-GDK_AVAILABLE_IN_3_16
+GDK_DEPRECATED_IN_3_22
 void            gtk_popover_set_transitions_enabled (GtkPopover *popover,
                                                      gboolean    transitions_enabled);
-GDK_AVAILABLE_IN_3_16
+GDK_DEPRECATED_IN_3_22
 gboolean        gtk_popover_get_transitions_enabled (GtkPopover *popover);
+
+GDK_AVAILABLE_IN_3_18
+void            gtk_popover_set_default_widget (GtkPopover *popover,
+                                                GtkWidget  *widget);
+GDK_AVAILABLE_IN_3_18
+GtkWidget *     gtk_popover_get_default_widget (GtkPopover *popover);
+
+GDK_AVAILABLE_IN_3_20
+void                 gtk_popover_set_constrain_to (GtkPopover           *popover,
+                                                   GtkPopoverConstraint  constraint);
+
+GDK_AVAILABLE_IN_3_20
+GtkPopoverConstraint gtk_popover_get_constrain_to (GtkPopover           *popover);
+
+GDK_AVAILABLE_IN_3_22
+void                 gtk_popover_popup            (GtkPopover *popover);
+
+GDK_AVAILABLE_IN_3_22
+void                 gtk_popover_popdown          (GtkPopover *popover);
+
 
 G_END_DECLS
 

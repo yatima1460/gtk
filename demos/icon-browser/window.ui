@@ -8,8 +8,8 @@
   </object>
   <template class="IconBrowserWindow" parent="GtkApplicationWindow">
     <property name="title" translatable="yes">Icon Browser</property>
-    <property name="default-width">600</property>
-    <property name="default-height">800</property>
+    <property name="default-width">1024</property>
+    <property name="default-height">768</property>
     <signal name="key-press-event" handler="key_press_event_cb"/>
     <child type="titlebar">
       <object class="GtkHeaderBar" id="header">
@@ -109,7 +109,7 @@
                       <object class="GtkCellRendererPixbuf" id="cell">
                         <property name="xpad">10</property>
                         <property name="ypad">10</property>
-                        <property name="stock-size">5</property>
+                        <property name="stock-size">6</property>
                         <property name="follow-state">True</property>
                       </object>
                     </child>
@@ -148,16 +148,14 @@
           <object class="GtkGrid">
             <property name="visible">True</property>
             <property name="margin">10</property>
-            <property name="row-spacing">10</property>
-            <property name="column-spacing">10</property>
+            <property name="row-spacing">18</property>
+            <property name="column-spacing">18</property>
             <child>
               <object class="GtkEventBox">
                 <property name="visible">True</property>
                 <child>
                   <object class="GtkImage" id="image1">
                     <property name="visible">True</property>
-                    <property name="xpad">4</property>
-                    <property name="ypad">4</property>
                     <property name="halign">center</property>
                     <property name="valign">end</property>
                   </object>
@@ -174,8 +172,6 @@
                 <child>
                   <object class="GtkImage" id="image2">
                     <property name="visible">True</property>
-                    <property name="xpad">4</property>
-                    <property name="ypad">4</property>
                     <property name="halign">center</property>
                     <property name="valign">end</property>
                   </object>
@@ -192,8 +188,6 @@
                 <child>
                   <object class="GtkImage" id="image3">
                     <property name="visible">True</property>
-                    <property name="xpad">4</property>
-                    <property name="ypad">4</property>
                     <property name="halign">center</property>
                     <property name="valign">end</property>
                   </object>
@@ -210,8 +204,6 @@
                 <child>
                   <object class="GtkImage" id="image4">
                     <property name="visible">True</property>
-                    <property name="xpad">4</property>
-                    <property name="ypad">4</property>
                     <property name="halign">center</property>
                     <property name="valign">end</property>
                   </object>
@@ -228,8 +220,6 @@
                 <child>
                   <object class="GtkImage" id="image5">
                     <property name="visible">True</property>
-                    <property name="xpad">4</property>
-                    <property name="ypad">4</property>
                     <property name="halign">center</property>
                     <property name="valign">end</property>
                   </object>
@@ -244,11 +234,9 @@
             <child>
               <object class="GtkLabel" id="label1">
                 <property name="visible">True</property>
-                <property name="xpad">4</property>
-                <property name="ypad">4</property>
                 <property name="halign">center</property>
-                <property name="valign">center</property>
-                <property name="label">16x16</property>
+                <property name="valign">baseline</property>
+                <property name="label">16×16</property>
                 <style>
                   <class name="dim-label"/>
                 </style>
@@ -261,11 +249,9 @@
             <child>
               <object class="GtkLabel" id="label2">
                 <property name="visible">True</property>
-                <property name="xpad">4</property>
-                <property name="ypad">4</property>
                 <property name="halign">center</property>
-                <property name="valign">center</property>
-                <property name="label">24x24</property>
+                <property name="valign">baseline</property>
+                <property name="label">24×24</property>
                 <style>
                   <class name="dim-label"/>
                 </style>
@@ -278,11 +264,9 @@
             <child>
               <object class="GtkLabel" id="label3">
                 <property name="visible">True</property>
-                <property name="xpad">4</property>
-                <property name="ypad">4</property>
                 <property name="halign">center</property>
-                <property name="valign">center</property>
-                <property name="label">32x32</property>
+                <property name="valign">baseline</property>
+                <property name="label">32×32</property>
                 <style>
                   <class name="dim-label"/>
                 </style>
@@ -295,11 +279,9 @@
             <child>
               <object class="GtkLabel" id="label4">
                 <property name="visible">True</property>
-                <property name="xpad">4</property>
-                <property name="ypad">4</property>
                 <property name="halign">center</property>
-                <property name="valign">center</property>
-                <property name="label">48x48</property>
+                <property name="valign">baseline</property>
+                <property name="label">48×48</property>
                 <style>
                   <class name="dim-label"/>
                 </style>
@@ -312,11 +294,9 @@
             <child>
               <object class="GtkLabel" id="label5">
                 <property name="visible">True</property>
-                <property name="xpad">4</property>
-                <property name="ypad">4</property>
                 <property name="halign">center</property>
-                <property name="valign">center</property>
-                <property name="label">64x64</property>
+                <property name="valign">baseline</property>
+                <property name="label">64×64</property>
                 <style>
                   <class name="dim-label"/>
                 </style>
@@ -337,6 +317,21 @@
               <packing>
                 <property name="left-attach">0</property>
                 <property name="top-attach">3</property>
+                <property name="width">5</property>
+              </packing>
+            </child>
+            <child>
+              <object class="GtkButton">
+                <property name="visible">True</property>
+                <property name="label" translatable="yes">Copy to Clipboard</property>
+                <property name="halign">center</property>
+                <property name="valign">center</property>
+                <property name="margin">20</property>
+                <signal name="clicked" handler="copy_to_clipboard"/>
+              </object>
+              <packing>
+                <property name="left-attach">0</property>
+                <property name="top-attach">4</property>
                 <property name="width">5</property>
               </packing>
             </child>

@@ -182,6 +182,14 @@ plane_size_allocate (GtkWidget     *widget,
 }
 
 static void
+plane_realize (GtkWidget *widget)
+{
+  GTK_WIDGET_CLASS (gtk_color_plane_parent_class)->realize (widget);
+
+  create_surface (GTK_COLOR_PLANE (widget));
+}
+
+static void
 set_cross_cursor (GtkWidget *widget,
                   gboolean   enabled)
 {
@@ -196,8 +204,7 @@ set_cross_cursor (GtkWidget *widget,
     return;
 
   if (enabled)
-    cursor = gdk_cursor_new_for_display (gtk_widget_get_display (GTK_WIDGET (widget)),
-                                         GDK_CROSSHAIR);
+    cursor = gdk_cursor_new_from_name (gtk_widget_get_display (GTK_WIDGET (widget)), "crosshair");
 
   gdk_window_set_device_cursor (window, device, cursor);
 
@@ -492,6 +499,7 @@ gtk_color_plane_class_init (GtkColorPlaneClass *class)
 
   widget_class->draw = plane_draw;
   widget_class->size_allocate = plane_size_allocate;
+  widget_class->realize = plane_realize;
   widget_class->key_press_event = plane_key_press;
 
   g_object_class_install_property (object_class,

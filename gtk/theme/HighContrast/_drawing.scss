@@ -1,6 +1,15 @@
 // Drawing mixins
 
 // generic drawing of more complex things
+@function _widget_edge($c:$borders_edge) {
+// outer highlight "used" on most widgets
+  @return 0 1px $c;
+}
+
+@function _solid($c) {
+// solid color image
+  @return linear-gradient(to bottom, $c, $c);
+}
 
 @mixin _shadows($shadow1, $shadow2:none, $shadow3:none, $shadow4:none) {
 //
@@ -14,8 +23,9 @@
 
 // entries
 
-@function entry_focus_border($fc) {
-  @return $fc;
+@function entry_focus_border($fc:$selected_bg_color) {
+  @if $variant == 'light' { @return $fc; }
+  @else { @return if($fc==$selected_bg_color, $selected_borders_color, darken($fc, 35%)); }
 }
 
 @function entry_focus_glow($fc) {
@@ -40,7 +50,6 @@
 //
   background-color: transparent;
   border-style: solid;
-  border-width: 1px;
   background-image: linear-gradient(to bottom,
                                     darken($base_color,3%),
                                     $base_color 90%);
@@ -54,23 +63,23 @@
   @if $t==focus {
     border-color: $fc;
     @include _shadows(inset 0 2px 2px -2px mix(black, $base_color, 50%),
-                      inset 0 0 2px 1px mix($fc,$base_color,20%),
-                        $_entry_edge);
+                      inset 0 0 0 1px $fc,
+                      $_entry_edge);
   }
   @if $t==insensitive {
     color: $insensitive_fg_color;
     border-color: $borders_color;
-    background-image: linear-gradient(to bottom, $insensitive_bg_color);
+    background-image: _solid($insensitive_bg_color);
     @include _shadows($_entry_edge);
   }
   @if $t==backdrop {
     color: $backdrop_fg_color;
-    background-image: linear-gradient(to bottom, $backdrop_base_color);
+    background-image: _solid($backdrop_base_color);
     box-shadow: 0 1px transparentize(white,1);
   }
   @if $t==backdrop-insensitive {
     color: $insensitive_fg_color;
-    background-image: linear-gradient(to bottom, $backdrop_bg_color);
+    background-image: _solid($backdrop_bg_color);
     box-shadow: 0 1px transparentize(white,1);
   }
 }
@@ -93,11 +102,11 @@
 
   @if lightness($tc) < 50% {
     text-shadow: 0 1px $_bright;
-    icon-shadow: 0 1px $_bright;
+    -gtk-icon-shadow: 0 1px $_bright;
   }
   @else {
     text-shadow: 0 -1px $_dark;
-    icon-shadow: 0 -1px $_dark;
+    -gtk-icon-shadow: 0 -1px $_dark;
   }
 }
 
@@ -162,8 +171,6 @@
     background-color: $insensitive_bg_color;
     border-color: $insensitive_borders_color;
     background-image: none;
-    text-shadow: none;
-    icon-shadow: none;
   }
   @else if $t==insensitive-active {
   //
@@ -183,8 +190,6 @@
     background-color: if($c!=$bg_color, $c, $backdrop_bg_color);
     border-color: if($c!=$bg_color, $c, $backdrop_borders_color);
     background-image: none;
-    text-shadow: none;
-    icon-shadow: none;
   }
 
   @else if $t==backdrop-active {
@@ -203,7 +208,7 @@
   //
     color: $insensitive_fg_color;
     background-color: $insensitive_bg_color;
-    border-color: $backdrop_borders_color;
+    border-color: $insensitive_borders_color;
     background-image: none;
   }
 
@@ -212,7 +217,7 @@
   // backdrop insensitive pushed button
   //
     color: $insensitive_fg_color;
-    border-color: $backdrop_borders_color;
+    border-color: $insensitive_borders_color;
     background-image: none;
     background-color: mix($backdrop_borders_color,$backdrop_bg_color, 8%);
   }
@@ -225,8 +230,8 @@
     background-image: none;
     background-color: $osd_bg_color;
     border-color: $osd_borders_color;
-    box-shadow: none;
   }
+
   @else if $t==osd-hover {
   //
   // active osd button
@@ -234,8 +239,8 @@
     color: $osd_fg_color;
     background-color: lighten($osd_bg_color,30%);
     border-color: $osd_borders_color;
-    box-shadow: none;
   }
+
   @else if $t==osd-active {
   //
   // active osd button
@@ -252,7 +257,20 @@
     border-color: $osd_borders_color;
     color: $insensitive_fg_color;
   }
+
+  @else if $t==undecorated {
+    color: $tc;
+    background-color: transparent;
+    background-image: none;
+    border-color: transparent;
+  }
   
+  @else if $t==undecorated-insensitive {
+    color: $insensitive_fg_color;
+    background-color: transparent;
+    background-image: none;
+    border-color: transparent;
+  }
 }
 
 @mixin overshoot($p, $t:normal, $c:$fg_color) {
@@ -333,3 +351,44 @@
   border: none;                  //
   box-shadow: none;              //
 }
+
+@mixin undershoot($p) {
+//
+// undershoot
+//
+// $p: position
+//
+// possible $p values:
+// top, bottom, right, left
+//
+
+  $_undershoot_color_dark: transparentize(black, 0.8);
+  $_undershoot_color_light: transparentize(white, 0.8);
+
+  $_gradient_dir: left;
+  $_dash_bg_size: 10px 1px;
+  $_gradient_repeat: repeat-x;
+  $_bg_pos: center $p;
+
+  background-color: transparent; // shouldn't be needed, but better to be sure;
+
+  @if ($p == left) or ($p == right) {
+    $_gradient_dir: top;
+    $_dash_bg_size: 1px 10px;
+    $_gradient_repeat: repeat-y;
+    $_bg_pos: $p center;
+  }
+
+  background-image: linear-gradient(to $_gradient_dir, // this is the dashed line
+                                    $_undershoot_color_light 50%,
+                                    $_undershoot_color_dark 50%);
+
+  padding-#{$p}: 1px;
+  background-size: $_dash_bg_size;
+  background-repeat: $_gradient_repeat;
+  background-origin: content-box;
+  background-position: $_bg_pos;
+  border: none;
+  box-shadow: none;
+}
+

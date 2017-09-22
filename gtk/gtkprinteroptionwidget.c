@@ -112,7 +112,7 @@ gtk_printer_option_widget_class_init (GtkPrinterOptionWidgetClass *class)
   widget_class->mnemonic_activate = gtk_printer_option_widget_mnemonic_activate;
 
   signals[CHANGED] =
-    g_signal_new ("changed",
+    g_signal_new (I_("changed"),
 		  G_TYPE_FROM_CLASS (class),
 		  G_SIGNAL_RUN_LAST,
 		  G_STRUCT_OFFSET (GtkPrinterOptionWidgetClass, changed),
@@ -736,6 +736,7 @@ alternative_append (GtkWidget              *box,
 
   button = gtk_radio_button_new_with_label (group, label);
   gtk_widget_show (button);
+  gtk_widget_set_valign (button, GTK_ALIGN_BASELINE);
   gtk_box_pack_start (GTK_BOX (box), button, FALSE, FALSE, 0);
 
   g_object_set_data (G_OBJECT (button), "value", (gpointer)value);
@@ -819,6 +820,7 @@ construct_widgets (GtkPrinterOptionWidget *widget)
     case GTK_PRINTER_OPTION_TYPE_ALTERNATIVE:
       group = NULL;
       priv->box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 12);
+      gtk_widget_set_valign (priv->box, GTK_ALIGN_BASELINE);
       gtk_widget_show (priv->box);
       gtk_box_pack_start (GTK_BOX (widget), priv->box, TRUE, TRUE, 0);
       for (i = 0; i < source->num_choices; i++)
@@ -837,6 +839,7 @@ construct_widgets (GtkPrinterOptionWidget *widget)
 	{
 	  text = g_strdup_printf ("%s:", source->display_text);
 	  priv->label = gtk_label_new_with_mnemonic (text);
+          gtk_widget_set_valign (priv->label, GTK_ALIGN_BASELINE);
 	  g_free (text);
 	  gtk_widget_show (priv->label);
 	}

@@ -104,7 +104,9 @@ void            _gtk_window_set_window_group (GtkWindow      *window,
 
 /* Popovers */
 void    _gtk_window_add_popover          (GtkWindow                   *window,
-                                          GtkWidget                   *popover);
+                                          GtkWidget                   *popover,
+                                          GtkWidget                   *popover_parent,
+                                          gboolean                     clamp_allocation);
 void    _gtk_window_remove_popover       (GtkWindow                   *window,
                                           GtkWidget                   *popover);
 void    _gtk_window_set_popover_position (GtkWindow                   *window,
@@ -115,6 +117,13 @@ void    _gtk_window_get_popover_position (GtkWindow                   *window,
                                           GtkWidget                   *popover,
                                           GtkPositionType             *pos,
                                           cairo_rectangle_int_t       *rect);
+void    _gtk_window_raise_popover        (GtkWindow                   *window,
+                                          GtkWidget                   *popover);
+
+GtkWidget * _gtk_window_get_popover_parent (GtkWindow *window,
+                                            GtkWidget *popover);
+gboolean    _gtk_window_is_popover_widget  (GtkWindow *window,
+                                            GtkWidget *popover);
 
 GdkPixbuf *gtk_window_get_icon_for_size (GtkWindow *window,
                                          gint       size);
@@ -123,6 +132,19 @@ void       gtk_window_set_use_subsurface (GtkWindow *window,
                                           gboolean   use_subsurface);
 void       gtk_window_set_hardcoded_window (GtkWindow *window,
                                             GdkWindow *gdk_window);
+
+GdkScreen *_gtk_window_get_screen (GtkWindow *window);
+
+/* Exported handles */
+
+typedef void (*GtkWindowHandleExported)  (GtkWindow               *window,
+                                          const char              *handle,
+                                          gpointer                 user_data);
+
+gboolean      gtk_window_export_handle   (GtkWindow               *window,
+                                          GtkWindowHandleExported  callback,
+                                          gpointer                 user_data);
+void          gtk_window_unexport_handle (GtkWindow               *window);
 
 G_END_DECLS
 

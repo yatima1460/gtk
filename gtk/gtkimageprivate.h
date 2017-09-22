@@ -27,53 +27,14 @@
 
 
 #include "gtkimage.h"
+#include "gtkimagedefinitionprivate.h"
 
 
 G_BEGIN_DECLS
 
-typedef struct _GtkImagePixbufData  GtkImagePixbufData;
-typedef struct _GtkImageStockData   GtkImageStockData;
-typedef struct _GtkImageIconSetData GtkImageIconSetData;
-typedef struct _GtkImageAnimationData GtkImageAnimationData;
-typedef struct _GtkImageIconNameData  GtkImageIconNameData;
-typedef struct _GtkImageGIconData     GtkImageGIconData;
-
-struct _GtkImagePixbufData
-{
-  GdkPixbuf *pixbuf;
-};
-
-struct _GtkImageStockData
-{
-  gchar *stock_id;
-};
-
-struct _GtkImageIconSetData
-{
-  GtkIconSet *icon_set;
-};
-
-struct _GtkImageAnimationData
-{
-  GdkPixbufAnimation *anim;
-  GdkPixbufAnimationIter *iter;
-  guint frame_timeout;
-};
-
-struct _GtkImageIconNameData
-{
-  gchar *icon_name;
-  GdkPixbuf *pixbuf;
-  guint theme_change_id;
-};
-
-struct _GtkImageGIconData
-{
-  GIcon *icon;
-  GdkPixbuf *pixbuf;
-};
-
-void _gtk_image_gicon_data_clear (GtkImageGIconData *data);
+void            gtk_image_set_from_definition           (GtkImage               *image,
+                                                         GtkImageDefinition     *def,
+                                                         GtkIconSize             size);
 
 G_END_DECLS
 

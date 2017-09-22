@@ -32,6 +32,7 @@ typedef struct {
 typedef struct {
   TagInfo tag;
   GType type;
+  GObjectClass *oclass;
   gchar *id;
   gchar *constructor;
   GSList *properties;
@@ -62,10 +63,11 @@ typedef struct {
   TagInfo tag;
   GParamSpec *pspec;
   GString *text;
-  gchar *data;
   gboolean translatable:1;
   gboolean bound:1;
   gchar *context;
+  gint line;
+  gint col;
 } PropertyInfo;
 
 typedef struct {
@@ -85,6 +87,8 @@ typedef struct
   gchar *source;
   gchar *source_property;
   GBindingFlags flags;
+  gint line;
+  gint col;
 } BindingInfo;
 
 typedef struct {
@@ -158,10 +162,11 @@ gboolean _gtk_builder_enum_from_string (GType         type,
                                         const gchar  *string,
                                         gint         *enum_value,
                                         GError      **error);
-gboolean  _gtk_builder_flags_from_string (GType       type,
-					  const char *string,
-					  guint      *value,
-					  GError    **error);
+gboolean  _gtk_builder_flags_from_string (GType         type,
+                                          GFlagsValue  *aliases,
+					  const char   *string,
+					  guint        *value,
+					  GError      **error);
 const gchar * _gtk_builder_parser_translate (const gchar *domain,
                                              const gchar *context,
                                              const gchar *text);
@@ -178,11 +183,25 @@ void      _gtk_builder_menu_start (ParserData   *parser_data,
 void      _gtk_builder_menu_end   (ParserData  *parser_data);
 
 GType     _gtk_builder_get_template_type (GtkBuilder *builder);
-guint     _gtk_builder_extend_with_template (GtkBuilder    *builder,
-					     GtkWidget     *widget,
-					     GType          template_type,
-					     const gchar   *buffer,
-					     gsize          length,
-					     GError       **error);
+
+void _gtk_builder_prefix_error            (GtkBuilder           *builder,
+                                           GMarkupParseContext  *context,
+                                           GError              **error);
+void _gtk_builder_error_unhandled_tag     (GtkBuilder           *builder,
+                                           GMarkupParseContext  *context,
+                                           const gchar          *object,
+                                           const gchar          *element_name,
+                                           GError              **error);
+gboolean _gtk_builder_check_parent        (GtkBuilder           *builder,
+                                           GMarkupParseContext  *context,
+                                           const gchar          *parent_name,
+                                           GError              **error);
+GObject * _gtk_builder_lookup_object      (GtkBuilder           *builder,
+                                           const gchar          *name,
+                                           gint                  line,
+                                           gint                  col);
+gboolean _gtk_builder_lookup_failed       (GtkBuilder           *builder,
+                                           GError              **error);
+
 
 #endif /* __GTK_BUILDER_PRIVATE_H__ */

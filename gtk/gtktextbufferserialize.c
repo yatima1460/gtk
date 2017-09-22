@@ -72,7 +72,7 @@ G_GNUC_BEGIN_IGNORE_DEPRECATIONS
     }
   else
     {
-      g_warning ("Type %s is not serializable\n", g_type_name (value->g_type));
+      g_warning ("Type %s is not serializable", g_type_name (value->g_type));
     }
 G_GNUC_END_IGNORE_DEPRECATIONS
 
@@ -192,7 +192,7 @@ G_GNUC_BEGIN_IGNORE_DEPRECATIONS
     }
   else
     {
-      g_warning ("Type %s can not be deserialized\n", g_type_name (value->g_type));
+      g_warning ("Type %s can not be deserialized", g_type_name (value->g_type));
     }
 G_GNUC_END_IGNORE_DEPRECATIONS
 
@@ -357,28 +357,6 @@ serialize_tags (SerializationContext *context)
   g_hash_table_foreach (context->tags, serialize_tag, context);
   g_string_append (context->tag_table_str, " </tags>\n");
 }
-
-#if 0
-static void
-dump_tag_list (const gchar *str,
-               GList       *list)
-{
-  g_print ("%s: ", str);
-
-  if (!list)
-    g_print ("(empty)");
-  else
-    {
-      while (list)
-	{
-	  g_print ("%s ", ((GtkTextTag *)list->data)->name);
-	  list = list->next;
-	}
-    }
-
-  g_print ("\n");
-}
-#endif
 
 static void
 find_list_delta (GSList  *old_list,

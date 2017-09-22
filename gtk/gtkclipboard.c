@@ -245,7 +245,7 @@ gtk_clipboard_class_init (GtkClipboardClass *class)
 		  G_SIGNAL_RUN_FIRST,
 		  G_STRUCT_OFFSET (GtkClipboardClass, owner_change),
 		  NULL, NULL,
-		  _gtk_marshal_VOID__BOXED,
+		  NULL,
 		  G_TYPE_NONE, 1,
 		  GDK_TYPE_EVENT | G_SIGNAL_TYPE_STATIC_SCOPE);
 }
@@ -737,7 +737,7 @@ gtk_clipboard_set_with_owner (GtkClipboard          *clipboard,
  * gtk_clipboard_clear() has not subsequently called, returns the owner set
  * by gtk_clipboard_set_with_owner().
  *
- * Returns: (transfer none): the owner of the clipboard, if any;
+ * Returns: (nullable) (transfer none): the owner of the clipboard, if any;
  *     otherwise %NULL.
  **/
 GObject *
@@ -1042,7 +1042,14 @@ request_text_received_func (GtkClipboard     *clipboard,
        */
       GdkAtom target = gtk_selection_data_get_target (selection_data);
 
-      if (target == gdk_atom_intern_static_string ("UTF8_STRING"))
+      if (target == gdk_atom_intern_static_string ("text/plain;charset=utf-8"))
+        {
+          gtk_clipboard_request_contents (clipboard,
+                                          gdk_atom_intern_static_string ("UTF8_STRING"),
+                                          request_text_received_func, info);
+          return;
+        }
+      else if (target == gdk_atom_intern_static_string ("UTF8_STRING"))
 	{
 	  gtk_clipboard_request_contents (clipboard,
 					  gdk_atom_intern_static_string ("COMPOUND_TEXT"), 
@@ -1093,7 +1100,7 @@ gtk_clipboard_request_text (GtkClipboard                *clipboard,
   info->callback = callback;
   info->user_data = user_data;
 
-  gtk_clipboard_request_contents (clipboard, gdk_atom_intern_static_string ("UTF8_STRING"),
+  gtk_clipboard_request_contents (clipboard, gdk_atom_intern_static_string ("text/plain;charset=utf-8"),
 				  request_text_received_func,
 				  info);
 }
@@ -2207,4 +2214,22 @@ _gtk_clipboard_store_all (void)
     }
   g_slist_free (displays);
   
+}
+
+/**
+ * gtk_clipboard_get_selection:
+ * @clipboard: a #GtkClipboard
+ *
+ * Gets the selection that this clipboard is for.
+ *
+ * Returns: the selection
+ *
+ * Since: 3.22
+ */
+GdkAtom
+gtk_clipboard_get_selection (GtkClipboard *clipboard)
+{
+  g_return_val_if_fail (GTK_IS_CLIPBOARD (clipboard), GDK_NONE);
+
+  return clipboard->selection;
 }

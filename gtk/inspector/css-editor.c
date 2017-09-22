@@ -33,73 +33,88 @@
 #include "gtkfilechooserdialog.h"
 #include "gtktogglebutton.h"
 #include "gtklabel.h"
+#include "gtktooltip.h"
+#include "gtktextiter.h"
 
-#define GTK_INSPECTOR_CSS_EDITOR_TEXT "inspector-css-editor-text"
-#define GTK_INSPECTOR_CSS_EDITOR_PROVIDER "inspector-css-editor-provider"
-
-enum
-{
-  COLUMN_ENABLED,
-  COLUMN_NAME,
-  COLUMN_USER
-};
-
-enum
-{
-  PROP_0,
-  PROP_GLOBAL
-};
-
-typedef struct
-{
-  gboolean enabled;
-  gboolean user;
-} GtkInspectorCssEditorByContext;
 
 struct _GtkInspectorCssEditorPrivate
 {
   GtkWidget *view;
-  GtkWidget *object_title;
   GtkTextBuffer *text;
   GtkCssProvider *provider;
-  gboolean global;
-  GtkStyleContext *context;
   GtkToggleButton *disable_button;
   guint timeout;
+  GList *errors;
 };
 
-static void gtk_inspector_css_editor_remove_dead_object (gpointer  data,
-                                                         GObject  *dead_object);
+typedef struct {
+  GError *error;
+  GtkTextIter start;
+  GtkTextIter end;
+} CssError;
+
+static void
+css_error_free (gpointer data)
+{
+  CssError *error = data;
+  g_error_free (error->error);
+  g_free (error);
+}
+
+static gboolean
+query_tooltip_cb (GtkWidget             *widget,
+                  gint                   x,
+                  gint                   y,
+                  gboolean               keyboard_tip,
+                  GtkTooltip            *tooltip,
+                  GtkInspectorCssEditor *ce)
+{
+  GtkTextIter iter;
+  GList *l;
+
+  if (keyboard_tip)
+    {
+      gint offset;
+
+      g_object_get (ce->priv->text, "cursor-position", &offset, NULL);
+      gtk_text_buffer_get_iter_at_offset (ce->priv->text, &iter, offset);
+    }
+  else
+    {
+      gint bx, by, trailing;
+
+      gtk_text_view_window_to_buffer_coords (GTK_TEXT_VIEW (ce->priv->view), GTK_TEXT_WINDOW_TEXT,
+                                             x, y, &bx, &by);
+      gtk_text_view_get_iter_at_position (GTK_TEXT_VIEW (ce->priv->view), &iter, &trailing, bx, by);
+    }
+
+  for (l = ce->priv->errors; l; l = l->next)
+    {
+      CssError *css_error = l->data;
+
+      if (gtk_text_iter_in_range (&iter, &css_error->start, &css_error->end))
+        {
+          gtk_tooltip_set_text (tooltip, css_error->error->message);
+          return TRUE;
+        }
+    }
+
+  return FALSE;
+}
 
 G_DEFINE_TYPE_WITH_PRIVATE (GtkInspectorCssEditor, gtk_inspector_css_editor, GTK_TYPE_BOX)
 
 static void
 set_initial_text (GtkInspectorCssEditor *ce)
 {
-  const gchar *text = NULL;
-
-  if (ce->priv->context)
-    text = g_object_get_data (G_OBJECT (ce->priv->context), GTK_INSPECTOR_CSS_EDITOR_TEXT);
-  if (text)
-    gtk_text_buffer_set_text (GTK_TEXT_BUFFER (ce->priv->text), text, -1);
-  else
-    {
-      gchar *initial_text;
-      if (ce->priv->global)
-        initial_text = g_strconcat ("/*\n",
-                                    _("You can type here any CSS rule recognized by GTK+."), "\n",
-                                    _("You can temporarily disable this custom CSS by clicking on the “Pause” button above."), "\n\n",
-                                    _("Changes are applied instantly and globally, for the whole application."), "\n",
-                                    "*/\n\n", NULL);
-      else
-        initial_text = g_strconcat ("/*\n",
-                                    _("You can type here any CSS rule recognized by GTK+."), "\n",
-                                    _("You can temporarily disable this custom CSS by clicking on the “Pause” button above."), "\n\n",
-                                    _("Changes are applied instantly, only for this selected widget."), "\n",
-                                    "*/\n\n", NULL);
-      gtk_text_buffer_set_text (GTK_TEXT_BUFFER (ce->priv->text), initial_text, -1);
-      g_free (initial_text);
-    }
+  gchar *initial_text;
+  initial_text = g_strconcat ("/*\n",
+                              _("You can type here any CSS rule recognized by GTK+."), "\n",
+                              _("You can temporarily disable this custom CSS by clicking on the “Pause” button above."), "\n\n",
+                              _("Changes are applied instantly and globally, for the whole application."), "\n",
+                              "*/\n\n", NULL);
+  gtk_text_buffer_set_text (GTK_TEXT_BUFFER (ce->priv->text), initial_text, -1);
+  g_free (initial_text);
 }
 
 static void
@@ -107,25 +122,12 @@ disable_toggled (GtkToggleButton       *button,
                  GtkInspectorCssEditor *ce)
 {
   if (gtk_toggle_button_get_active (button))
-    {
-      if (ce->priv->global)
-        gtk_style_context_remove_provider_for_screen (gdk_screen_get_default (),
-                                                      GTK_STYLE_PROVIDER (ce->priv->provider));
-      else if (ce->priv->context)
-        gtk_style_context_remove_provider (ce->priv->context,
-                                           GTK_STYLE_PROVIDER (g_object_get_data (G_OBJECT (ce->priv->context), GTK_INSPECTOR_CSS_EDITOR_PROVIDER)));
-    }
+    gtk_style_context_remove_provider_for_screen (gdk_screen_get_default (),
+                                                  GTK_STYLE_PROVIDER (ce->priv->provider));
   else
-    {
-      if (ce->priv->global)
-        gtk_style_context_add_provider_for_screen (gdk_screen_get_default (),
-                                                   GTK_STYLE_PROVIDER (ce->priv->provider),
-                                                   GTK_STYLE_PROVIDER_PRIORITY_USER);
-      else if (ce->priv->context)
-        gtk_style_context_add_provider (ce->priv->context,
-                                        GTK_STYLE_PROVIDER (g_object_get_data (G_OBJECT (ce->priv->context), GTK_INSPECTOR_CSS_EDITOR_PROVIDER)),
-                                        G_MAXUINT);
-    }
+    gtk_style_context_add_provider_for_screen (gdk_screen_get_default (),
+                                               GTK_STYLE_PROVIDER (ce->priv->provider),
+                                               GTK_STYLE_PROVIDER_PRIORITY_USER);
 }
 
 static gchar *
@@ -210,21 +212,14 @@ save_clicked (GtkButton             *button,
 static void
 update_style (GtkInspectorCssEditor *ce)
 {
-  GtkCssProvider *provider;
   gchar *text;
 
-  if (ce->priv->global)
-    provider = ce->priv->provider;
-  else if (ce->priv->context)
-    provider = g_object_get_data (G_OBJECT (ce->priv->context), GTK_INSPECTOR_CSS_EDITOR_PROVIDER);
-  else
-    return;
+  g_list_free_full (ce->priv->errors, css_error_free);
+  ce->priv->errors = NULL;
 
   text = get_current_text (ce->priv->text);
-  gtk_css_provider_load_from_data (provider, text, -1, NULL);
+  gtk_css_provider_load_from_data (ce->priv->provider, text, -1, NULL);
   g_free (text);
-
-  gtk_style_context_reset_widgets (gdk_screen_get_default ());
 }
 
 static gboolean
@@ -247,27 +242,9 @@ text_changed (GtkTextBuffer         *buffer,
     g_source_remove (ce->priv->timeout);
 
   ce->priv->timeout = g_timeout_add (100, update_timeout, ce); 
-}
 
-/* Safe version of gtk_text_buffer_get_iter_at_line_index(). */
-static void
-safe_get_iter_at_line_index (GtkTextBuffer *buffer,
-                             GtkTextIter   *iter,
-                             gint           line_number,
-                             gint           byte_index)
-{
-  if (line_number >= gtk_text_buffer_get_line_count (buffer))
-    {
-      gtk_text_buffer_get_end_iter (buffer, iter);
-      return;
-    }
-
-  gtk_text_buffer_get_iter_at_line (buffer, iter, line_number);
-
-  if (byte_index < gtk_text_iter_get_bytes_in_line (iter))
-    gtk_text_iter_set_line_index (iter, byte_index);
-  else
-    gtk_text_iter_forward_to_line_end (iter);
+  g_list_free_full (ce->priv->errors, css_error_free);
+  ce->priv->errors = NULL;
 }
 
 static void
@@ -276,76 +253,54 @@ show_parsing_error (GtkCssProvider        *provider,
                     const GError          *error,
                     GtkInspectorCssEditor *ce)
 {
-  GtkTextIter start, end;
   const char *tag_name;
   GtkTextBuffer *buffer = GTK_TEXT_BUFFER (ce->priv->text);
+  CssError *css_error;
 
-  safe_get_iter_at_line_index (buffer,
-                               &start,
-                               gtk_css_section_get_start_line (section),
-                               gtk_css_section_get_start_position (section));
-  safe_get_iter_at_line_index (buffer,
-                               &end,
-                               gtk_css_section_get_end_line (section),
-                               gtk_css_section_get_end_position (section));
+  css_error = g_new (CssError, 1);
+  css_error->error = g_error_copy (error);
+
+  gtk_text_buffer_get_iter_at_line_index (buffer,
+                                          &css_error->start,
+                                          gtk_css_section_get_start_line (section),
+                                          gtk_css_section_get_start_position (section));
+  gtk_text_buffer_get_iter_at_line_index (buffer,
+                                          &css_error->end,
+                                          gtk_css_section_get_end_line (section),
+                                          gtk_css_section_get_end_position (section));
 
   if (g_error_matches (error, GTK_CSS_PROVIDER_ERROR, GTK_CSS_PROVIDER_ERROR_DEPRECATED))
     tag_name = "warning";
   else
     tag_name = "error";
 
-  gtk_text_buffer_apply_tag_by_name (buffer, tag_name, &start, &end);
+  if (gtk_text_iter_equal (&css_error->start, &css_error->end))
+    gtk_text_iter_forward_char (&css_error->end);
+
+  gtk_text_buffer_apply_tag_by_name (buffer, tag_name, &css_error->start, &css_error->end);
+
+  ce->priv->errors = g_list_prepend (ce->priv->errors, css_error);
 }
 
 static void
 create_provider (GtkInspectorCssEditor *ce)
 {
-  GtkCssProvider *provider = gtk_css_provider_new ();
+  ce->priv->provider = gtk_css_provider_new ();
+  gtk_style_context_add_provider_for_screen (gdk_screen_get_default (),
+                                             GTK_STYLE_PROVIDER (ce->priv->provider),
+                                             GTK_STYLE_PROVIDER_PRIORITY_USER);
 
-  if (ce->priv->global)
-    {
-      ce->priv->provider = provider;
-      gtk_style_context_add_provider_for_screen (gdk_screen_get_default (),
-                                                 GTK_STYLE_PROVIDER (ce->priv->provider),
-                                                 GTK_STYLE_PROVIDER_PRIORITY_USER);
-    }
-  else if (ce->priv->context)
-    {
-      gtk_style_context_add_provider (ce->priv->context,
-                                      GTK_STYLE_PROVIDER (provider),
-                                      G_MAXUINT);
-      g_object_set_data_full (G_OBJECT (ce->priv->context),
-                              GTK_INSPECTOR_CSS_EDITOR_PROVIDER, provider,
-                              g_object_unref);
-    }
-
-  g_signal_connect (provider, "parsing-error",
+  g_signal_connect (ce->priv->provider, "parsing-error",
                     G_CALLBACK (show_parsing_error), ce);
 }
 
 static void
 destroy_provider (GtkInspectorCssEditor *ce)
 {
-  if (ce->priv->global)
-    {
-      gtk_style_context_remove_provider_for_screen (gdk_screen_get_default (),
-                                                    GTK_STYLE_PROVIDER (ce->priv->provider));
-      g_object_unref (ce->priv->provider);
-      ce->priv->provider = NULL;
-    }
-  else if (ce->priv->context)
-    {
-      GtkStyleProvider *provider;
-
-      provider = g_object_get_data (G_OBJECT (ce->priv->context),
-                                    GTK_INSPECTOR_CSS_EDITOR_PROVIDER);
-      gtk_style_context_remove_provider (ce->priv->context, provider);
-      g_object_set_data (G_OBJECT (ce->priv->context),
-                         GTK_INSPECTOR_CSS_EDITOR_PROVIDER,
-                         NULL);
-    }
+  gtk_style_context_remove_provider_for_screen (gdk_screen_get_default (),
+                                                GTK_STYLE_PROVIDER (ce->priv->provider));
+  g_clear_object (&ce->priv->provider);
 }
-  
 
 static void
 gtk_inspector_css_editor_init (GtkInspectorCssEditor *ce)
@@ -364,46 +319,6 @@ constructed (GObject *object)
 }
 
 static void
-get_property (GObject    *object,
-              guint       param_id,
-              GValue     *value,
-              GParamSpec *pspec)
-{
-  GtkInspectorCssEditor *ce = GTK_INSPECTOR_CSS_EDITOR (object);
-
-  switch (param_id)
-    {
-      case PROP_GLOBAL:
-        g_value_set_boolean (value, ce->priv->global);
-        break;
-
-      default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID(object, param_id, pspec);
-        break;
-    }
-}
-
-static void
-set_property (GObject      *object,
-              guint         param_id,
-              const GValue *value,
-              GParamSpec   *pspec)
-{
-  GtkInspectorCssEditor *ce = GTK_INSPECTOR_CSS_EDITOR (object);
-
-  switch (param_id)
-    {
-      case PROP_GLOBAL:
-        ce->priv->global = g_value_get_boolean (value);
-        break;
-
-      default:
-        G_OBJECT_WARN_INVALID_PROPERTY_ID(object, param_id, pspec);
-        break;
-    }
-}
-
-static void
 finalize (GObject *object)
 {
   GtkInspectorCssEditor *ce = GTK_INSPECTOR_CSS_EDITOR (object);
@@ -412,14 +327,8 @@ finalize (GObject *object)
     g_source_remove (ce->priv->timeout);
 
   destroy_provider (ce);
-  if (ce->priv->context)
-    {
-      g_object_weak_unref (G_OBJECT (ce->priv->context), gtk_inspector_css_editor_remove_dead_object, ce);
-      g_object_set_data (G_OBJECT (ce->priv->context),
-                         GTK_INSPECTOR_CSS_EDITOR_TEXT,
-                         NULL);
-      ce->priv->context = NULL;
-    }
+
+  g_list_free_full (ce->priv->errors, css_error_free);
 
   G_OBJECT_CLASS (gtk_inspector_css_editor_parent_class)->finalize (object);
 }
@@ -430,76 +339,17 @@ gtk_inspector_css_editor_class_init (GtkInspectorCssEditorClass *klass)
   GObjectClass *object_class = G_OBJECT_CLASS (klass);
   GtkWidgetClass *widget_class = GTK_WIDGET_CLASS (klass);
 
-  object_class->get_property = get_property;
-  object_class->set_property = set_property;
   object_class->constructed = constructed;
   object_class->finalize = finalize;
-
-  g_object_class_install_property (object_class, PROP_GLOBAL,
-      g_param_spec_boolean ("global", "Global", "Whether this editor changes the whole application or just the selected widget",
-                            TRUE, G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
 
   gtk_widget_class_set_template_from_resource (widget_class, "/org/gtk/libgtk/inspector/css-editor.ui");
   gtk_widget_class_bind_template_child_private (widget_class, GtkInspectorCssEditor, text);
   gtk_widget_class_bind_template_child_private (widget_class, GtkInspectorCssEditor, view);
   gtk_widget_class_bind_template_child_private (widget_class, GtkInspectorCssEditor, disable_button);
-  gtk_widget_class_bind_template_child_private (widget_class, GtkInspectorCssEditor, object_title);
   gtk_widget_class_bind_template_callback (widget_class, disable_toggled);
   gtk_widget_class_bind_template_callback (widget_class, save_clicked);
   gtk_widget_class_bind_template_callback (widget_class, text_changed);
-}
-
-static void
-gtk_inspector_css_editor_remove_dead_object (gpointer data, GObject *dead_object)
-{
-  GtkInspectorCssEditor *ce = data;
-
-  ce->priv->context = NULL;
-  gtk_widget_hide (GTK_WIDGET (ce));
-}
-
-void
-gtk_inspector_css_editor_set_object (GtkInspectorCssEditor *ce,
-                                     GObject               *object)
-{
-  gchar *text;
-  GtkCssProvider *provider;
-  const gchar *title;
-
-  g_return_if_fail (GTK_INSPECTOR_IS_CSS_EDITOR (ce));
-  g_return_if_fail (!ce->priv->global);
-
-  if (ce->priv->context)
-    {
-      g_object_weak_unref (G_OBJECT (ce->priv->context), gtk_inspector_css_editor_remove_dead_object, ce);
-      text = get_current_text (GTK_TEXT_BUFFER (ce->priv->text));
-      g_object_set_data_full (G_OBJECT (ce->priv->context),
-                              GTK_INSPECTOR_CSS_EDITOR_TEXT,
-                              text, g_free);
-      ce->priv->context = NULL;
-    }
-
-  if (!GTK_IS_WIDGET (object))
-    {
-      gtk_widget_hide (GTK_WIDGET (ce));
-      return;
-    }
-
-  gtk_widget_show (GTK_WIDGET (ce));
-
-  title = (const gchar *)g_object_get_data (object, "gtk-inspector-object-title");
-  gtk_label_set_label (GTK_LABEL (ce->priv->object_title), title);
-
-  ce->priv->context = gtk_widget_get_style_context (GTK_WIDGET (object));
-
-  provider = g_object_get_data (G_OBJECT (ce->priv->context), GTK_INSPECTOR_CSS_EDITOR_PROVIDER);
-  if (!provider)
-    create_provider (ce);
-
-  set_initial_text (ce);
-  disable_toggled (ce->priv->disable_button, ce);
-
-  g_object_weak_ref (G_OBJECT (ce->priv->context), gtk_inspector_css_editor_remove_dead_object, ce);
+  gtk_widget_class_bind_template_callback (widget_class, query_tooltip_cb);
 }
 
 // vim: set et sw=2 ts=2:

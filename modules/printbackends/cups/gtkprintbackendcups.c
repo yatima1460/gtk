@@ -752,10 +752,26 @@ gtk_print_backend_cups_print_stream (GtkPrintBackend         *print_backend,
                                    NULL, printer_absolute_uri);
 
   title = gtk_print_job_get_title (job);
-  if (title)
+  if (title) {
+    char *title_truncated = NULL;
+    size_t title_bytes = strlen (title);
+
+    if (title_bytes >= IPP_MAX_NAME)
+      {
+        gchar *end;
+
+        end = g_utf8_find_prev_char (title, title + IPP_MAX_NAME - 1);
+        title_truncated = g_utf8_substring (title,
+                                            0,
+                                            g_utf8_pointer_to_offset (title, end));
+      }
+
     gtk_cups_request_ipp_add_string (request, IPP_TAG_OPERATION,
                                      IPP_TAG_NAME, "job-name",
-                                     NULL, title);
+                                     NULL,
+                                     title_truncated ? title_truncated : title);
+    g_free (title_truncated);
+  }
 
   options_data = g_new0 (CupsOptionsData, 1);
   options_data->request = request;
@@ -1861,26 +1877,6 @@ static const char * const printer_messages[] =
     "offline",
     "other"
   };
-/* Our translatable versions of the printer messages */
-static const char * printer_strings[] =
-  {
-    N_("Printer “%s” is low on toner."),
-    N_("Printer “%s” has no toner left."),
-    /* Translators: "Developer" like on photo development context */
-    N_("Printer “%s” is low on developer."),
-    /* Translators: "Developer" like on photo development context */
-    N_("Printer “%s” is out of developer."),
-    /* Translators: "marker" is one color bin of the printer */
-    N_("Printer “%s” is low on at least one marker supply."),
-    /* Translators: "marker" is one color bin of the printer */
-    N_("Printer “%s” is out of at least one marker supply."),
-    N_("The cover is open on printer “%s”."),
-    N_("The door is open on printer “%s”."),
-    N_("Printer “%s” is low on paper."),
-    N_("Printer “%s” is out of paper."),
-    N_("Printer “%s” is currently offline."),
-    N_("There is a problem on printer “%s”.")
-  };
 
 /* Attributes we're interested in for printers */
 static const char * const printer_attrs[] =
@@ -1939,6 +1935,8 @@ static const char * const printer_attrs_detailed[] =
     "media-top-margin-supported",
     "sides-default",
     "sides-supported",
+    "output-bin-default",
+    "output-bin-supported",
   };
 
 typedef enum
@@ -1996,6 +1994,8 @@ typedef struct
   GList    *sides_supported;
   char    **covers;
   int       number_of_covers;
+  gchar    *output_bin_default;
+  GList    *output_bin_supported;
 } PrinterSetupInfo;
 
 static void
@@ -2365,6 +2365,17 @@ cups_printer_handle_attribute (GtkPrintBackendCups *cups_backend,
 
       info->media_size_supported = g_list_reverse (info->media_size_supported);
     }
+  else if (g_strcmp0 (ippGetName (attr), "output-bin-default") == 0)
+    {
+      info->output_bin_default = g_strdup (ippGetString (attr, 0, NULL));
+    }
+  else if (g_strcmp0 (ippGetName (attr), "output-bin-supported") == 0)
+    {
+      for (i = 0; i < ippGetCount (attr); i++)
+        info->output_bin_supported = g_list_prepend (info->output_bin_supported, g_strdup (ippGetString (attr, i, NULL)));
+
+      info->output_bin_supported = g_list_reverse (info->output_bin_supported);
+    }
   else
     {
       GTK_NOTE (PRINTING,
@@ -2493,6 +2504,74 @@ set_printer_icon_name_from_info (GtkPrinter       *printer,
     gtk_printer_set_icon_name (printer, "printer");
 }
 
+static gchar *
+get_reason_msg_desc (guint i,
+                     const gchar *printer_name)
+{
+  gchar *reason_msg_desc;
+
+  /* The numbers must match the indices in the printer_messages array */
+  switch (i)
+    {
+      case 0:
+        reason_msg_desc = g_strdup_printf (_("Printer “%s” is low on toner."),
+                                           printer_name);
+        break;
+      case 1:
+        reason_msg_desc = g_strdup_printf (_("Printer “%s” has no toner left."),
+                                           printer_name);
+        break;
+      case 2:
+        /* Translators: "Developer" like on photo development context */
+        reason_msg_desc = g_strdup_printf (_("Printer “%s” is low on developer."),
+                                           printer_name);
+        break;
+      case 3:
+        /* Translators: "Developer" like on photo development context */
+        reason_msg_desc = g_strdup_printf (_("Printer “%s” is out of developer."),
+                                           printer_name);
+        break;
+      case 4:
+        /* Translators: "marker" is one color bin of the printer */
+        reason_msg_desc = g_strdup_printf (_("Printer “%s” is low on at least one marker supply."),
+                                           printer_name);
+        break;
+      case 5:
+        /* Translators: "marker" is one color bin of the printer */
+        reason_msg_desc = g_strdup_printf (_("Printer “%s” is out of at least one marker supply."),
+                                           printer_name);
+        break;
+      case 6:
+        reason_msg_desc = g_strdup_printf (_("The cover is open on printer “%s”."),
+                                           printer_name);
+        break;
+      case 7:
+        reason_msg_desc = g_strdup_printf (_("The door is open on printer “%s”."),
+                                           printer_name);
+        break;
+      case 8:
+        reason_msg_desc = g_strdup_printf (_("Printer “%s” is low on paper."),
+                                           printer_name);
+        break;
+      case 9:
+        reason_msg_desc = g_strdup_printf (_("Printer “%s” is out of paper."),
+                                           printer_name);
+        break;
+      case 10:
+        reason_msg_desc = g_strdup_printf (_("Printer “%s” is currently offline."),
+                                           printer_name);
+        break;
+      case 11:
+        reason_msg_desc = g_strdup_printf (_("There is a problem on printer “%s”."),
+                                           printer_name);
+        break;
+      default:
+        g_assert_not_reached ();
+    }
+
+  return reason_msg_desc;
+}
+
 static void
 set_info_state_message (PrinterSetupInfo *info)
 {
@@ -2529,8 +2608,7 @@ set_info_state_message (PrinterSetupInfo *info)
           if (strncmp (info->reason_msg, printer_messages[i],
                        strlen (printer_messages[i])) == 0)
             {
-              reason_msg_desc = g_strdup_printf (printer_strings[i],
-                                                 info->printer_name);
+              reason_msg_desc = get_reason_msg_desc (i, info->printer_name);
               found = TRUE;
               break;
             }
@@ -2673,6 +2751,8 @@ cups_request_printer_info_cb (GtkPrintBackendCups *cups_backend,
             }
           GTK_PRINTER_CUPS (printer)->sides_default = info->sides_default;
           GTK_PRINTER_CUPS (printer)->sides_supported = info->sides_supported;
+          GTK_PRINTER_CUPS (printer)->output_bin_default = info->output_bin_default;
+          GTK_PRINTER_CUPS (printer)->output_bin_supported = info->output_bin_supported;
 
           gtk_printer_set_has_details (printer, TRUE);
           g_signal_emit_by_name (printer, "details-acquired", TRUE);
@@ -3609,7 +3689,7 @@ cups_get_printer_list (GtkPrintBackend *backend)
   cups_backend = GTK_PRINT_BACKEND_CUPS (backend);
 
   if (cups_backend->cups_connection_test == NULL)
-    cups_backend->cups_connection_test = gtk_cups_connection_test_new (NULL);
+    cups_backend->cups_connection_test = gtk_cups_connection_test_new (NULL, -1);
 
   if (cups_backend->list_printers_poll == 0)
     {
@@ -3950,12 +4030,9 @@ cups_parse_user_options (const char     *filename,
       if (!*lineptr)
         continue;
 
-      /* NUL-terminate the name, stripping the instance name */
       name = lineptr;
       while (!isspace (*lineptr) && *lineptr)
         {
-          if (*lineptr == '/')
-            *lineptr = '\0';
           lineptr++;
         }
 
@@ -3964,7 +4041,7 @@ cups_parse_user_options (const char     *filename,
 
       *lineptr++ = '\0';
 
-      if (strncasecmp (name, printer_name, strlen (printer_name)) != 0)
+      if (strcasecmp (name, printer_name) != 0)
           continue;
 
       /* We found our printer, parse the options */
@@ -4019,7 +4096,7 @@ cups_get_default_printer (GtkPrintBackendCups *backend)
   cups_backend = backend;
 
   if (cups_backend->cups_connection_test == NULL)
-    cups_backend->cups_connection_test = gtk_cups_connection_test_new (NULL);
+    cups_backend->cups_connection_test = gtk_cups_connection_test_new (NULL, -1);
 
   if (cups_backend->default_printer_poll == 0)
     {
@@ -4161,7 +4238,9 @@ cups_printer_request_details (GtkPrinter *printer)
         {
           if (cups_printer->get_remote_ppd_poll == 0)
             {
-              cups_printer->remote_cups_connection_test = gtk_cups_connection_test_new (cups_printer->hostname);
+              cups_printer->remote_cups_connection_test =
+                gtk_cups_connection_test_new (cups_printer->hostname,
+                                              cups_printer->port);
 
               if (cups_request_ppd (printer))
                 {
@@ -4236,12 +4315,12 @@ static const struct {
   const char *keyword;
   const char *translation;
 } cups_option_translations[] = {
-  { "Duplex", N_("Two Sided") },
-  { "MediaType", N_("Paper Type") },
-  { "InputSlot", N_("Paper Source") },
-  { "OutputBin", N_("Output Tray") },
-  { "Resolution", N_("Resolution") },
-  { "PreFilter", N_("GhostScript pre-filtering") },
+  { "Duplex", NC_("printing option", "Two Sided") },
+  { "MediaType", NC_("printing option", "Paper Type") },
+  { "InputSlot", NC_("printing option", "Paper Source") },
+  { "OutputBin", NC_("printing option", "Output Tray") },
+  { "Resolution", NC_("printing option", "Resolution") },
+  { "PreFilter", NC_("printing option", "GhostScript pre-filtering") }
 };
 
 
@@ -4250,33 +4329,33 @@ static const struct {
   const char *choice;
   const char *translation;
 } cups_choice_translations[] = {
-  { "Duplex", "None", N_("One Sided") },
+  { "Duplex", "None", NC_("printing option value", "One Sided") },
   /* Translators: this is an option of "Two Sided" */
-  { "Duplex", "DuplexNoTumble", N_("Long Edge (Standard)") },
+  { "Duplex", "DuplexNoTumble", NC_("printing option value", "Long Edge (Standard)") },
   /* Translators: this is an option of "Two Sided" */
-  { "Duplex", "DuplexTumble", N_("Short Edge (Flip)") },
+  { "Duplex", "DuplexTumble", NC_("printing option value", "Short Edge (Flip)") },
   /* Translators: this is an option of "Paper Source" */
-  { "InputSlot", "Auto", N_("Auto Select") },
+  { "InputSlot", "Auto", NC_("printing option value", "Auto Select") },
   /* Translators: this is an option of "Paper Source" */
-  { "InputSlot", "AutoSelect", N_("Auto Select") },
+  { "InputSlot", "AutoSelect", NC_("printing option value", "Auto Select") },
   /* Translators: this is an option of "Paper Source" */
-  { "InputSlot", "Default", N_("Printer Default") },
+  { "InputSlot", "Default", NC_("printing option value", "Printer Default") },
   /* Translators: this is an option of "Paper Source" */
-  { "InputSlot", "None", N_("Printer Default") },
+  { "InputSlot", "None", NC_("printing option value", "Printer Default") },
   /* Translators: this is an option of "Paper Source" */
-  { "InputSlot", "PrinterDefault", N_("Printer Default") },
+  { "InputSlot", "PrinterDefault", NC_("printing option value", "Printer Default") },
   /* Translators: this is an option of "Paper Source" */
-  { "InputSlot", "Unspecified", N_("Auto Select") },
+  { "InputSlot", "Unspecified", NC_("printing option value", "Auto Select") },
   /* Translators: this is an option of "Resolution" */
-  { "Resolution", "default", N_("Printer Default") },
+  { "Resolution", "default", NC_("printing option value", "Printer Default") },
   /* Translators: this is an option of "GhostScript" */
-  { "PreFilter", "EmbedFonts", N_("Embed GhostScript fonts only") },
+  { "PreFilter", "EmbedFonts", NC_("printing option value", "Embed GhostScript fonts only") },
   /* Translators: this is an option of "GhostScript" */
-  { "PreFilter", "Level1", N_("Convert to PS level 1") },
+  { "PreFilter", "Level1", NC_("printing option value", "Convert to PS level 1") },
   /* Translators: this is an option of "GhostScript" */
-  { "PreFilter", "Level2", N_("Convert to PS level 2") },
+  { "PreFilter", "Level2", NC_("printing option value", "Convert to PS level 2") },
   /* Translators: this is an option of "GhostScript" */
-  { "PreFilter", "No", N_("No pre-filtering") },
+  { "PreFilter", "No", NC_("printing option value", "No pre-filtering") }
 };
 
 static const struct {
@@ -4285,17 +4364,17 @@ static const struct {
 } cups_group_translations[] = {
 /* Translators: "Miscellaneous" is the label for a button, that opens
    up an extra panel of settings in a print dialog. */
-  { "Miscellaneous", N_("Miscellaneous") },
+  { "Miscellaneous", NC_("printing option group", "Miscellaneous") }
 };
 
 static const struct {
   const char *ppd_keyword;
   const char *name;
 } ppd_option_names[] = {
-  {"Duplex", "gtk-duplex" },
-  {"MediaType", "gtk-paper-type"},
-  {"InputSlot", "gtk-paper-source"},
-  {"OutputBin", "gtk-output-tray"},
+  { "Duplex", "gtk-duplex" },
+  { "MediaType", "gtk-paper-type" },
+  { "InputSlot", "gtk-paper-source" },
+  { "OutputBin", "gtk-output-tray" }
 };
 
 static const struct {
@@ -4303,7 +4382,8 @@ static const struct {
   const char *gtk_option_name;
   const char *translation;
 } ipp_option_translations[] = {
-  { "sides", "gtk-duplex", N_("Two Sided") },
+  { "sides", "gtk-duplex", NC_("printing option", "Two Sided") },
+  { "output-bin", "gtk-output-tray", NC_("printing option", "Output Tray") }
 };
 
 static const struct {
@@ -4316,16 +4396,80 @@ static const struct {
   { "sides", "two-sided-long-edge", NC_("sides", "Long Edge (Standard)") },
   /* Translators: this is an option of "Two Sided" */
   { "sides", "two-sided-short-edge", NC_("sides", "Short Edge (Flip)") },
+
+  /* Translators: Top output bin */
+  { "output-bin", "top", NC_("output-bin", "Top Bin") },
+  /* Translators: Middle output bin */
+  { "output-bin", "middle", NC_("output-bin", "Middle Bin") },
+  /* Translators: Bottom output bin */
+  { "output-bin", "bottom", NC_("output-bin", "Bottom Bin") },
+  /* Translators: Side output bin */
+  { "output-bin", "side", NC_("output-bin", "Side Bin") },
+  /* Translators: Left output bin */
+  { "output-bin", "left", NC_("output-bin", "Left Bin") },
+  /* Translators: Right output bin */
+  { "output-bin", "right", NC_("output-bin", "Right Bin") },
+  /* Translators: Center output bin */
+  { "output-bin", "center", NC_("output-bin", "Center Bin") },
+  /* Translators: Rear output bin */
+  { "output-bin", "rear", NC_("output-bin", "Rear Bin") },
+  /* Translators: Output bin where one sided output is oriented in the face-up position */
+  { "output-bin", "face-up", NC_("output-bin", "Face Up Bin") },
+  /* Translators: Output bin where one sided output is oriented in the face-down position */
+  { "output-bin", "face-down", NC_("output-bin", "Face Down Bin") },
+  /* Translators: Large capacity output bin */
+  { "output-bin", "large-capacity", NC_("output-bin", "Large Capacity Bin") },
+  { NULL, NULL, NULL }
 };
+
+/*
+ * Handles "format not a string literal" error
+ * https://mail.gnome.org/archives/desktop-devel-list/2016-March/msg00075.html
+ */
+static gchar *
+get_ipp_choice_translation_string (gint  index,
+				   guint i)
+{
+  gchar *translation;
+
+  if (i < G_N_ELEMENTS (ipp_choice_translations))
+    translation = g_strdup (_(ipp_choice_translations[i].translation));
+  else
+    {
+      switch (i)
+        {
+          case 14:
+            /* Translators: Output stacker number %d */
+            translation = g_strdup_printf (C_("output-bin", "Stacker %d"), index);
+            break;
+          case 15:
+            /* Translators: Output mailbox number %d */
+            translation = g_strdup_printf (C_("output-bin", "Mailbox %d"), index);
+            break;
+          case 16:
+            /* Translators: Private mailbox */
+            translation = g_strdup (C_("output-bin", "My Mailbox"));
+            break;
+          case 17:
+            /* Translators: Output tray number %d */
+            translation = g_strdup_printf (C_("output-bin", "Tray %d"), index);
+            break;
+          default:
+            g_assert_not_reached ();
+        }
+    }
+
+  return translation;
+}
 
 static const struct {
   const char *lpoption;
   const char *name;
 } lpoption_names[] = {
-  {"number-up", "gtk-n-up" },
-  {"number-up-layout", "gtk-n-up-layout"},
-  {"job-billing", "gtk-billing-info"},
-  {"job-priority", "gtk-job-prio"},
+  { "number-up", "gtk-n-up" },
+  { "number-up-layout", "gtk-n-up-layout" },
+  { "job-billing", "gtk-billing-info" },
+  { "job-priority", "gtk-job-prio" }
 };
 
 /* keep sorted when changing */
@@ -4444,7 +4588,9 @@ get_option_text (ppd_file_t   *ppd_file,
   for (i = 0; i < G_N_ELEMENTS (cups_option_translations); i++)
     {
       if (strcmp (cups_option_translations[i].keyword, option->keyword) == 0)
-	return g_strdup (_(cups_option_translations[i].translation));
+        return g_strdup (g_dpgettext2 (GETTEXT_PACKAGE,
+                                       "printing option",
+                                       cups_option_translations[i].translation));
     }
 
   utf8 = ppd_text_to_utf8 (ppd_file, option->text);
@@ -4467,7 +4613,9 @@ get_choice_text (ppd_file_t   *ppd_file,
     {
       if (strcmp (cups_choice_translations[i].keyword, keyword) == 0 &&
 	  strcmp (cups_choice_translations[i].choice, choice->choice) == 0)
-	return g_strdup (_(cups_choice_translations[i].translation));
+        return g_strdup (g_dpgettext2 (GETTEXT_PACKAGE,
+                                       "printing option value",
+                                       cups_choice_translations[i].translation));
     }
   return ppd_text_to_utf8 (ppd_file, choice->text);
 }
@@ -4511,7 +4659,7 @@ value_is_off (const char *value)
 	   strcasecmp (value, "False") == 0);
 }
 
-static char *
+static const char *
 ppd_group_name (ppd_group_t *group)
 {
   return group->name;
@@ -4542,7 +4690,7 @@ available_choices (ppd_file_t     *ppd,
   installed_options = NULL;
   for (i = 0; i < ppd->num_groups; i++)
     {
-      char *name;
+      const char *name;
 
       name = ppd_group_name (&ppd->groups[i]);
       if (strcmp (name, "InstallableOptions") == 0)
@@ -4883,7 +5031,7 @@ strptr_cmp (const void *a,
 
 
 static gboolean
-string_in_table (gchar       *str,
+string_in_table (const gchar *str,
 		 const gchar *table[],
 		 gint         table_len)
 {
@@ -4900,23 +5048,19 @@ handle_option (GtkPrinterOptionSet *set,
 	       GtkPrintSettings    *settings)
 {
   GtkPrinterOption *option;
-  char *name;
+  char *option_name;
   int i;
 
   if (STRING_IN_TABLE (ppd_option->keyword, cups_option_blacklist))
     return;
 
-  name = get_ppd_option_name (ppd_option->keyword);
+  option_name = get_ppd_option_name (ppd_option->keyword);
 
   option = NULL;
   if (ppd_option->ui == PPD_UI_PICKONE)
-    {
-      option = create_pickone_option (ppd_file, ppd_option, name);
-    }
+    option = create_pickone_option (ppd_file, ppd_option, option_name);
   else if (ppd_option->ui == PPD_UI_BOOLEAN)
-    {
-      option = create_boolean_option (ppd_file, ppd_option, name);
-    }
+    option = create_boolean_option (ppd_file, ppd_option, option_name);
 #ifdef PRINT_IGNORED_OPTIONS
   else
     g_warning ("CUPS Backend: Ignoring pickmany setting %s\n", ppd_option->text);
@@ -4924,27 +5068,21 @@ handle_option (GtkPrinterOptionSet *set,
 
   if (option)
     {
-      char *name;
+      const char *name;
 
       name = ppd_group_name (toplevel_group);
-      if (STRING_IN_TABLE (name,
-			   color_group_whitelist) ||
-	  STRING_IN_TABLE (ppd_option->keyword,
-			   color_option_whitelist))
+      if (STRING_IN_TABLE (name, color_group_whitelist) ||
+	  STRING_IN_TABLE (ppd_option->keyword, color_option_whitelist))
 	{
 	  option->group = g_strdup ("ColorPage");
 	}
-      else if (STRING_IN_TABLE (name,
-				image_quality_group_whitelist) ||
-	       STRING_IN_TABLE (ppd_option->keyword,
-				image_quality_option_whitelist))
+      else if (STRING_IN_TABLE (name, image_quality_group_whitelist) ||
+	       STRING_IN_TABLE (ppd_option->keyword, image_quality_option_whitelist))
 	{
 	  option->group = g_strdup ("ImageQualityPage");
 	}
-      else if (STRING_IN_TABLE (name,
-				finishing_group_whitelist) ||
-	       STRING_IN_TABLE (ppd_option->keyword,
-				finishing_option_whitelist))
+      else if (STRING_IN_TABLE (name, finishing_group_whitelist) ||
+	       STRING_IN_TABLE (ppd_option->keyword, finishing_option_whitelist))
 	{
 	  option->group = g_strdup ("FinishingPage");
 	}
@@ -4954,7 +5092,9 @@ handle_option (GtkPrinterOptionSet *set,
 	    {
 	      if (strcmp (cups_group_translations[i].name, toplevel_group->name) == 0)
 		{
-		  option->group = g_strdup (_(cups_group_translations[i].translation));
+                  option->group = g_strdup (g_dpgettext2 (GETTEXT_PACKAGE,
+                                                          "printing option group",
+                                                          cups_group_translations[i].translation));
 		  break;
 		}
 	    }
@@ -4968,7 +5108,7 @@ handle_option (GtkPrinterOptionSet *set,
       gtk_printer_option_set_add (set, option);
     }
 
-  g_free (name);
+  g_free (option_name);
 }
 
 static void
@@ -4979,7 +5119,7 @@ handle_group (GtkPrinterOptionSet *set,
 	      GtkPrintSettings    *settings)
 {
   gint i;
-  gchar *name;
+  const gchar *name;
 
   /* Ignore installable options */
   name = ppd_group_name (toplevel_group);
@@ -5029,7 +5169,9 @@ get_ipp_option_translation (const gchar  *ipp_option_name,
       if (g_strcmp0 (ipp_option_translations[i].ipp_option_name, ipp_option_name) == 0)
         {
           *gtk_option_name = g_strdup (ipp_option_translations[i].gtk_option_name);
-          *translation = g_strdup (_(ipp_option_translations[i].translation));
+          *translation = g_strdup (g_dpgettext2 (GETTEXT_PACKAGE,
+                                                 "printing option",
+                                                 ipp_option_translations[i].translation));
           return TRUE;
         }
     }
@@ -5044,22 +5186,79 @@ static gchar *
 get_ipp_choice_translation (const gchar  *ipp_option_name,
                             const gchar  *ipp_choice)
 {
-  gchar *translation = NULL;
-  gint   i;
+  const gchar *nptr;
+  guint64      index;
+  gchar       *translation = NULL;
+  gsize        ipp_choice_length;
+  gchar       *endptr;
+  gint         i;
 
-  for (i = 0; i < G_N_ELEMENTS (ipp_choice_translations); i++)
+  for (i = 0; ipp_choice_translations[i].ipp_option_name != NULL; i++)
     {
-      if (g_strcmp0 (ipp_choice_translations[i].ipp_option_name, ipp_option_name) == 0 &&
-          g_strcmp0 (ipp_choice_translations[i].ipp_choice, ipp_choice) == 0)
+      if (g_strcmp0 (ipp_choice_translations[i].ipp_option_name, ipp_option_name) == 0)
         {
-          translation = g_strdup (g_dpgettext2 (GETTEXT_PACKAGE,
-                                                ipp_option_name,
-                                                ipp_choice_translations[i].translation));
-          break;
+          ipp_choice_length = strlen (ipp_choice_translations[i].ipp_choice);
+
+          if (g_strcmp0 (ipp_choice_translations[i].ipp_choice, ipp_choice) == 0)
+            {
+              translation = g_strdup (g_dpgettext2 (GETTEXT_PACKAGE,
+                                                    ipp_option_name,
+                                                    ipp_choice_translations[i].translation));
+              break;
+            }
+          else if (g_str_has_suffix (ipp_choice_translations[i].ipp_choice, "-N") &&
+                   g_ascii_strncasecmp (ipp_choice_translations[i].ipp_choice,
+                                        ipp_choice,
+                                        ipp_choice_length - 2) == 0)
+            {
+              /* Find out index of the ipp_choice if it is supported for the choice. */
+              endptr = NULL;
+              nptr = ipp_choice + ipp_choice_length - 1;
+              index = g_ascii_strtoull (nptr,
+                                        &endptr,
+                                        10);
+
+              if (index != 0 || endptr != nptr)
+                {
+                  translation = get_ipp_choice_translation_string (index, i);
+                  break;
+                }
+            }
         }
     }
 
   return translation;
+}
+
+/*
+ * Format an IPP choice to a displayable string.
+ */
+static gchar *
+format_ipp_choice (const gchar *ipp_choice)
+{
+  gboolean  after_space = TRUE;
+  gchar    *result = NULL;
+  gsize     i;
+
+  if (ipp_choice != NULL)
+    {
+      result = g_strdup (ipp_choice);
+      /* Replace all '-' by spaces. */
+      result = g_strdelimit (result, "-", ' ');
+      if (g_str_is_ascii (result))
+        {
+          /* Convert all leading characters to upper case. */
+          for (i = 0; i < strlen (result); i++)
+            {
+              if (after_space && g_ascii_isalpha (result[i]))
+                result[i] = g_ascii_toupper (result[i]);
+
+              after_space = g_ascii_isspace (result[i]);
+            }
+        }
+    }
+
+  return result;
 }
 
 /*
@@ -5117,7 +5316,7 @@ setup_ipp_option (gchar               *ipp_option_name,
           if (translation != NULL)
             choices_display[i] = translation;
           else
-            choices_display[i] = g_strdup (ipp_choice);
+            choices_display[i] = format_ipp_choice (ipp_choice);
 
           i++;
         }
@@ -5217,11 +5416,27 @@ cups_printer_get_options (GtkPrinter           *printer,
 
   if (backend != NULL && printer != NULL)
     {
-      char *cover_default[] = {"none", "classified", "confidential", "secret", "standard", "topsecret", "unclassified" };
+      char *cover_default[] = {
+        "none",
+        "classified",
+        "confidential",
+        "secret",
+        "standard",
+        "topsecret",
+        "unclassified"
+      };
       /* Translators, these strings are names for various 'standard' cover
        * pages that the printing system may support.
        */
-      char *cover_display_default[] = {N_("None"), N_("Classified"), N_("Confidential"), N_("Secret"), N_("Standard"), N_("Top Secret"), N_("Unclassified"),};
+      char *cover_display_default[] = {
+        NC_("cover page", "None"),
+        NC_("cover page", "Classified"),
+        NC_("cover page", "Confidential"),
+        NC_("cover page", "Secret"),
+        NC_("cover page", "Standard"),
+        NC_("cover page", "Top Secret"),
+        NC_("cover page", "Unclassified")
+      };
       char **cover = NULL;
       char **cover_display = NULL;
       char **cover_display_translated = NULL;
@@ -5232,9 +5447,8 @@ cups_printer_get_options (GtkPrinter           *printer,
        /* Translators, this string is used to label the pages-per-sheet option
         * in the print dialog
         */
-      option = gtk_printer_option_new ("gtk-n-up", _("Pages per Sheet"), GTK_PRINTER_OPTION_TYPE_PICKONE);
-      gtk_printer_option_choices_from_array (option, G_N_ELEMENTS (n_up),
-					     n_up, n_up);
+      option = gtk_printer_option_new ("gtk-n-up", C_("printer option", "Pages per Sheet"), GTK_PRINTER_OPTION_TYPE_PICKONE);
+      gtk_printer_option_choices_from_array (option, G_N_ELEMENTS (n_up), n_up, n_up);
       default_number_up = g_strdup_printf ("%d", cups_printer->default_number_up);
       gtk_printer_option_set (option, default_number_up);
       g_free (default_number_up);
@@ -5250,7 +5464,7 @@ cups_printer_get_options (GtkPrinter           *printer,
            /* Translators, this string is used to label the option in the print
             * dialog that controls in what order multiple pages are arranged
             */
-          option = gtk_printer_option_new ("gtk-n-up-layout", _("Page Ordering"), GTK_PRINTER_OPTION_TYPE_PICKONE);
+          option = gtk_printer_option_new ("gtk-n-up-layout", C_("printer option", "Page Ordering"), GTK_PRINTER_OPTION_TYPE_PICKONE);
           gtk_printer_option_choices_from_array (option, G_N_ELEMENTS (n_up_layout),
                                                  n_up_layout, n_up_layout_display);
 
@@ -5287,12 +5501,12 @@ cups_printer_get_options (GtkPrinter           *printer,
         }
 
       for (i = 0; i < num_of_covers; i++)
-        cover_display_translated[i] = _(cover_display[i]);
+        cover_display_translated[i] = (gchar *)g_dpgettext2 (GETTEXT_PACKAGE, "cover page", cover_display[i]);
 
       /* Translators, this is the label used for the option in the print
        * dialog that controls the front cover page.
        */
-      option = gtk_printer_option_new ("gtk-cover-before", _("Before"), GTK_PRINTER_OPTION_TYPE_PICKONE);
+      option = gtk_printer_option_new ("gtk-cover-before", C_("printer option", "Before"), GTK_PRINTER_OPTION_TYPE_PICKONE);
       gtk_printer_option_choices_from_array (option, num_of_covers,
 					 cover, cover_display_translated);
 
@@ -5307,7 +5521,7 @@ cups_printer_get_options (GtkPrinter           *printer,
       /* Translators, this is the label used for the option in the print
        * dialog that controls the back cover page.
        */
-      option = gtk_printer_option_new ("gtk-cover-after", _("After"), GTK_PRINTER_OPTION_TYPE_PICKONE);
+      option = gtk_printer_option_new ("gtk-cover-after", C_("printer option", "After"), GTK_PRINTER_OPTION_TYPE_PICKONE);
       gtk_printer_option_choices_from_array (option, num_of_covers,
 					 cover, cover_display_translated);
       if (cups_printer->default_cover_after != NULL)
@@ -5327,7 +5541,7 @@ cups_printer_get_options (GtkPrinter           *printer,
    * a print job is printed. Possible values are 'now', a specified time,
    * or 'on hold'
    */
-  option = gtk_printer_option_new ("gtk-print-time", _("Print at"), GTK_PRINTER_OPTION_TYPE_PICKONE);
+  option = gtk_printer_option_new ("gtk-print-time", C_("printer option", "Print at"), GTK_PRINTER_OPTION_TYPE_PICKONE);
   gtk_printer_option_choices_from_array (option, G_N_ELEMENTS (print_at),
 					 print_at, print_at);
   gtk_printer_option_set (option, "now");
@@ -5338,7 +5552,7 @@ cups_printer_get_options (GtkPrinter           *printer,
   /* Translators: this is the name of the option that allows the user
    * to specify a time when a print job will be printed.
    */
-  option = gtk_printer_option_new ("gtk-print-time-text", _("Print at time"), GTK_PRINTER_OPTION_TYPE_STRING);
+  option = gtk_printer_option_new ("gtk-print-time-text", C_("printer option", "Print at time"), GTK_PRINTER_OPTION_TYPE_STRING);
   gtk_printer_option_set (option, "");
   set_option_from_settings (option, settings);
   gtk_printer_option_set_add (set, option);
@@ -5349,20 +5563,20 @@ cups_printer_get_options (GtkPrinter           *printer,
   if (ppd_file)
     {
       GtkPaperSize *paper_size;
-      ppd_option_t *option;
-      const gchar  *ppd_name;
+      ppd_option_t *ppd_option;
+      const gchar *ppd_name;
 
       ppdMarkDefaults (ppd_file);
 
       paper_size = gtk_page_setup_get_paper_size (page_setup);
 
-      option = ppdFindOption (ppd_file, "PageSize");
-      if (option)
+      ppd_option = ppdFindOption (ppd_file, "PageSize");
+      if (ppd_option)
 	{
 	  ppd_name = gtk_paper_size_get_ppd_name (paper_size);
 
 	  if (ppd_name)
-	    strncpy (option->defchoice, ppd_name, PPD_MAX_NAME);
+	    strncpy (ppd_option->defchoice, ppd_name, PPD_MAX_NAME);
 	  else
 	    {
 	      gchar *custom_name;
@@ -5381,7 +5595,7 @@ cups_printer_get_options (GtkPrinter           *printer,
 	       * 230.4x142.9"
                */
 	      custom_name = g_strdup_printf (_("Custom %s×%s"), width, height);
-	      strncpy (option->defchoice, custom_name, PPD_MAX_NAME);
+	      strncpy (ppd_option->defchoice, custom_name, PPD_MAX_NAME);
 	      g_free (custom_name);
 	    }
 	}
@@ -5396,6 +5610,14 @@ cups_printer_get_options (GtkPrinter           *printer,
       option = setup_ipp_option ("sides",
                                  cups_printer->sides_default,
                                  cups_printer->sides_supported,
+                                 set);
+
+      if (option != NULL)
+        set_option_from_settings (option, settings);
+
+      option = setup_ipp_option ("output-bin",
+                                 cups_printer->output_bin_default,
+                                 cups_printer->output_bin_supported,
                                  set);
 
       if (option != NULL)
@@ -5481,14 +5703,14 @@ cups_printer_get_options (GtkPrinter           *printer,
 #ifdef HAVE_COLORD
   /* TRANSLATORS: this this the ICC color profile to use for this job */
   option = gtk_printer_option_new ("colord-profile",
-                                   _("Printer Profile"),
+                                   C_("printer option", "Printer Profile"),
                                    GTK_PRINTER_OPTION_TYPE_INFO);
 
   /* assign it to the color page */
   option->group = g_strdup ("ColorPage");
 
   /* TRANSLATORS: this is when color profile information is unavailable */
-  gtk_printer_option_set (option, _("Unavailable"));
+  gtk_printer_option_set (option, C_("printer option value", "Unavailable"));
   gtk_printer_option_set_add (set, option);
 
   /* watch to see if the user changed the options */
@@ -5801,7 +6023,7 @@ set_option_from_settings (GtkPrinterOption *option,
   else if (strcmp (option->name, "gtk-output-tray") == 0)
     map_settings_to_option (option, output_tray_map, G_N_ELEMENTS (output_tray_map),
 			    settings, GTK_PRINT_SETTINGS_OUTPUT_BIN,
-			    "OutputBin", NULL);
+			    "OutputBin", "output-bin");
   else if (strcmp (option->name, "gtk-duplex") == 0)
     map_settings_to_option (option, duplex_map, G_N_ELEMENTS (duplex_map),
 			    settings, GTK_PRINT_SETTINGS_DUPLEX,
@@ -5918,7 +6140,7 @@ foreach_option_get_settings (GtkPrinterOption *option,
   else if (strcmp (option->name, "gtk-output-tray") == 0)
     map_option_to_settings (value, output_tray_map, G_N_ELEMENTS (output_tray_map),
 			    settings, GTK_PRINT_SETTINGS_OUTPUT_BIN,
-			    "OutputBin", NULL, FALSE);
+			    "OutputBin", "output-bin", option_is_ipp_option (option));
   else if (strcmp (option->name, "gtk-duplex") == 0)
     map_option_to_settings (value, duplex_map, G_N_ELEMENTS (duplex_map),
 			    settings, GTK_PRINT_SETTINGS_DUPLEX,
@@ -6135,6 +6357,8 @@ cups_printer_prepare_for_print (GtkPrinter       *printer,
     {
       if (gtk_print_settings_get_collate (settings))
         gtk_print_settings_set (settings, "cups-Collate", "True");
+      else
+        gtk_print_settings_set (settings, "cups-Collate", "False");
       gtk_print_job_set_collate (print_job, FALSE);
     }
   else

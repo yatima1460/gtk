@@ -23,22 +23,20 @@
 
 #include "gtkwin32themeprivate.h"
 
+#include "gtkwin32drawprivate.h"
+
 #ifdef G_OS_WIN32
 
+#include <windows.h>
+#include <gdk/win32/gdkwin32.h>
 #include <cairo-win32.h>
+
+typedef HANDLE HTHEME;
 
 #define UXTHEME_DLL "uxtheme.dll"
 
 static HINSTANCE uxtheme_dll = NULL;
 static gboolean use_xp_theme = FALSE;
-static OSVERSIONINFO os_version;
-static HTHEME needs_alpha_fixup1 = NULL;
-static HTHEME needs_alpha_fixup2 = NULL;
-static HTHEME needs_alpha_fixup3 = NULL;
-static HTHEME needs_alpha_fixup4 = NULL;
-static HTHEME needs_alpha_fixup5 = NULL;
-static HTHEME needs_alpha_fixup6 = NULL;
-static HTHEME needs_alpha_fixup7 = NULL;
 
 typedef HRESULT (FAR PASCAL *GetThemeSysFontFunc)           (HTHEME hTheme, int iFontID, OUT LOGFONTW *plf);
 typedef int (FAR PASCAL *GetThemeSysSizeFunc)               (HTHEME hTheme, int iSizeId);
@@ -66,24 +64,117 @@ typedef HRESULT (FAR PASCAL *GetThemePartSizeFunc)          (HTHEME hTheme,
 							     RECT *prc,
 							     int eSize,
 							     SIZE *psz);
+typedef HRESULT (FAR PASCAL *GetThemeBackgroundExtentFunc)  (HTHEME hTheme,
+							     HDC hdc,
+							     int iPartId,
+							     int iStateId,
+                                                             const RECT *pContentRect,
+                                                             RECT *pExtentRect);
 
 static GetThemeSysFontFunc get_theme_sys_font = NULL;
-static GetThemeSysColorFunc get_theme_sys_color = NULL;
-static GetThemeSysSizeFunc get_theme_sys_metric = NULL;
-static OpenThemeDataFunc open_theme_data = NULL;
-static CloseThemeDataFunc close_theme_data = NULL;
+static GetThemeSysColorFunc GetThemeSysColor = NULL;
+static GetThemeSysSizeFunc GetThemeSysSize = NULL;
+static OpenThemeDataFunc OpenThemeData = NULL;
+static CloseThemeDataFunc CloseThemeData = NULL;
 static DrawThemeBackgroundFunc draw_theme_background = NULL;
 static EnableThemeDialogTextureFunc enable_theme_dialog_texture = NULL;
 static IsThemeActiveFunc is_theme_active = NULL;
 static IsAppThemedFunc is_app_themed = NULL;
 static IsThemeBackgroundPartiallyTransparentFunc is_theme_partially_transparent = NULL;
 static DrawThemeParentBackgroundFunc draw_theme_parent_background = NULL;
-static GetThemePartSizeFunc get_theme_part_size = NULL;
+static GetThemePartSizeFunc GetThemePartSize = NULL;
+static GetThemeBackgroundExtentFunc GetThemeBackgroundExtent = NULL;
 
-static GHashTable *hthemes_by_class = NULL;
+#endif
+
+static GHashTable *themes_by_class = NULL;
+
+struct _GtkWin32Theme {
+  char *class_name;
+  gint ref_count;
+#ifdef G_OS_WIN32
+  HTHEME htheme;
+#endif
+};
+
+GtkWin32Theme *
+gtk_win32_theme_ref (GtkWin32Theme *theme)
+{
+  theme->ref_count++;
+
+  return theme;
+}
+
+static gboolean
+gtk_win32_theme_close (GtkWin32Theme *theme)
+{
+#ifdef G_OS_WIN32
+  if (theme->htheme)
+    {
+      CloseThemeData (theme->htheme);
+      theme->htheme = NULL;
+      return TRUE;
+    }
+#endif
+  return FALSE;
+}
+
+void
+gtk_win32_theme_unref (GtkWin32Theme *theme)
+{
+  theme->ref_count--;
+
+  if (theme->ref_count > 0)
+    return;
+
+  g_hash_table_remove (themes_by_class, theme->class_name);
+
+  gtk_win32_theme_close (theme);
+  g_free (theme->class_name);
+
+  g_slice_free (GtkWin32Theme, theme);
+}
+
+gboolean
+gtk_win32_theme_equal (GtkWin32Theme *theme1,
+                       GtkWin32Theme *theme2)
+{
+  /* Themes are cached so they're guaranteed unique. */
+  return theme1 == theme2;
+}
+
+#ifdef G_OS_WIN32
+
+static GdkFilterReturn
+invalidate_win32_themes (GdkXEvent *xevent,
+                         GdkEvent  *event,
+                         gpointer   unused)
+{
+  GHashTableIter iter;
+  gboolean theme_was_open = FALSE;
+  gpointer theme;
+  MSG *msg;
+
+  if (!GDK_IS_WIN32_WINDOW (event->any.window))
+    return GDK_FILTER_CONTINUE;
+
+  msg = (MSG *) xevent;
+  if (msg->message != WM_THEMECHANGED)
+    return GDK_FILTER_CONTINUE;
+
+  g_hash_table_iter_init (&iter, themes_by_class);
+  while (g_hash_table_iter_next (&iter, NULL, &theme))
+    {
+      theme_was_open |= gtk_win32_theme_close (theme);
+    }
+  if (theme_was_open)
+    gtk_style_context_reset_widgets (gdk_display_get_default_screen (gdk_window_get_display (event->any.window)));
+
+  return GDK_FILTER_CONTINUE;
+}
 
 static void
-_gtk_win32_theme_init (void)
+gtk_win32_theme_init (void)
 {
   char *buf;
   char dummy;
@@ -118,16 +209,17 @@ _gtk_win32_theme_init (void)
   if (is_app_themed)
     {
       is_theme_active = (IsThemeActiveFunc) GetProcAddress (uxtheme_dll, "IsThemeActive");
-      open_theme_data = (OpenThemeDataFunc) GetProcAddress (uxtheme_dll, "OpenThemeData");
-      close_theme_data = (CloseThemeDataFunc) GetProcAddress (uxtheme_dll, "CloseThemeData");
+      OpenThemeData = (OpenThemeDataFunc) GetProcAddress (uxtheme_dll, "OpenThemeData");
+      CloseThemeData = (CloseThemeDataFunc) GetProcAddress (uxtheme_dll, "CloseThemeData");
       draw_theme_background = (DrawThemeBackgroundFunc) GetProcAddress (uxtheme_dll, "DrawThemeBackground");
       enable_theme_dialog_texture = (EnableThemeDialogTextureFunc) GetProcAddress (uxtheme_dll, "EnableThemeDialogTexture");
       get_theme_sys_font = (GetThemeSysFontFunc) GetProcAddress (uxtheme_dll, "GetThemeSysFont");
-      get_theme_sys_color = (GetThemeSysColorFunc) GetProcAddress (uxtheme_dll, "GetThemeSysColor");
-      get_theme_sys_metric = (GetThemeSysSizeFunc) GetProcAddress (uxtheme_dll, "GetThemeSysSize");
+      GetThemeSysColor = (GetThemeSysColorFunc) GetProcAddress (uxtheme_dll, "GetThemeSysColor");
+      GetThemeSysSize = (GetThemeSysSizeFunc) GetProcAddress (uxtheme_dll, "GetThemeSysSize");
       is_theme_partially_transparent = (IsThemeBackgroundPartiallyTransparentFunc) GetProcAddress (uxtheme_dll, "IsThemeBackgroundPartiallyTransparent");
       draw_theme_parent_background = (DrawThemeParentBackgroundFunc) GetProcAddress (uxtheme_dll, "DrawThemeParentBackground");
-      get_theme_part_size = (GetThemePartSizeFunc) GetProcAddress (uxtheme_dll, "GetThemePartSize");
+      GetThemePartSize = (GetThemePartSizeFunc) GetProcAddress (uxtheme_dll, "GetThemePartSize");
+      GetThemeBackgroundExtent = (GetThemeBackgroundExtentFunc) GetProcAddress (uxtheme_dll, "GetThemeBackgroundExtent");
     }
 
   if (is_app_themed && is_theme_active)
@@ -139,79 +231,93 @@ _gtk_win32_theme_init (void)
       use_xp_theme = FALSE;
     }
 
-  hthemes_by_class = g_hash_table_new (g_str_hash, g_str_equal);
-
-  memset (&os_version, 0, sizeof (os_version));
-  os_version.dwOSVersionInfoSize = sizeof (os_version);
-  GetVersionEx (&os_version);
-  if (os_version.dwMajorVersion == 5)
-    {
-      needs_alpha_fixup1 = _gtk_win32_lookup_htheme_by_classname ("scrollbar");
-      needs_alpha_fixup2 = _gtk_win32_lookup_htheme_by_classname ("toolbar");
-      needs_alpha_fixup3 = _gtk_win32_lookup_htheme_by_classname ("button");
-      needs_alpha_fixup4 = _gtk_win32_lookup_htheme_by_classname ("header");
-      needs_alpha_fixup5 = _gtk_win32_lookup_htheme_by_classname ("trackbar");
-      needs_alpha_fixup6 = _gtk_win32_lookup_htheme_by_classname ("status");
-      needs_alpha_fixup7 = _gtk_win32_lookup_htheme_by_classname ("rebar");
-    }
+  gdk_window_add_filter (NULL, invalidate_win32_themes, NULL);
 }
 
-HTHEME
-_gtk_win32_lookup_htheme_by_classname (const char *class)
+static HTHEME
+gtk_win32_theme_get_htheme (GtkWin32Theme *theme)
 {
-  HTHEME theme;
   guint16 *wclass;
-  char *lower;
   
-  _gtk_win32_theme_init ();
+  gtk_win32_theme_init ();
 
-  lower = g_ascii_strdown (class, -1);
+  if (theme->htheme)
+    return theme->htheme;
 
-  theme = (HTHEME)  g_hash_table_lookup (hthemes_by_class, lower);
-  if (theme)
-    {
-      g_free (lower);
-      return theme;
-    }
-
-  wclass = g_utf8_to_utf16 (lower, -1, NULL, NULL, NULL);
-  theme  = open_theme_data (NULL, wclass);
+  wclass = g_utf8_to_utf16 (theme->class_name, -1, NULL, NULL, NULL);
+  theme->htheme  = OpenThemeData (NULL, wclass);
   g_free (wclass);
 
-  if (theme == NULL)
-    {
-      g_free (lower);
-      return NULL;
-    }
-
-  /* Takes ownership of lower: */
-  g_hash_table_insert (hthemes_by_class, lower, theme);
-
-  return theme;
-}
-
-#else
-
-HTHEME
-_gtk_win32_lookup_htheme_by_classname (const char *class)
-{
-  return NULL;
+  return theme->htheme;
 }
 
 #endif /* G_OS_WIN32 */
 
+static char *
+canonicalize_class_name (const char *classname)
+{
+  /* Wine claims class names are case insensitive, so we convert them
+     here to avoid multiple theme objects referencing the same HTHEME. */
+  return g_ascii_strdown (classname, -1);
+}
+
+GtkWin32Theme *
+gtk_win32_theme_lookup (const char *classname)
+{
+  GtkWin32Theme *theme;
+  char *canonical_classname;
+
+  if (G_UNLIKELY (themes_by_class == NULL))
+    themes_by_class = g_hash_table_new (g_str_hash, g_str_equal);
+
+  canonical_classname = canonicalize_class_name (classname);
+  theme = g_hash_table_lookup (themes_by_class, canonical_classname);
+
+  if (theme != NULL)
+    {
+      g_free (canonical_classname);
+      return gtk_win32_theme_ref (theme);
+    }
+
+  theme = g_slice_new0 (GtkWin32Theme);
+  theme->ref_count = 1;
+  theme->class_name = canonical_classname;
+
+  g_hash_table_insert (themes_by_class, theme->class_name, theme);
+
+  return theme;
+}
+
+GtkWin32Theme *
+gtk_win32_theme_parse (GtkCssParser *parser)
+{
+  GtkWin32Theme *theme;
+  char *class_name;
+
+  class_name = _gtk_css_parser_try_name (parser, TRUE);
+  if (class_name == NULL)
+    {
+      _gtk_css_parser_error (parser, "Expected valid win32 theme name");
+      return NULL;
+    }
+
+  theme = gtk_win32_theme_lookup (class_name);
+  g_free (class_name);
+
+  return theme;
+}
+
 cairo_surface_t *
-_gtk_win32_theme_part_create_surface (HTHEME theme,
-                                      int    xp_part,
-				      int    state,
-				      int    margins[4],
-				      int    width,
-                                      int    height,
-				      int   *x_offs_out,
-				      int   *y_offs_out)
+gtk_win32_theme_create_surface (GtkWin32Theme *theme,
+                                int            xp_part,
+				int            state,
+				int            margins[4],
+				int            width,
+                                int            height,
+				int           *x_offs_out,
+				int           *y_offs_out)
 {
   cairo_surface_t *surface;
-  GdkRGBA color;
   cairo_t *cr;
   int x_offs;
   int y_offs;
@@ -221,6 +327,7 @@ _gtk_win32_theme_part_create_surface (HTHEME theme,
   RECT rect;
   SIZE size;
   HRESULT res;
+  HTHEME htheme;
 #endif
 
   x_offs = margins[3];
@@ -230,78 +337,55 @@ _gtk_win32_theme_part_create_surface (HTHEME theme,
   height -= margins[0] + margins[2];
 
 #ifdef G_OS_WIN32
-  rect.left = 0;
-  rect.top = 0;
-  rect.right = width;
-  rect.bottom = height;
-
-  hdc = GetDC (NULL);
-  res = get_theme_part_size (theme, hdc, xp_part, state, &rect, 2, &size);
-  ReleaseDC (NULL, hdc);
-
-  if (res == S_OK)
+  htheme = gtk_win32_theme_get_htheme (theme);
+  if (htheme)
     {
-      x_offs += (width - size.cx) / 2;
-      y_offs += (height - size.cy) / 2;
-  
-      width = size.cx;
-      height = size.cy;
-
+      rect.left = 0;
+      rect.top = 0;
       rect.right = width;
       rect.bottom = height;
-    }
 
-  has_alpha = is_theme_partially_transparent (theme, xp_part, state);
-  if (has_alpha)
-    surface = cairo_win32_surface_create_with_dib (CAIRO_FORMAT_ARGB32, width, height);
+      hdc = GetDC (NULL);
+      res = GetThemePartSize (htheme, hdc, xp_part, state, &rect, 2 /*TS_DRAW*/, &size);
+      ReleaseDC (NULL, hdc);
+
+      if (res == S_OK)
+        {
+          x_offs += (width - size.cx) / 2;
+          y_offs += (height - size.cy) / 2;
+      
+          width = size.cx;
+          height = size.cy;
+
+          rect.right = width;
+          rect.bottom = height;
+        }
+
+      has_alpha = is_theme_partially_transparent (htheme, xp_part, state);
+      if (has_alpha)
+        surface = cairo_win32_surface_create_with_dib (CAIRO_FORMAT_ARGB32, width, height);
+      else
+        surface = cairo_win32_surface_create_with_dib (CAIRO_FORMAT_RGB24, width, height);
+
+      hdc = cairo_win32_surface_get_dc (surface);
+
+      res = draw_theme_background (htheme, hdc, xp_part, state, &rect, &rect);
+
+      *x_offs_out = x_offs;
+      *y_offs_out = y_offs;
+
+      if (res == S_OK)
+        return surface;
+    }
   else
-    surface = cairo_win32_surface_create_with_dib (CAIRO_FORMAT_RGB24, width, height);
-
-  hdc = cairo_win32_surface_get_dc (surface);
-
-  res = draw_theme_background (theme, hdc, xp_part, state, &rect, &rect);
-
-  /* XP Can't handle rendering some parts on an alpha target */
-  if (has_alpha && 
-      (theme == needs_alpha_fixup1 ||
-       theme == needs_alpha_fixup2 ||
-       (theme == needs_alpha_fixup3 && xp_part == 4) ||
-       theme == needs_alpha_fixup4 ||
-       theme == needs_alpha_fixup5 ||
-       theme == needs_alpha_fixup6 ||
-       theme == needs_alpha_fixup7))
-    {
-      cairo_surface_t *img = cairo_win32_surface_get_image (surface);
-      guint32 *data = (guint32 *)cairo_image_surface_get_data (img);
-      int i, j;
-      GdiFlush ();
-
-      for (i = 0; i < width; i++)
-	{
-	  for (j = 0; j < height; j++)
-	    {
-	      if (data[i+j*width] != 0)
-		data[i+j*width] |= 0xff000000;
-	    }
-	}
-    }
-
-  *x_offs_out = x_offs;
-  *y_offs_out = y_offs;
-
-  if (res == S_OK)
-    return surface;
-
-#else /* !G_OS_WIN32 */
-  surface = cairo_image_surface_create (CAIRO_FORMAT_ARGB32, width, height);
 #endif /* G_OS_WIN32 */
+    {
+      surface = cairo_image_surface_create (CAIRO_FORMAT_ARGB32, width, height);
+    }
 
   cr = cairo_create (surface);
   
-  /* XXX: Do something better here (like printing the theme parts) */
-  gdk_rgba_parse (&color, "pink");
-  gdk_cairo_set_source_rgba (cr, &color);
-  cairo_paint (cr);
+  gtk_win32_draw_theme_background (cr, theme->class_name, xp_part, state, width, height);
 
   cairo_destroy (cr);
   
@@ -311,91 +395,110 @@ _gtk_win32_theme_part_create_surface (HTHEME theme,
   return surface;
 }
 
-int
-_gtk_win32_theme_int_parse (GtkCssParser      *parser,
-			    int               *value)
+void
+gtk_win32_theme_get_part_border (GtkWin32Theme  *theme,
+                                 int             part,
+                                 int             state,
+                                 GtkBorder      *out_border)
 {
-  char *class;
-  int arg;
-
-  if (_gtk_css_parser_try (parser,
-			   "-gtk-win32-size",
-			   TRUE))
-    {
-      if (!_gtk_css_parser_try (parser, "(", TRUE))
-	{
-	  _gtk_css_parser_error (parser,
-				 "Expected '(' after '-gtk-win32-size'");
-	  return 0;
-	}
-
-      class = _gtk_css_parser_try_name (parser, TRUE);
-      if (class == NULL)
-	{
-	  _gtk_css_parser_error (parser,
-				 "Expected name as first argument to  '-gtk-win32-size'");
-	  return 0;
-	}
-
-      if (! _gtk_css_parser_try (parser, ",", TRUE))
-	{
-	  g_free (class);
-	  _gtk_css_parser_error (parser,
-				 "Expected ','");
-	  return 0;
-	}
-
-      if (!_gtk_css_parser_try_int (parser, &arg))
-	{
-	  g_free (class);
-	  _gtk_css_parser_error (parser, "Expected a valid integer value");
-	  return 0;
-	}
-
-      if (!_gtk_css_parser_try (parser, ")", TRUE))
-	{
-	  _gtk_css_parser_error (parser,
-				 "Expected ')'");
-	  return 0;
-	}
-
 #ifdef G_OS_WIN32
-      if (use_xp_theme && get_theme_sys_metric != NULL)
-	{
-	  HTHEME theme = _gtk_win32_lookup_htheme_by_classname (class);
+  HTHEME htheme = gtk_win32_theme_get_htheme (theme);
+  RECT content, extent;
+  HDC hdc;
+  HRESULT res;
 
-	  /* If theme is NULL it will just return the GetSystemMetrics value */
-	  *value = get_theme_sys_metric (theme, arg);
-	}
-      else
-	*value = GetSystemMetrics (arg);
-#else
-      *value = 1;
+  if (use_xp_theme && GetThemeBackgroundExtent != NULL && htheme != NULL)
+    {
+      /* According to Wine source code, these values don't matter
+       * because uxtheme.dll deals with margins internally. */
+      content.left = content.top = 0;
+      content.right = content.bottom = 100;
+
+      hdc = GetDC (NULL);
+      res = GetThemeBackgroundExtent (htheme, hdc, part, state, &content, &extent);
+      ReleaseDC (NULL, hdc);
+
+      if (SUCCEEDED (res))
+        {
+          out_border->top = content.top - extent.top;
+          out_border->left = content.left - extent.left;
+          out_border->bottom = extent.bottom - content.bottom;
+          out_border->right = extent.right - content.right;
+          return;
+        }
+    }
 #endif
 
-      g_free (class);
-
-      return 1;
-    }
-
-  return -1;
+  gtk_win32_get_theme_margins (theme->class_name, part, state, out_border);
 }
 
-gboolean
-_gtk_win32_theme_color_resolve (const char *theme_class,
-				gint id,
-				GdkRGBA *color)
+void
+gtk_win32_theme_get_part_size (GtkWin32Theme  *theme,
+                               int             part,
+                               int             state,
+                               int            *width,
+                               int            *height)
 {
 #ifdef G_OS_WIN32
+  HTHEME htheme = gtk_win32_theme_get_htheme (theme);
+  SIZE size;
+  HRESULT res;
+
+  if (use_xp_theme && GetThemePartSize != NULL && htheme != NULL)
+    {
+      res = GetThemePartSize (htheme, NULL, part, state, NULL, 1 /* TS_TRUE */, &size);
+
+      if (SUCCEEDED (res))
+        {
+          if (width)
+            *width = size.cx;
+          if (height)
+            *height = size.cy;
+          return;
+        }
+    }
+#endif
+  gtk_win32_get_theme_part_size (theme->class_name, part, state, width, height);
+}
+
+int
+gtk_win32_theme_get_size (GtkWin32Theme *theme,
+			  int            id)
+{
+#ifdef G_OS_WIN32
+  if (use_xp_theme && GetThemeSysSize != NULL)
+    {
+      HTHEME htheme = gtk_win32_theme_get_htheme (theme);
+      int size;
+
+      /* If htheme is NULL it will just return the GetSystemMetrics value */
+      size = GetThemeSysSize (htheme, id);
+      /* fall through on invalid parameter */
+      if (GetLastError () == 0)
+        return size;
+    }
+
+  return GetSystemMetrics (id);
+#else
+  return gtk_win32_get_sys_metric (id);
+#endif
+}
+
+void
+gtk_win32_theme_get_color (GtkWin32Theme *theme,
+                           gint           id,
+                           GdkRGBA       *color)
+{
+#ifdef G_OS_WIN32
+  HTHEME htheme;
   DWORD dcolor;
 
-  if (use_xp_theme && get_theme_sys_color != NULL)
+  if (use_xp_theme && GetThemeSysColor != NULL)
     {
-      HTHEME theme = _gtk_win32_lookup_htheme_by_classname (theme_class);
+      htheme = gtk_win32_theme_get_htheme (theme);
 
-      /* if theme is NULL, it will just return the GetSystemColor()
-         value */
-      dcolor = get_theme_sys_color (theme, id);
+      /* if htheme is NULL, it will just return the GetSysColor() value */
+      dcolor = GetThemeSysColor (htheme, id);
     }
   else
     dcolor = GetSysColor (id);
@@ -405,20 +508,13 @@ _gtk_win32_theme_color_resolve (const char *theme_class,
   color->green = GetGValue (dcolor) / 255.0;
   color->blue = GetBValue (dcolor) / 255.0;
 #else
-  gdk_rgba_parse (color, "pink");
+  gtk_win32_get_sys_color (id, color);
 #endif
-  return TRUE;
 }
 
-const char *
-_gtk_win32_theme_get_default (void)
+void
+gtk_win32_theme_print (GtkWin32Theme *theme,
+                       GString       *string)
 {
-#ifdef G_OS_WIN32
-  _gtk_win32_theme_init ();
-  
-  if (use_xp_theme)
-    return (os_version.dwMajorVersion >= 6) ? "gtk-win32" : "gtk-win32-xp";
-#endif
-  return "gtk-win32-classic";
+  g_string_append (string, theme->class_name);
 }
-

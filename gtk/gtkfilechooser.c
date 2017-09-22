@@ -159,7 +159,7 @@
 
 
 typedef GtkFileChooserIface GtkFileChooserInterface;
-G_DEFINE_INTERFACE (GtkFileChooser, gtk_file_chooser, GTK_TYPE_WIDGET);
+G_DEFINE_INTERFACE (GtkFileChooser, gtk_file_chooser, G_TYPE_OBJECT);
 
 static gboolean
 confirm_overwrite_accumulator (GSignalInvocationHint *ihint,
@@ -673,8 +673,8 @@ gtk_file_chooser_get_create_folders (GtkFileChooser *chooser)
  * If the file chooser is in folder mode, this function returns the selected
  * folder.
  * 
- * Returns: (type filename): The currently selected filename, or %NULL
- *  if no file is selected, or the selected file can't
+ * Returns: (nullable) (type filename): The currently selected filename,
+ *  or %NULL if no file is selected, or the selected file can't
  *  be represented with a local filename. Free with g_free().
  *
  * Since: 2.4
@@ -873,8 +873,7 @@ gtk_file_chooser_get_filenames (GtkFileChooser *chooser)
   files = gtk_file_chooser_get_files (chooser);
 
   result = files_to_strings (files, g_file_get_path);
-  g_slist_foreach (files, (GFunc) g_object_unref, NULL);
-  g_slist_free (files);
+  g_slist_free_full (files, g_object_unref);
 
   return result;
 }
@@ -928,8 +927,8 @@ gtk_file_chooser_set_current_folder (GtkFileChooser *chooser,
  * currently-selected folder in that mode, use gtk_file_chooser_get_uri() as the
  * usual way to get the selection.
  * 
- * Returns: (type filename): the full path of the current folder,
- * or %NULL if the current path cannot be represented as a local
+ * Returns: (nullable) (type filename): the full path of the current
+ * folder, or %NULL if the current path cannot be represented as a local
  * filename.  Free with g_free().  This function will also return
  * %NULL if the file chooser was unable to load the last folder that
  * was requested from it; for example, as would be for calling
@@ -1022,10 +1021,10 @@ gtk_file_chooser_get_current_name (GtkFileChooser *chooser)
  * If the file chooser is in folder mode, this function returns the selected
  * folder.
  * 
- * Returns: The currently selected URI, or %NULL
- *  if no file is selected. If gtk_file_chooser_set_local_only() is set to %TRUE
- * (the default) a local URI will be returned for any FUSE locations.
- * Free with g_free()
+ * Returns: (nullable) (transfer full): The currently selected URI, or %NULL
+ *    if no file is selected. If gtk_file_chooser_set_local_only() is set to
+ *    %TRUE (the default) a local URI will be returned for any FUSE locations.
+ *    Free with g_free()
  *
  * Since: 2.4
  **/
@@ -1218,8 +1217,7 @@ gtk_file_chooser_get_uris (GtkFileChooser *chooser)
   else
     result = files_to_strings (files, g_file_get_uri);
 
-  g_slist_foreach (files, (GFunc) g_object_unref, NULL);
-  g_slist_free (files);
+  g_slist_free_full (files, g_object_unref);
 
   return result;
 }
@@ -1274,10 +1272,11 @@ gtk_file_chooser_set_current_folder_uri (GtkFileChooser *chooser,
  * currently-selected folder in that mode, use gtk_file_chooser_get_uri() as the
  * usual way to get the selection.
  * 
- * Returns: the URI for the current folder.  Free with g_free().  This
- * function will also return %NULL if the file chooser was unable to load the
- * last folder that was requested from it; for example, as would be for calling
- * gtk_file_chooser_set_current_folder_uri() on a nonexistent folder.
+ * Returns: (nullable) (transfer full): the URI for the current folder.
+ * Free with g_free().  This function will also return %NULL if the file chooser
+ * was unable to load the last folder that was requested from it; for example,
+ * as would be for calling gtk_file_chooser_set_current_folder_uri() on a
+ * nonexistent folder.
  *
  * Since: 2.4
  */
@@ -1498,8 +1497,7 @@ gtk_file_chooser_get_file (GtkFileChooser *chooser)
       result = list->data;
       list = g_slist_delete_link (list, list);
 
-      g_slist_foreach (list, (GFunc) g_object_unref, NULL);
-      g_slist_free (list);
+      g_slist_free_full (list, g_object_unref);
     }
 
   return result;
@@ -1563,7 +1561,7 @@ gtk_file_chooser_set_preview_widget (GtkFileChooser *chooser,
  * Gets the current preview widget; see
  * gtk_file_chooser_set_preview_widget().
  *
- * Returns: (transfer none): the current preview widget, or %NULL
+ * Returns: (nullable) (transfer none): the current preview widget, or %NULL
  *
  * Since: 2.4
  **/
@@ -1685,7 +1683,7 @@ gtk_file_chooser_get_use_preview_label (GtkFileChooser *chooser)
  * Gets the #GFile that should be previewed in a custom preview
  * Internal function, see gtk_file_chooser_get_preview_uri().
  *
- * Returns: (transfer full): the #GFile for the file to preview,
+ * Returns: (nullable) (transfer full): the #GFile for the file to preview,
  *     or %NULL if no file is selected. Free with g_object_unref().
  *
  * Since: 2.14
@@ -1755,7 +1753,7 @@ _gtk_file_chooser_remove_shortcut_folder (GtkFileChooser  *chooser,
  * Gets the filename that should be previewed in a custom preview
  * widget. See gtk_file_chooser_set_preview_widget().
  * 
- * Returns: (type filename): the filename to preview, or %NULL if
+ * Returns: (nullable) (type filename): the filename to preview, or %NULL if
  *  no file is selected, or if the selected file cannot be represented
  *  as a local filename. Free with g_free()
  *
@@ -1786,8 +1784,8 @@ gtk_file_chooser_get_preview_filename (GtkFileChooser *chooser)
  * Gets the URI that should be previewed in a custom preview
  * widget. See gtk_file_chooser_set_preview_widget().
  * 
- * Returns: the URI for the file to preview, or %NULL if no file is
- * selected. Free with g_free().
+ * Returns: (nullable) (transfer full): the URI for the file to preview,
+ *     or %NULL if no file is selected. Free with g_free().
  *
  * Since: 2.4
  **/
@@ -1831,10 +1829,10 @@ gtk_file_chooser_set_extra_widget (GtkFileChooser *chooser,
  * gtk_file_chooser_get_extra_widget:
  * @chooser: a #GtkFileChooser
  *
- * Gets the current preview widget; see
+ * Gets the current extra widget; see
  * gtk_file_chooser_set_extra_widget().
  *
- * Returns: (transfer none): the current extra widget, or %NULL
+ * Returns: (nullable) (transfer none): the current extra widget, or %NULL
  *
  * Since: 2.4
  **/
@@ -1950,7 +1948,7 @@ gtk_file_chooser_set_filter (GtkFileChooser *chooser,
  *
  * Gets the current filter; see gtk_file_chooser_set_filter().
  *
- * Returns: (transfer none): the current filter, or %NULL
+ * Returns: (nullable) (transfer none): the current filter, or %NULL
  *
  * Since: 2.4
  **/
@@ -2064,8 +2062,7 @@ gtk_file_chooser_list_shortcut_folders (GtkFileChooser *chooser)
   folders = _gtk_file_chooser_list_shortcut_folder_files (chooser);
 
   result = files_to_strings (folders, g_file_get_path);
-  g_slist_foreach (folders, (GFunc) g_object_unref, NULL);
-  g_slist_free (folders);
+  g_slist_free_full (folders, g_object_unref);
 
   return result;
 }
@@ -2161,8 +2158,7 @@ gtk_file_chooser_list_shortcut_folder_uris (GtkFileChooser *chooser)
   folders = _gtk_file_chooser_list_shortcut_folder_files (chooser);
 
   result = files_to_strings (folders, g_file_get_uri);
-  g_slist_foreach (folders, (GFunc) g_object_unref, NULL);
-  g_slist_free (folders);
+  g_slist_free_full (folders, g_object_unref);
 
   return result;
 }
@@ -2267,3 +2263,99 @@ gtk_file_chooser_get_do_overwrite_confirmation (GtkFileChooser *chooser)
 
   return do_overwrite_confirmation;
 }
+
+/**
+ * gtk_file_chooser_add_choice:
+ * @chooser: a #GtkFileChooser
+ * @id: id for the added choice
+ * @label: user-visible label for the added choice
+ * @options: ids for the options of the choice, or %NULL for a boolean choice
+ * @option_labels: user-visible labels for the options, must be the same length as @options
+ *
+ * Adds a 'choice' to the file chooser. This is typically implemented
+ * as a combobox or, for boolean choices, as a checkbutton. You can select
+ * a value using gtk_file_chooser_set_choice() before the dialog is shown,
+ * and you can obtain the user-selected value in the ::response signal handler
+ * using gtk_file_chooser_get_choice().
+ *
+ * Compare gtk_file_chooser_set_extra_widget().
+ *
+ * Since: 3.22
+ */
+void
+gtk_file_chooser_add_choice (GtkFileChooser  *chooser,
+                             const char      *id,
+                             const char      *label,
+                             const char     **options,
+                             const char     **option_labels)
+{
+  GtkFileChooserIface *iface = GTK_FILE_CHOOSER_GET_IFACE (chooser);
+
+  if (iface->add_choice)
+    iface->add_choice (chooser, id, label, options, option_labels);
+}
+
+/**
+ * gtk_file_chooser_remove_choice:
+ * @chooser: a #GtkFileChooser
+ * @id: the ID of the choice to remove
+ *
+ * Removes a 'choice' that has been added with gtk_file_chooser_add_choice().
+ *
+ * Since: 3.22
+ */
+void
+gtk_file_chooser_remove_choice (GtkFileChooser  *chooser,
+                                const char      *id)
+{
+  GtkFileChooserIface *iface = GTK_FILE_CHOOSER_GET_IFACE (chooser);
+
+  if (iface->remove_choice)
+    iface->remove_choice (chooser, id);
+}
+
+/**
+ * gtk_file_chooser_set_choice:
+ * @chooser: a #GtkFileChooser
+ * @id: the ID of the choice to set
+ * @option: the ID of the option to select
+ *
+ * Selects an option in a 'choice' that has been added with
+ * gtk_file_chooser_add_choice(). For a boolean choice, the
+ * possible options are "true" and "false".
+ *
+ * Since: 3.22
+ */
+void
+gtk_file_chooser_set_choice (GtkFileChooser  *chooser,
+                             const char      *id,
+                             const char      *option)
+{
+  GtkFileChooserIface *iface = GTK_FILE_CHOOSER_GET_IFACE (chooser);
+
+  if (iface->set_choice)
+    iface->set_choice (chooser, id, option);
+}
+
+/**
+ * gtk_file_chooser_get_choice:
+ * @chooser: a #GtkFileChooser
+ * @id: the ID of the choice to get
+ *
+ * Gets the currently selected option in the 'choice' with the given ID.
+ *
+ * Returns: the ID of the currenly selected option
+ * Since: 3.22
+ */
+const char *
+gtk_file_chooser_get_choice (GtkFileChooser  *chooser,
+                             const char      *id)
+{
+  GtkFileChooserIface *iface = GTK_FILE_CHOOSER_GET_IFACE (chooser);
+
+  if (iface->get_choice)
+    return iface->get_choice (chooser, id);
+
+  return NULL;
+}
+

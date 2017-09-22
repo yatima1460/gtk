@@ -109,6 +109,10 @@
  *                                 GDK_ACTION_COPY);
  * ]|
  *
+ * # CSS nodes
+ *
+ * GtkToolPalette has a single CSS node named toolpalette.
+ *
  * Since: 2.20
  */
 
@@ -621,12 +625,9 @@ gtk_tool_palette_size_allocate (GtkWidget     *widget,
   for (i = 0; i < palette->priv->groups->len; ++i)
     {
       GtkToolItemGroupInfo *group = g_ptr_array_index (palette->priv->groups, i);
-      GtkWidget *widget;
 
       if (!group->widget)
         continue;
-
-      widget = GTK_WIDGET (group->widget);
 
       if (gtk_tool_item_group_get_n_items (group->widget))
         {
@@ -649,8 +650,8 @@ gtk_tool_palette_size_allocate (GtkWidget     *widget,
           else
             child_allocation.x = x;
 
-          gtk_widget_size_allocate (widget, &child_allocation);
-          gtk_widget_show (widget);
+          gtk_widget_size_allocate (GTK_WIDGET (group->widget), &child_allocation);
+          gtk_widget_show (GTK_WIDGET (group->widget));
 
           if (GTK_ORIENTATION_VERTICAL == palette->priv->orientation)
             child_allocation.y += child_allocation.height;
@@ -658,7 +659,7 @@ gtk_tool_palette_size_allocate (GtkWidget     *widget,
             x += child_allocation.width;
         }
       else
-        gtk_widget_hide (widget);
+        gtk_widget_hide (GTK_WIDGET (group->widget));
     }
 
   if (GTK_ORIENTATION_VERTICAL == palette->priv->orientation)
@@ -731,7 +732,7 @@ gtk_tool_palette_realize (GtkWidget *widget)
   attributes.wclass = GDK_INPUT_OUTPUT;
   attributes.visual = gtk_widget_get_visual (widget);
   attributes.event_mask = gtk_widget_get_events (widget)
-                         | GDK_VISIBILITY_NOTIFY_MASK | GDK_EXPOSURE_MASK
+                         | GDK_VISIBILITY_NOTIFY_MASK
                          | GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK
                          | GDK_BUTTON_MOTION_MASK
                          | GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK
@@ -742,9 +743,6 @@ gtk_tool_palette_realize (GtkWidget *widget)
                            &attributes, attributes_mask);
   gtk_widget_set_window (widget, window);
   gtk_widget_register_window (widget, window);
-
-  gtk_style_context_set_background (gtk_widget_get_style_context (widget),
-                                    window);
 
   gtk_container_forall (GTK_CONTAINER (widget),
                         (GtkCallback) gtk_widget_set_parent_window,
@@ -762,6 +760,18 @@ gtk_tool_palette_adjustment_value_changed (GtkAdjustment *adjustment,
 
   gtk_widget_get_allocation (widget, &allocation);
   gtk_tool_palette_size_allocate (widget, &allocation);
+}
+
+static gboolean
+gtk_tool_palette_draw (GtkWidget *widget,
+                       cairo_t   *cr)
+{
+  gtk_render_background (gtk_widget_get_style_context (widget), cr,
+                         0, 0,
+                         gtk_widget_get_allocated_width (widget),
+                         gtk_widget_get_allocated_height (widget));
+
+  return GTK_WIDGET_CLASS (gtk_tool_palette_parent_class)->draw (widget, cr);
 }
 
 static void
@@ -917,6 +927,7 @@ gtk_tool_palette_class_init (GtkToolPaletteClass *cls)
   wclass->get_preferred_height= gtk_tool_palette_get_preferred_height;
   wclass->size_allocate       = gtk_tool_palette_size_allocate;
   wclass->realize             = gtk_tool_palette_realize;
+  wclass->draw                = gtk_tool_palette_draw;
 
   cclass->add                 = gtk_tool_palette_add;
   cclass->remove              = gtk_tool_palette_remove;
@@ -1017,6 +1028,8 @@ gtk_tool_palette_class_init (GtkToolPaletteClass *cls)
                                                                     P_("Whether the item group should receive extra space when the palette grows"),
                                                                     DEFAULT_CHILD_EXPAND,
                                                                     GTK_PARAM_READWRITE));
+
+  gtk_widget_class_set_css_name (wclass, "toolpalette");
 }
 
 /**
@@ -1476,7 +1489,7 @@ gtk_tool_palette_get_expand (GtkToolPalette   *palette,
  * Gets the item at position (x, y).
  * See gtk_tool_palette_get_drop_group().
  *
- * Returns: (transfer none): the #GtkToolItem at position or %NULL if there is no such item
+ * Returns: (nullable) (transfer none): the #GtkToolItem at position or %NULL if there is no such item
  *
  * Since: 2.20
  */
@@ -1508,8 +1521,8 @@ gtk_tool_palette_get_drop_item (GtkToolPalette *palette,
  *
  * Gets the group at position (x, y).
  *
- * Returns: (transfer none): the #GtkToolItemGroup at position or %NULL
- *     if there is no such group
+ * Returns: (nullable) (transfer none): the #GtkToolItemGroup at position
+ * or %NULL if there is no such group
  *
  * Since: 2.20
  */

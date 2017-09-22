@@ -29,6 +29,7 @@
 
 #include "gtkmountoperationprivate.h"
 #include "gtkbox.h"
+#include "gtkcssiconthemevalueprivate.h"
 #include "gtkdbusgenerated.h"
 #include "gtkentry.h"
 #include "gtkbox.h"
@@ -49,6 +50,7 @@
 #include "gtkmenuitem.h"
 #include "gtkmain.h"
 #include "gtksettings.h"
+#include "gtkstylecontextprivate.h"
 
 #include <glib/gprintf.h>
 
@@ -69,7 +71,7 @@
  * When necessary, #GtkMountOperation shows dialogs to ask for
  * passwords, questions or show processes blocking unmount.
  *
- * gtk_show_uri() is a convenient way to launch applications for URIs.
+ * gtk_show_uri_on_window() is a convenient way to launch applications for URIs.
  *
  * Another object that is worth mentioning in this context is
  * #GdkAppLaunchContext, which provides visual feedback when lauching
@@ -758,7 +760,7 @@ call_password_proxy_cb (GObject      *source,
                                                               &error))
     {
       result = G_MOUNT_OPERATION_ABORTED;
-      g_warning ("Shell mount operation error: %s\n", error->message);
+      g_warning ("Shell mount operation error: %s", error->message);
       g_error_free (error);
       goto out;
     }
@@ -925,7 +927,7 @@ call_question_proxy_cb (GObject      *source,
                                                               &error))
     {
       result = G_MOUNT_OPERATION_ABORTED;
-      g_warning ("Shell mount operation error: %s\n", error->message);
+      g_warning ("Shell mount operation error: %s", error->message);
       g_error_free (error);
       goto out;
     }
@@ -1088,7 +1090,7 @@ add_pid_to_process_list_store (GtkMountOperation              *mount_operation,
                                     &pixbuf);
 
   if (name == NULL)
-    name = g_strdup_printf (_("Unknown Application (PID %d)"), (int) pid);
+    name = g_strdup_printf (_("Unknown Application (PID %d)"), (int) (gssize) pid);
 
   if (command_line == NULL)
     command_line = g_strdup ("");
@@ -1096,7 +1098,9 @@ add_pid_to_process_list_store (GtkMountOperation              *mount_operation,
   if (pixbuf == NULL)
     {
       GtkIconTheme *theme;
-      theme = gtk_icon_theme_get_for_screen (gtk_widget_get_screen (GTK_WIDGET (mount_operation->priv->dialog)));
+      theme = gtk_css_icon_theme_value_get_icon_theme
+        (_gtk_style_context_peek_property (gtk_widget_get_style_context (GTK_WIDGET (mount_operation->priv->dialog)),
+                                           GTK_CSS_PROPERTY_ICON_THEME));
       pixbuf = gtk_icon_theme_load_icon (theme,
                                          "application-x-executable",
                                          24,
@@ -1295,16 +1299,11 @@ on_end_process_activated (GtkMenuItem *item,
 
 static gboolean
 do_popup_menu_for_process_tree_view (GtkWidget         *widget,
-                                     GdkEventButton    *event,
+                                     const GdkEvent    *event,
                                      GtkMountOperation *op)
 {
   GtkWidget *menu;
   GtkWidget *item;
-  gint button;
-  gint event_time;
-  gboolean popped_up_menu;
-
-  popped_up_menu = FALSE;
 
   menu = gtk_menu_new ();
   gtk_style_context_add_class (gtk_widget_get_style_context (menu),
@@ -1317,14 +1316,14 @@ do_popup_menu_for_process_tree_view (GtkWidget         *widget,
   gtk_menu_shell_append (GTK_MENU_SHELL (menu), item);
   gtk_widget_show_all (menu);
 
-  if (event != NULL)
+  if (event && gdk_event_triggers_context_menu (event))
     {
       GtkTreePath *path;
       GtkTreeSelection *selection;
 
       if (gtk_tree_view_get_path_at_pos (GTK_TREE_VIEW (op->priv->process_tree_view),
-                                         (gint) event->x,
-                                         (gint) event->y,
+                                         (gint) event->button.x,
+                                         (gint) event->button.y,
                                          &path,
                                          NULL,
                                          NULL,
@@ -1337,30 +1336,12 @@ do_popup_menu_for_process_tree_view (GtkWidget         *widget,
       else
         {
           /* don't popup a menu if the user right-clicked in an area with no rows */
-          goto out;
+          return FALSE;
         }
-
-      button = event->button;
-      event_time = event->time;
-    }
-  else
-    {
-      button = 0;
-      event_time = gtk_get_current_event_time ();
     }
 
-  gtk_menu_popup (GTK_MENU (menu),
-                  NULL,
-                  widget,
-                  NULL,
-                  NULL,
-                  button,
-                  event_time);
-
-  popped_up_menu = TRUE;
-
- out:
-  return popped_up_menu;
+  gtk_menu_popup_at_pointer (GTK_MENU (menu), event);
+  return TRUE;
 }
 
 static gboolean
@@ -1383,7 +1364,7 @@ on_button_press_event_for_process_tree_view (GtkWidget      *widget,
 
   if (gdk_event_triggers_context_menu ((GdkEvent *) event))
     {
-      ret = do_popup_menu_for_process_tree_view (widget, event, op);
+      ret = do_popup_menu_for_process_tree_view (widget, (GdkEvent *) event, op);
     }
 
   return ret;
@@ -1545,7 +1526,7 @@ call_processes_proxy_cb (GObject     *source,
                                                                 &error))
     {
       result = G_MOUNT_OPERATION_ABORTED;
-      g_warning ("Shell mount operation error: %s\n", error->message);
+      g_warning ("Shell mount operation error: %s", error->message);
       g_error_free (error);
       goto out;
     }

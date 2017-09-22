@@ -91,9 +91,29 @@ gboolean        _gtk_propagate_captured_event  (GtkWidget       *widget,
                                                 GdkEvent        *event,
                                                 GtkWidget       *topmost);
 
+
+gdouble _gtk_get_slowdown ();
+void    _gtk_set_slowdown (gdouble slowdown_factor);
+
+gboolean gtk_should_use_portal (void);
+
 #ifdef G_OS_WIN32
 void _gtk_load_dll_with_libgtk3_manifest (const char *dllname);
 #endif
+
+gboolean        gtk_simulate_touchscreen (void);
+
+guint gtk_get_display_debug_flags (GdkDisplay *display);
+
+#ifdef G_ENABLE_DEBUG
+
+#define GTK_DISPLAY_DEBUG_CHECK(display,type) G_UNLIKELY (gtk_get_display_debug_flags (display) & GTK_DEBUG_##type)
+
+#else
+
+#define GTK_DISPLAY_DEBUG_CHECK(display,type) 0
+
+#endif /* G_ENABLE_DEBUG */
 
 G_END_DECLS
 

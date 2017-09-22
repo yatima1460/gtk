@@ -45,6 +45,7 @@ G_BEGIN_DECLS
 
 /**
  * GtkTextWindowType:
+ * @GTK_TEXT_WINDOW_PRIVATE: Invalid value, used as a marker
  * @GTK_TEXT_WINDOW_WIDGET: Window that floats over scrolling areas.
  * @GTK_TEXT_WINDOW_TEXT: Scrollable text window.
  * @GTK_TEXT_WINDOW_LEFT: Left side border window.
@@ -56,9 +57,7 @@ G_BEGIN_DECLS
  */
 typedef enum
 {
-  /*< private >*/
   GTK_TEXT_WINDOW_PRIVATE,
-  /*< public >*/
   GTK_TEXT_WINDOW_WIDGET,
   GTK_TEXT_WINDOW_TEXT,
   GTK_TEXT_WINDOW_LEFT,
@@ -69,8 +68,10 @@ typedef enum
 
 /**
  * GtkTextViewLayer:
- * @GTK_TEXT_VIEW_LAYER_BELOW: The layer rendered below the text (but above the background).
- * @GTK_TEXT_VIEW_LAYER_ABOVE: The layer rendered above the text.
+ * @GTK_TEXT_VIEW_LAYER_BELOW: Old deprecated layer, use %GTK_TEXT_VIEW_LAYER_BELOW_TEXT instead
+ * @GTK_TEXT_VIEW_LAYER_ABOVE: Old deprecated layer, use %GTK_TEXT_VIEW_LAYER_ABOVE_TEXT instead
+ * @GTK_TEXT_VIEW_LAYER_BELOW_TEXT: The layer rendered below the text (but above the background).  Since: 3.20
+ * @GTK_TEXT_VIEW_LAYER_ABOVE_TEXT: The layer rendered above the text.  Since: 3.20
  *
  * Used to reference the layers of #GtkTextView for the purpose of customized
  * drawing with the ::draw_layer vfunc.
@@ -78,7 +79,9 @@ typedef enum
 typedef enum
 {
   GTK_TEXT_VIEW_LAYER_BELOW,
-  GTK_TEXT_VIEW_LAYER_ABOVE
+  GTK_TEXT_VIEW_LAYER_ABOVE,
+  GTK_TEXT_VIEW_LAYER_BELOW_TEXT,
+  GTK_TEXT_VIEW_LAYER_ABOVE_TEXT
 } GtkTextViewLayer;
 
 /**
@@ -149,13 +152,18 @@ struct _GtkTextView
  * @draw_layer: The draw_layer vfunc is called before and after the text
  *   view is drawing its own text. Applications can override this vfunc
  *   in a subclass to draw customized content underneath or above the
- *   text. Since: 3.14
+ *   text. In the %GTK_TEXT_VIEW_LAYER_BELOW_TEXT and %GTK_TEXT_VIEW_LAYER_ABOVE_TEXT
+ *   the drawing is done in the buffer coordinate space, but the older (deprecated)
+ *   layers %GTK_TEXT_VIEW_LAYER_BELOW and %GTK_TEXT_VIEW_LAYER_ABOVE work in viewport
+ *   coordinates, which makes them unnecessarily hard to use. Since: 3.14
+ * @extend_selection: The class handler for the #GtkTextView::extend-selection
+ *   signal. Since 3.16
  */
 struct _GtkTextViewClass
 {
   GtkContainerClass parent_class;
 
-  /*< public */
+  /*< public >*/
 
   void (* populate_popup)        (GtkTextView      *text_view,
                                   GtkWidget        *popup);
@@ -237,6 +245,9 @@ void           gtk_text_view_set_cursor_visible    (GtkTextView   *text_view,
 GDK_AVAILABLE_IN_ALL
 gboolean       gtk_text_view_get_cursor_visible    (GtkTextView   *text_view);
 
+GDK_AVAILABLE_IN_3_20
+void           gtk_text_view_reset_cursor_blink    (GtkTextView   *text_view);
+
 GDK_AVAILABLE_IN_ALL
 void           gtk_text_view_get_cursor_locations  (GtkTextView       *text_view,
                                                     const GtkTextIter *iter,
@@ -247,12 +258,12 @@ void           gtk_text_view_get_iter_location     (GtkTextView   *text_view,
                                                     const GtkTextIter *iter,
                                                     GdkRectangle  *location);
 GDK_AVAILABLE_IN_ALL
-void           gtk_text_view_get_iter_at_location  (GtkTextView   *text_view,
+gboolean       gtk_text_view_get_iter_at_location  (GtkTextView   *text_view,
                                                     GtkTextIter   *iter,
                                                     gint           x,
                                                     gint           y);
 GDK_AVAILABLE_IN_ALL
-void           gtk_text_view_get_iter_at_position  (GtkTextView   *text_view,
+gboolean       gtk_text_view_get_iter_at_position  (GtkTextView   *text_view,
                                                     GtkTextIter   *iter,
 						    gint          *trailing,
                                                     gint           x,
@@ -403,6 +414,16 @@ void             gtk_text_view_set_right_margin       (GtkTextView      *text_vi
                                                        gint              right_margin);
 GDK_AVAILABLE_IN_ALL
 gint             gtk_text_view_get_right_margin       (GtkTextView      *text_view);
+GDK_AVAILABLE_IN_3_18
+void             gtk_text_view_set_top_margin         (GtkTextView      *text_view,
+                                                       gint              top_margin);
+GDK_AVAILABLE_IN_3_18
+gint             gtk_text_view_get_top_margin         (GtkTextView      *text_view);
+GDK_AVAILABLE_IN_3_18
+void             gtk_text_view_set_bottom_margin      (GtkTextView      *text_view,
+                                                       gint              bottom_margin);
+GDK_AVAILABLE_IN_3_18
+gint             gtk_text_view_get_bottom_margin       (GtkTextView      *text_view);
 GDK_AVAILABLE_IN_ALL
 void             gtk_text_view_set_indent             (GtkTextView      *text_view,
                                                        gint              indent);

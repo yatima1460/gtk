@@ -132,6 +132,9 @@ struct _GtkTextLayout
 
   GtkTextBuffer *buffer;
 
+  gint left_padding;
+  gint right_padding;
+
   /* Default style used if no tags override it */
   GtkTextAttributes *default_style;
 
@@ -342,16 +345,16 @@ void gtk_text_layout_get_line_at_y     (GtkTextLayout     *layout,
                                         gint               y,
                                         gint              *line_top);
 GDK_AVAILABLE_IN_ALL
-void gtk_text_layout_get_iter_at_pixel (GtkTextLayout     *layout,
-                                        GtkTextIter       *iter,
-                                        gint               x,
-                                        gint               y);
+gboolean gtk_text_layout_get_iter_at_pixel (GtkTextLayout     *layout,
+                                            GtkTextIter       *iter,
+                                            gint               x,
+                                            gint               y);
 GDK_AVAILABLE_IN_ALL
-void gtk_text_layout_get_iter_at_position (GtkTextLayout     *layout,
-					   GtkTextIter       *iter,
-					   gint              *trailing,
-					   gint               x,
-					   gint               y);
+gboolean gtk_text_layout_get_iter_at_position (GtkTextLayout     *layout,
+                                               GtkTextIter       *iter,
+                                               gint              *trailing,
+                                               gint               x,
+                                               gint               y);
 GDK_AVAILABLE_IN_ALL
 void gtk_text_layout_invalidate        (GtkTextLayout     *layout,
                                         const GtkTextIter *start,

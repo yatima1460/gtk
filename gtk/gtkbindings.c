@@ -47,6 +47,12 @@
  * with high key  binding configurability which requires no application
  * or toolkit side changes.
  *
+ * In order for bindings to work in a custom widget implementation, the
+ * widget’s #GtkWidget:can-focus and #GtkWidget:has-focus properties
+ * must both be true. For example, by calling gtk_widget_set_can_focus()
+ * in the widget’s initialisation function; and by calling
+ * gtk_widget_grab_focus() when the widget is clicked.
+ *
  * # Installing a key binding
  *
  * A CSS file binding consists of a “binding-set” definition and a match
@@ -69,15 +75,16 @@
  * movement occurs in 3-character steps), the following binding can be
  * used:
  *
- * |[
+ * |[ <!-- language="CSS" -->
  * @binding-set MoveCursor3
  * {
  *   bind "<Control>Right" { "move-cursor" (visual-positions, 3, 0) };
  *   bind "<Control>Left" { "move-cursor" (visual-positions, -3, 0) };
  * }
- * GtkEntry
+ *
+ * entry
  * {
- *   gtk-key-bindings: MoveCursor3;
+ *   -gtk-key-bindings: MoveCursor3;
  * }
  * ]|
  *
@@ -91,15 +98,16 @@
  * works as expected. The same mechanism can not be used to “unbind”
  * existing bindings, however.
  *
- * |[
+ * |[ <!-- language="CSS" -->
  * @binding-set MoveCursor3
  * {
  *   bind "<Control>Right" {  };
  *   bind "<Control>Left" {  };
  * }
- * GtkEntry
+ *
+ * entry
  * {
- *   gtk-key-bindings: MoveCursor3;
+ *   -gtk-key-bindings: MoveCursor3;
  * }
  * ]|
  *
@@ -114,15 +122,16 @@
  * from activating its default bindings, the “unbind” keyword can be used
  * like this:
  *
- * |[
+ * |[ <!-- language="CSS" -->
  * @binding-set MoveCursor3
  * {
  *   unbind "<Control>Right";
  *   unbind "<Control>Left";
  * }
- * GtkEntry
+ *
+ * entry
  * {
- *   gtk-key-bindings: MoveCursor3;
+ *   -gtk-key-bindings: MoveCursor3;
  * }
  * ]|
  *
@@ -595,7 +604,7 @@ gtk_binding_entry_activate (GtkBindingEntry *entry,
         {
           accelerator = gtk_accelerator_name (entry->keyval, entry->modifiers);
           g_warning ("gtk_binding_entry_activate(): binding \"%s::%s\": "
-                     "could not find signal \"%s\" in the `%s' class ancestry",
+                     "could not find signal \"%s\" in the '%s' class ancestry",
                      entry->binding_set->set_name,
                      accelerator,
                      sig->signal_name,
@@ -611,7 +620,7 @@ gtk_binding_entry_activate (GtkBindingEntry *entry,
         {
           accelerator = gtk_accelerator_name (entry->keyval, entry->modifiers);
           g_warning ("gtk_binding_entry_activate(): binding \"%s::%s\": "
-                     "signature mismatch for signal \"%s\" in the `%s' class ancestry",
+                     "signature mismatch for signal \"%s\" in the '%s' class ancestry",
                      entry->binding_set->set_name,
                      accelerator,
                      sig->signal_name,
@@ -621,7 +630,7 @@ gtk_binding_entry_activate (GtkBindingEntry *entry,
         {
           accelerator = gtk_accelerator_name (entry->keyval, entry->modifiers);
           g_warning ("gtk_binding_entry_activate(): binding \"%s::%s\": "
-                     "signal \"%s\" in the `%s' class ancestry cannot be used for action emissions",
+                     "signal \"%s\" in the '%s' class ancestry cannot be used for action emissions",
                      entry->binding_set->set_name,
                      accelerator,
                      sig->signal_name,
@@ -645,9 +654,13 @@ gtk_binding_entry_activate (GtkBindingEntry *entry,
       else
         handled = TRUE;
 
-      for (i = 0; i < query.n_params + 1; i++)
-        g_value_unset (&params[i]);
-      g_free (params);
+      if (params != NULL)
+        {
+          for (i = 0; i < query.n_params + 1; i++)
+            g_value_unset (&params[i]);
+
+          g_free (params);
+        }
 
       if (entry->destroyed)
         break;
@@ -751,7 +764,7 @@ gtk_binding_set_find_interned (const gchar *set_name)
  * The @set_name can either be a name used for gtk_binding_set_new()
  * or the type name of a class used in gtk_binding_set_by_class().
  *
- * Returns: (transfer none): %NULL or the specified binding set
+ * Returns: (nullable) (transfer none): %NULL or the specified binding set
  */
 GtkBindingSet*
 gtk_binding_set_find (const gchar *set_name)
@@ -922,7 +935,7 @@ _gtk_binding_entry_add_signall (GtkBindingSet  *binding_set,
       tmp_arg = slist->data;
       if (!tmp_arg)
         {
-          g_warning ("gtk_binding_entry_add_signall(): arg[%u] is `NULL'", n);
+          g_warning ("gtk_binding_entry_add_signall(): arg[%u] is 'NULL'", n);
           binding_signal_free (signal);
           return;
         }
@@ -944,13 +957,13 @@ _gtk_binding_entry_add_signall (GtkBindingSet  *binding_set,
           arg->d.string_data = g_strdup (tmp_arg->d.string_data);
           if (!arg->d.string_data)
             {
-              g_warning ("gtk_binding_entry_add_signall(): value of `string' arg[%u] is `NULL'", n);
+              g_warning ("gtk_binding_entry_add_signall(): value of 'string' arg[%u] is 'NULL'", n);
               binding_signal_free (signal);
               return;
             }
           break;
         default:
-          g_warning ("gtk_binding_entry_add_signall(): unsupported type `%s' for arg[%u]",
+          g_warning ("gtk_binding_entry_add_signall(): unsupported type '%s' for arg[%u]",
                      g_type_name (arg->arg_type), n);
           binding_signal_free (signal);
           return;
@@ -984,6 +997,20 @@ _gtk_binding_entry_add_signall (GtkBindingSet  *binding_set,
  * @binding_set. When the binding is activated, @signal_name will be
  * emitted on the target widget, with @n_args @Varargs used as
  * arguments.
+ *
+ * Each argument to the signal must be passed as a pair of varargs: the
+ * #GType of the argument, followed by the argument value (which must
+ * be of the given type). There must be @n_args pairs in total.
+ *
+ * ## Adding a Key Binding
+ *
+ * |[<!-- language="C" -->
+ * gtk_binding_entry_add_signal (binding_set, keyval, modmask,
+ *                               "move-cursor", 3,
+ *                               G_TYPE_ENUM, step,
+ *                               G_TYPE_INT, count,
+ *                               G_TYPE_BOOLEAN, FALSE);
+ * ]|
  */
 void
 gtk_binding_entry_add_signal (GtkBindingSet  *binding_set,
@@ -1038,14 +1065,14 @@ gtk_binding_entry_add_signal (GtkBindingSet  *binding_set,
           arg->d.string_data = va_arg (args, gchar*);
           if (!arg->d.string_data)
             {
-              g_warning ("gtk_binding_entry_add_signal(): type `%s' arg[%u] is `NULL'",
+              g_warning ("gtk_binding_entry_add_signal(): type '%s' arg[%u] is 'NULL'",
                          g_type_name (arg->arg_type),
                          i);
               i += n_args + 1;
             }
           break;
         default:
-          g_warning ("gtk_binding_entry_add_signal(): unsupported type `%s' for arg[%u]",
+          g_warning ("gtk_binding_entry_add_signal(): unsupported type '%s' for arg[%u]",
                      g_type_name (arg->arg_type), i);
           i += n_args + 1;
           break;
@@ -1433,7 +1460,6 @@ gtk_bindings_activate_list (GObject  *object,
 {
   GtkStyleContext *context;
   GtkBindingSet *binding_set;
-  GtkStateFlags state;
   gboolean handled = FALSE;
   gboolean unbound = FALSE;
   GPtrArray *array;
@@ -1442,10 +1468,9 @@ gtk_bindings_activate_list (GObject  *object,
     return FALSE;
 
   context = gtk_widget_get_style_context (GTK_WIDGET (object));
-  state = gtk_widget_get_state_flags (GTK_WIDGET (object));
 
-  gtk_style_context_get (context, state,
-                         "gtk-key-bindings", &array,
+  gtk_style_context_get (context, gtk_style_context_get_state (context),
+                         "-gtk-key-bindings", &array,
                          NULL);
   if (array)
     {

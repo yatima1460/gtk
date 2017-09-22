@@ -154,25 +154,22 @@ gtk_recent_action_unselect_uri (GtkRecentChooser *chooser,
 
   for (l = priv->choosers; l; l = l->next)
     {
-      GtkRecentChooser *chooser = l->data;
-      
-      gtk_recent_chooser_unselect_uri (chooser, uri);
+      GtkRecentChooser *c = l->data;
+      gtk_recent_chooser_unselect_uri (c, uri);
     }
 }
 
 static void
 gtk_recent_action_select_all (GtkRecentChooser *chooser)
 {
-  g_warning ("This function is not implemented for "
-	     "widgets of class '%s'",
+  g_warning ("This function is not implemented for widgets of class '%s'",
              g_type_name (G_OBJECT_TYPE (chooser)));
 }
 
 static void
 gtk_recent_action_unselect_all (GtkRecentChooser *chooser)
 {
-  g_warning ("This function is not implemented for "
-	     "widgets of class '%s'",
+  g_warning ("This function is not implemented for widgets of class '%s'",
              g_type_name (G_OBJECT_TYPE (chooser)));
 }
 
@@ -467,7 +464,7 @@ set_recent_manager (GtkRecentAction  *action,
   GtkRecentActionPrivate *priv = action->priv;
 
   if (manager)
-    priv->manager = NULL;
+    priv->manager = manager;
   else
     priv->manager = gtk_recent_manager_get_default ();
 }
@@ -478,8 +475,6 @@ gtk_recent_action_finalize (GObject *gobject)
   GtkRecentAction *action = GTK_RECENT_ACTION (gobject);
   GtkRecentActionPrivate *priv = action->priv;
 
-  priv->manager = NULL;
-  
   if (priv->data_destroy)
     {
       priv->data_destroy (priv->sort_data);
@@ -506,6 +501,8 @@ gtk_recent_action_dispose (GObject *gobject)
       priv->current_filter = NULL;
     }
 
+  priv->manager = NULL;
+  
   G_OBJECT_CLASS (gtk_recent_action_parent_class)->dispose (gobject);
 }
 

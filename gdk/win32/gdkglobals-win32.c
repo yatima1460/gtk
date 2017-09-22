@@ -20,7 +20,7 @@
  * Modified by the GTK+ Team and others 1997-2000.  See the AUTHORS
  * file for a list of people on the GTK+ Team.  See the ChangeLog
  * files for a list of changes.  These files are distributed with
- * GTK+ at ftp://ftp.gtk.org/pub/gtk/. 
+ * GTK+ at ftp://ftp.gtk.org/pub/gtk/.
  */
 
 #include "config.h"
@@ -28,17 +28,14 @@
 #include "gdkprivate-win32.h"
 
 GdkDisplay	 *_gdk_display = NULL;
-GdkScreen	 *_gdk_screen = NULL;
-GdkWindow	 *_gdk_root = NULL;
-
-gint		  _gdk_num_monitors;
-GdkWin32Monitor  *_gdk_monitors = NULL;
 
 gint		  _gdk_offset_x, _gdk_offset_y;
 
 HDC		  _gdk_display_hdc;
 HINSTANCE	  _gdk_dll_hinstance;
 HINSTANCE	  _gdk_app_hmodule;
+
+gint		  _gdk_input_ignore_core;
 
 HKL		  _gdk_input_locale;
 gboolean	  _gdk_input_locale_is_ime;

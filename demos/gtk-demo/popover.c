@@ -51,13 +51,6 @@ create_complex_popover (GtkWidget       *parent,
   popover = create_popover (parent, content, GTK_POS_BOTTOM);
   g_object_unref (content);
 
-  gtk_widget_set_size_request (popover, 200, -1);
-  gtk_widget_set_vexpand (popover, TRUE);
-
-  gtk_widget_set_margin_start (popover, 10);
-  gtk_widget_set_margin_end (popover, 10);
-  gtk_widget_set_margin_bottom (popover, 10);
-
   return popover;
 }
 
@@ -176,10 +169,7 @@ do_popover (GtkWidget *do_widget)
   if (!gtk_widget_get_visible (window))
     gtk_widget_show_all (window);
   else
-    {
-      gtk_widget_destroy (window);
-      window = NULL;
-    }
+    gtk_widget_destroy (window);
 
   return window;
 }

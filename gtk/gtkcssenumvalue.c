@@ -22,6 +22,7 @@
 #include "gtkcssstyleprivate.h"
 #include "gtkcssnumbervalueprivate.h"
 #include "gtkstyleproviderprivate.h"
+#include "gtksettingsprivate.h"
 
 /* repeated API */
 
@@ -125,38 +126,98 @@ _gtk_css_border_style_value_get (const GtkCssValue *value)
   return value->value;
 }
 
+/* GtkCssBlendMode */
+
+static const GtkCssValueClass GTK_CSS_VALUE_BLEND_MODE = {
+  gtk_css_value_enum_free,
+  gtk_css_value_enum_compute,
+  gtk_css_value_enum_equal,
+  gtk_css_value_enum_transition,
+  gtk_css_value_enum_print
+};
+
+static GtkCssValue blend_mode_values[] = {
+  { &GTK_CSS_VALUE_BLEND_MODE, 1, GTK_CSS_BLEND_MODE_COLOR_BURN, "color-burn" },
+  { &GTK_CSS_VALUE_BLEND_MODE, 1, GTK_CSS_BLEND_MODE_COLOR_DODGE, "color-dodge" },
+  { &GTK_CSS_VALUE_BLEND_MODE, 1, GTK_CSS_BLEND_MODE_COLOR, "color" },
+  { &GTK_CSS_VALUE_BLEND_MODE, 1, GTK_CSS_BLEND_MODE_DARKEN, "darken" },
+  { &GTK_CSS_VALUE_BLEND_MODE, 1, GTK_CSS_BLEND_MODE_DIFFERENCE, "difference" },
+  { &GTK_CSS_VALUE_BLEND_MODE, 1, GTK_CSS_BLEND_MODE_EXCLUSION, "exclusion" },
+  { &GTK_CSS_VALUE_BLEND_MODE, 1, GTK_CSS_BLEND_MODE_HARD_LIGHT, "hard-light" },
+  { &GTK_CSS_VALUE_BLEND_MODE, 1, GTK_CSS_BLEND_MODE_HUE, "hue" },
+  { &GTK_CSS_VALUE_BLEND_MODE, 1, GTK_CSS_BLEND_MODE_LIGHTEN, "lighten" },
+  { &GTK_CSS_VALUE_BLEND_MODE, 1, GTK_CSS_BLEND_MODE_LUMINOSITY, "luminosity" },
+  { &GTK_CSS_VALUE_BLEND_MODE, 1, GTK_CSS_BLEND_MODE_MULTIPLY, "multiply" },
+  { &GTK_CSS_VALUE_BLEND_MODE, 1, GTK_CSS_BLEND_MODE_NORMAL, "normal" },
+  { &GTK_CSS_VALUE_BLEND_MODE, 1, GTK_CSS_BLEND_MODE_OVERLAY, "overlay" },
+  { &GTK_CSS_VALUE_BLEND_MODE, 1, GTK_CSS_BLEND_MODE_SATURATE, "saturate" },
+  { &GTK_CSS_VALUE_BLEND_MODE, 1, GTK_CSS_BLEND_MODE_SCREEN, "screen" },
+  { &GTK_CSS_VALUE_BLEND_MODE, 1, GTK_CSS_BLEND_MODE_SOFT_LIGHT, "soft-light" }
+};
+
+GtkCssValue *
+_gtk_css_blend_mode_value_new (GtkCssBlendMode blend_mode)
+{
+  g_return_val_if_fail (blend_mode < G_N_ELEMENTS (blend_mode_values), NULL);
+
+  return _gtk_css_value_ref (&blend_mode_values[blend_mode]);
+}
+
+GtkCssValue *
+_gtk_css_blend_mode_value_try_parse (GtkCssParser *parser)
+{
+  guint i;
+
+  g_return_val_if_fail (parser != NULL, NULL);
+
+  for (i = 0; i < G_N_ELEMENTS (blend_mode_values); i++)
+    {
+      if (_gtk_css_parser_try (parser, blend_mode_values[i].name, TRUE))
+        return _gtk_css_value_ref (&blend_mode_values[i]);
+    }
+
+  return NULL;
+}
+
+GtkCssBlendMode
+_gtk_css_blend_mode_value_get (const GtkCssValue *value)
+{
+  g_return_val_if_fail (value->class == &GTK_CSS_VALUE_BLEND_MODE, GTK_CSS_BLEND_MODE_NORMAL);
+
+  return value->value;
+}
+
 /* GtkCssFontSize */
+
+static double
+get_dpi (GtkCssStyle *style)
+{
+  return _gtk_css_number_value_get (gtk_css_style_get_value (style, GTK_CSS_PROPERTY_DPI), 96);
+}
 
 /* XXX: Kinda bad to have that machinery here, nobody expects vital font
  * size code to appear in gtkcssvalueenum.c.
  */
-#define DEFAULT_FONT_SIZE 10
+#define DEFAULT_FONT_SIZE_PT 10
 
 double
-_gtk_css_font_size_get_default (GtkStyleProviderPrivate *provider)
+gtk_css_font_size_get_default_px (GtkStyleProviderPrivate *provider,
+                                  GtkCssStyle             *style)
 {
   GtkSettings *settings;
-  PangoFontDescription *description;
-  char *font_name;
-  double font_size;
+  int font_size;
 
   settings = _gtk_style_provider_private_get_settings (provider);
   if (settings == NULL)
-    return DEFAULT_FONT_SIZE;
-  
-  g_object_get (settings, "gtk-font-name", &font_name, NULL);
-  description = pango_font_description_from_string (font_name);
-  g_free (font_name);
-  if (description == NULL)
-    return DEFAULT_FONT_SIZE;
+    return DEFAULT_FONT_SIZE_PT * get_dpi (style) / 72.0;
 
-  if (pango_font_description_get_set_fields (description) & PANGO_FONT_MASK_SIZE)
-    font_size = (double) pango_font_description_get_size (description) / PANGO_SCALE;
+  font_size = gtk_settings_get_font_size (settings);
+  if (font_size == 0)
+    return DEFAULT_FONT_SIZE_PT * get_dpi (style) / 72.0;
+  else if (gtk_settings_get_font_size_is_absolute (settings))
+    return (double) font_size / PANGO_SCALE;
   else
-    font_size = DEFAULT_FONT_SIZE;
-
-  pango_font_description_free (description);
-  return font_size;
+    return ((double) font_size / PANGO_SCALE) * get_dpi (style) / 72.0;
 }
 
 static GtkCssValue *
@@ -171,34 +232,34 @@ gtk_css_value_font_size_compute (GtkCssValue             *value,
   switch (value->value)
     {
     case GTK_CSS_FONT_SIZE_XX_SMALL:
-      font_size = _gtk_css_font_size_get_default (provider) * 3. / 5;
+      font_size = gtk_css_font_size_get_default_px (provider, style) * 3. / 5;
       break;
     case GTK_CSS_FONT_SIZE_X_SMALL:
-      font_size = _gtk_css_font_size_get_default (provider) * 3. / 4;
+      font_size = gtk_css_font_size_get_default_px (provider, style) * 3. / 4;
       break;
     case GTK_CSS_FONT_SIZE_SMALL:
-      font_size = _gtk_css_font_size_get_default (provider) * 8. / 9;
+      font_size = gtk_css_font_size_get_default_px (provider, style) * 8. / 9;
       break;
     default:
       g_assert_not_reached ();
       /* fall thru */
     case GTK_CSS_FONT_SIZE_MEDIUM:
-      font_size = _gtk_css_font_size_get_default (provider);
+      font_size = gtk_css_font_size_get_default_px (provider, style);
       break;
     case GTK_CSS_FONT_SIZE_LARGE:
-      font_size = _gtk_css_font_size_get_default (provider) * 6. / 5;
+      font_size = gtk_css_font_size_get_default_px (provider, style) * 6. / 5;
       break;
     case GTK_CSS_FONT_SIZE_X_LARGE:
-      font_size = _gtk_css_font_size_get_default (provider) * 3. / 2;
+      font_size = gtk_css_font_size_get_default_px (provider, style) * 3. / 2;
       break;
     case GTK_CSS_FONT_SIZE_XX_LARGE:
-      font_size = _gtk_css_font_size_get_default (provider) * 2;
+      font_size = gtk_css_font_size_get_default_px (provider, style) * 2;
       break;
     case GTK_CSS_FONT_SIZE_SMALLER:
       if (parent_style)
         font_size = _gtk_css_number_value_get (gtk_css_style_get_value (parent_style, GTK_CSS_PROPERTY_FONT_SIZE), 100);
       else
-        font_size = _gtk_css_font_size_get_default (provider);
+        font_size = gtk_css_font_size_get_default_px (provider, style);
       /* XXX: This is what WebKit does... */
       font_size /= 1.2;
       break;
@@ -206,7 +267,7 @@ gtk_css_value_font_size_compute (GtkCssValue             *value,
       if (parent_style)
         font_size = _gtk_css_number_value_get (gtk_css_style_get_value (parent_style, GTK_CSS_PROPERTY_FONT_SIZE), 100);
       else
-        font_size = _gtk_css_font_size_get_default (provider);
+        font_size = gtk_css_font_size_get_default_px (provider, style);
       /* XXX: This is what WebKit does... */
       font_size *= 1.2;
       break;
@@ -481,9 +542,9 @@ _gtk_css_font_weight_value_try_parse (GtkCssParser *parser)
     }
   /* special cases go here */
   if (_gtk_css_parser_try (parser, "400", TRUE))
-    return _gtk_css_value_ref (&font_weight_values[3]);
+    return _gtk_css_value_ref (&font_weight_values[5]);
   if (_gtk_css_parser_try (parser, "700", TRUE))
-    return _gtk_css_value_ref (&font_weight_values[6]);
+    return _gtk_css_value_ref (&font_weight_values[8]);
 
   return NULL;
 }
@@ -549,6 +610,102 @@ PangoStretch
 _gtk_css_font_stretch_value_get (const GtkCssValue *value)
 {
   g_return_val_if_fail (value->class == &GTK_CSS_VALUE_FONT_STRETCH, PANGO_STRETCH_NORMAL);
+
+  return value->value;
+}
+
+/* GtkTextDecorationLine */
+
+static const GtkCssValueClass GTK_CSS_VALUE_TEXT_DECORATION_LINE = {
+  gtk_css_value_enum_free,
+  gtk_css_value_enum_compute,
+  gtk_css_value_enum_equal,
+  gtk_css_value_enum_transition,
+  gtk_css_value_enum_print
+};
+
+static GtkCssValue text_decoration_line_values[] = {
+  { &GTK_CSS_VALUE_TEXT_DECORATION_LINE, 1, GTK_CSS_TEXT_DECORATION_LINE_NONE, "none" },
+  { &GTK_CSS_VALUE_TEXT_DECORATION_LINE, 1, GTK_CSS_TEXT_DECORATION_LINE_UNDERLINE, "underline" },
+  { &GTK_CSS_VALUE_TEXT_DECORATION_LINE, 1, GTK_CSS_TEXT_DECORATION_LINE_LINE_THROUGH, "line-through" },
+};
+
+GtkCssValue *
+_gtk_css_text_decoration_line_value_new (GtkTextDecorationLine line)
+{
+  g_return_val_if_fail (line < G_N_ELEMENTS (text_decoration_line_values), NULL);
+
+  return _gtk_css_value_ref (&text_decoration_line_values[line]);
+}
+
+GtkCssValue *
+_gtk_css_text_decoration_line_value_try_parse (GtkCssParser *parser)
+{
+  guint i;
+
+  g_return_val_if_fail (parser != NULL, NULL);
+
+  for (i = 0; i < G_N_ELEMENTS (text_decoration_line_values); i++)
+    {
+      if (_gtk_css_parser_try (parser, text_decoration_line_values[i].name, TRUE))
+        return _gtk_css_value_ref (&text_decoration_line_values[i]);
+    }
+
+  return NULL;
+}
+
+GtkTextDecorationLine
+_gtk_css_text_decoration_line_value_get (const GtkCssValue *value)
+{
+  g_return_val_if_fail (value->class == &GTK_CSS_VALUE_TEXT_DECORATION_LINE, GTK_CSS_TEXT_DECORATION_LINE_NONE);
+
+  return value->value;
+}
+
+/* GtkTextDecorationStyle */
+
+static const GtkCssValueClass GTK_CSS_VALUE_TEXT_DECORATION_STYLE = {
+  gtk_css_value_enum_free,
+  gtk_css_value_enum_compute,
+  gtk_css_value_enum_equal,
+  gtk_css_value_enum_transition,
+  gtk_css_value_enum_print
+};
+
+static GtkCssValue text_decoration_style_values[] = {
+  { &GTK_CSS_VALUE_TEXT_DECORATION_STYLE, 1, GTK_CSS_TEXT_DECORATION_STYLE_SOLID, "solid" },
+  { &GTK_CSS_VALUE_TEXT_DECORATION_STYLE, 1, GTK_CSS_TEXT_DECORATION_STYLE_DOUBLE, "double" },
+  { &GTK_CSS_VALUE_TEXT_DECORATION_STYLE, 1, GTK_CSS_TEXT_DECORATION_STYLE_WAVY, "wavy" },
+};
+
+GtkCssValue *
+_gtk_css_text_decoration_style_value_new (GtkTextDecorationStyle style)
+{
+  g_return_val_if_fail (style < G_N_ELEMENTS (text_decoration_style_values), NULL);
+
+  return _gtk_css_value_ref (&text_decoration_style_values[style]);
+}
+
+GtkCssValue *
+_gtk_css_text_decoration_style_value_try_parse (GtkCssParser *parser)
+{
+  guint i;
+
+  g_return_val_if_fail (parser != NULL, NULL);
+
+  for (i = 0; i < G_N_ELEMENTS (text_decoration_style_values); i++)
+    {
+      if (_gtk_css_parser_try (parser, text_decoration_style_values[i].name, TRUE))
+        return _gtk_css_value_ref (&text_decoration_style_values[i]);
+    }
+
+  return NULL;
+}
+
+GtkTextDecorationStyle
+_gtk_css_text_decoration_style_value_get (const GtkCssValue *value)
+{
+  g_return_val_if_fail (value->class == &GTK_CSS_VALUE_TEXT_DECORATION_STYLE, GTK_CSS_TEXT_DECORATION_STYLE_SOLID);
 
   return value->value;
 }
@@ -773,9 +930,9 @@ _gtk_css_fill_mode_value_get (const GtkCssValue *value)
   return value->value;
 }
 
-/* GtkCssImageEffect */
+/* GtkCssIconEffect */
 
-static const GtkCssValueClass GTK_CSS_VALUE_IMAGE_EFFECT = {
+static const GtkCssValueClass GTK_CSS_VALUE_ICON_EFFECT = {
   gtk_css_value_enum_free,
   gtk_css_value_enum_compute,
   gtk_css_value_enum_equal,
@@ -784,13 +941,13 @@ static const GtkCssValueClass GTK_CSS_VALUE_IMAGE_EFFECT = {
 };
 
 static GtkCssValue image_effect_values[] = {
-  { &GTK_CSS_VALUE_IMAGE_EFFECT, 1, GTK_CSS_IMAGE_EFFECT_NONE, "none" },
-  { &GTK_CSS_VALUE_IMAGE_EFFECT, 1, GTK_CSS_IMAGE_EFFECT_HIGHLIGHT, "highlight" },
-  { &GTK_CSS_VALUE_IMAGE_EFFECT, 1, GTK_CSS_IMAGE_EFFECT_DIM, "dim" }
+  { &GTK_CSS_VALUE_ICON_EFFECT, 1, GTK_CSS_ICON_EFFECT_NONE, "none" },
+  { &GTK_CSS_VALUE_ICON_EFFECT, 1, GTK_CSS_ICON_EFFECT_HIGHLIGHT, "highlight" },
+  { &GTK_CSS_VALUE_ICON_EFFECT, 1, GTK_CSS_ICON_EFFECT_DIM, "dim" }
 };
 
 GtkCssValue *
-_gtk_css_image_effect_value_new (GtkCssImageEffect image_effect)
+_gtk_css_icon_effect_value_new (GtkCssIconEffect image_effect)
 {
   guint i;
 
@@ -804,7 +961,7 @@ _gtk_css_image_effect_value_new (GtkCssImageEffect image_effect)
 }
 
 GtkCssValue *
-_gtk_css_image_effect_value_try_parse (GtkCssParser *parser)
+_gtk_css_icon_effect_value_try_parse (GtkCssParser *parser)
 {
   guint i;
 
@@ -819,12 +976,45 @@ _gtk_css_image_effect_value_try_parse (GtkCssParser *parser)
   return NULL;
 }
 
-GtkCssImageEffect
-_gtk_css_image_effect_value_get (const GtkCssValue *value)
+GtkCssIconEffect
+_gtk_css_icon_effect_value_get (const GtkCssValue *value)
 {
-  g_return_val_if_fail (value->class == &GTK_CSS_VALUE_IMAGE_EFFECT, GTK_CSS_IMAGE_EFFECT_NONE);
+  g_return_val_if_fail (value->class == &GTK_CSS_VALUE_ICON_EFFECT, GTK_CSS_ICON_EFFECT_NONE);
 
   return value->value;
+}
+
+void
+gtk_css_icon_effect_apply (GtkCssIconEffect  icon_effect,
+                           cairo_surface_t  *surface)
+{
+  cairo_t *cr;
+
+  switch (icon_effect)
+    {
+    case GTK_CSS_ICON_EFFECT_DIM:
+      cr = cairo_create (surface);
+      cairo_set_operator (cr, CAIRO_OPERATOR_SOURCE);
+      cairo_set_source_rgba (cr, 0, 0, 0, 0); /* transparent */
+      cairo_paint_with_alpha (cr, 0.5);
+      cairo_destroy (cr);
+      break;
+
+    case GTK_CSS_ICON_EFFECT_HIGHLIGHT:
+      cr = cairo_create (surface);
+      cairo_set_source_rgb (cr, 0.1, 0.1, 0.1);
+      cairo_set_operator (cr, CAIRO_OPERATOR_COLOR_DODGE);
+      /* DANGER: We mask with ourself - that works for images, but... */
+      cairo_mask_surface (cr, surface, 0, 0);
+      cairo_destroy (cr);
+      break;
+
+    default:
+      g_warn_if_reached ();
+      /* fall through */
+    case GTK_CSS_ICON_EFFECT_NONE:
+      break;
+    }
 }
 
 /* GtkCssIconStyle */

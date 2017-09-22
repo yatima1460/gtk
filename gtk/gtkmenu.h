@@ -25,14 +25,12 @@
 #ifndef __GTK_MENU_H__
 #define __GTK_MENU_H__
 
-
 #if !defined (__GTK_H_INSIDE__) && !defined (GTK_COMPILATION)
 #error "Only <gtk/gtk.h> can be included directly."
 #endif
 
 #include <gtk/gtkaccelgroup.h>
 #include <gtk/gtkmenushell.h>
-
 
 G_BEGIN_DECLS
 
@@ -136,7 +134,7 @@ GDK_AVAILABLE_IN_3_4
 GtkWidget* gtk_menu_new_from_model        (GMenuModel *model);
 
 /* Display the menu onscreen */
-GDK_AVAILABLE_IN_ALL
+GDK_DEPRECATED_IN_3_22_FOR((gtk_menu_popup_at_widget, gtk_menu_popup_at_pointer, gtk_menu_popup_at_rect))
 void	   gtk_menu_popup		  (GtkMenu	       *menu,
 					   GtkWidget	       *parent_menu_shell,
 					   GtkWidget	       *parent_menu_item,
@@ -144,7 +142,7 @@ void	   gtk_menu_popup		  (GtkMenu	       *menu,
 					   gpointer		data,
 					   guint		button,
 					   guint32		activate_time);
-GDK_AVAILABLE_IN_ALL
+GDK_DEPRECATED_IN_3_22_FOR((gtk_menu_popup_at_widget, gtk_menu_popup_at_pointer, gtk_menu_popup_at_rect))
 void       gtk_menu_popup_for_device      (GtkMenu             *menu,
                                            GdkDevice           *device,
                                            GtkWidget           *parent_menu_shell,
@@ -154,6 +152,22 @@ void       gtk_menu_popup_for_device      (GtkMenu             *menu,
                                            GDestroyNotify       destroy,
                                            guint                button,
                                            guint32              activate_time);
+GDK_AVAILABLE_IN_3_22
+void       gtk_menu_popup_at_rect         (GtkMenu             *menu,
+                                           GdkWindow           *rect_window,
+                                           const GdkRectangle  *rect,
+                                           GdkGravity           rect_anchor,
+                                           GdkGravity           menu_anchor,
+                                           const GdkEvent      *trigger_event);
+GDK_AVAILABLE_IN_3_22
+void       gtk_menu_popup_at_widget       (GtkMenu             *menu,
+                                           GtkWidget           *widget,
+                                           GdkGravity           widget_anchor,
+                                           GdkGravity           menu_anchor,
+                                           const GdkEvent      *trigger_event);
+GDK_AVAILABLE_IN_3_22
+void       gtk_menu_popup_at_pointer      (GtkMenu             *menu,
+                                           const GdkEvent      *trigger_event);
 
 /* Position the menu according to its position function. Called
  * from gtkmenuitem.c when a menu-item changes its allocation
@@ -242,6 +256,11 @@ void       gtk_menu_set_monitor           (GtkMenu             *menu,
                                            gint                 monitor_num);
 GDK_AVAILABLE_IN_ALL
 gint       gtk_menu_get_monitor           (GtkMenu             *menu);
+
+GDK_AVAILABLE_IN_3_22
+void       gtk_menu_place_on_monitor      (GtkMenu             *menu,
+                                           GdkMonitor          *monitor);
+
 GDK_AVAILABLE_IN_ALL
 GList*     gtk_menu_get_for_attach_widget (GtkWidget           *widget); 
 
@@ -251,6 +270,7 @@ void     gtk_menu_set_reserve_toggle_size (GtkMenu  *menu,
 GDK_AVAILABLE_IN_ALL
 gboolean gtk_menu_get_reserve_toggle_size (GtkMenu  *menu);
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(GtkMenu, g_object_unref)
 
 G_END_DECLS
 

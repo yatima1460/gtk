@@ -58,6 +58,7 @@ typedef struct _GtkAboutDialogPrivate GtkAboutDialogPrivate;
  * @GTK_LICENSE_GPL_3_0_ONLY: The GNU General Public License, version 3.0 only. Since 3.12.
  * @GTK_LICENSE_LGPL_2_1_ONLY: The GNU Lesser General Public License, version 2.1 only. Since 3.12.
  * @GTK_LICENSE_LGPL_3_0_ONLY: The GNU Lesser General Public License, version 3.0 only. Since 3.12.
+ * @GTK_LICENSE_AGPL_3_0: The GNU Affero General Public License, version 3.0 or later. Since: 3.22.
  *
  * The type of license for an application.
  *
@@ -83,7 +84,9 @@ typedef enum {
   GTK_LICENSE_GPL_2_0_ONLY,
   GTK_LICENSE_GPL_3_0_ONLY,
   GTK_LICENSE_LGPL_2_1_ONLY,
-  GTK_LICENSE_LGPL_3_0_ONLY
+  GTK_LICENSE_LGPL_3_0_ONLY,
+
+  GTK_LICENSE_AGPL_3_0
 } GtkLicense;
 
 /**
@@ -203,6 +206,8 @@ GDK_AVAILABLE_IN_3_4
 void                  gtk_about_dialog_add_credit_section      (GtkAboutDialog  *about,
                                                                 const gchar     *section_name,
                                                                 const gchar    **people);
+
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(GtkAboutDialog, g_object_unref)
 
 G_END_DECLS
 

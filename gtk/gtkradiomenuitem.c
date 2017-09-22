@@ -24,6 +24,7 @@
 
 #include "config.h"
 #include "gtkaccellabel.h"
+#include "gtkcheckmenuitemprivate.h"
 #include "gtkmarshalers.h"
 #include "gtkradiomenuitem.h"
 #include "deprecated/gtkactivatable.h"
@@ -61,6 +62,17 @@
  *     gtk_check_menu_item_set_active (GTK_CHECK_MENU_ITEM (item), TRUE);
  * }
  * ]|
+ *
+ * # CSS nodes
+ *
+ * |[<!-- language="plain" -->
+ * menuitem
+ * ├── radio.left
+ * ╰── <child>
+ * ]|
+ *
+ * GtkRadioMenuItem has a main CSS node with name menuitem, and a subnode
+ * with name radio, which gets the .left or .right style class.
  */
 
 struct _GtkRadioMenuItemPrivate
@@ -432,7 +444,7 @@ gtk_radio_menu_item_class_init (GtkRadioMenuItemClass *klass)
 				       G_SIGNAL_RUN_FIRST,
 				       G_STRUCT_OFFSET (GtkRadioMenuItemClass, group_changed),
 				       NULL, NULL,
-				       _gtk_marshal_VOID__VOID,
+				       NULL,
 				       G_TYPE_NONE, 0);
 }
 

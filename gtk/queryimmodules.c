@@ -36,6 +36,7 @@
 
 #include "gtk/gtkimcontextinfo.h"
 #include "gtk/gtkversion.h"
+#include "gtk/gtkutilsprivate.h"
 
 #include "gtk/deprecated/gtkrc.h"
 
@@ -181,7 +182,6 @@ G_GNUC_END_IGNORE_DEPRECATIONS
   if (argc == first_file)  /* No file arguments given */
     {
       char **dirs;
-      int i;
       GHashTable *dirs_done;
 
 G_GNUC_BEGIN_IGNORE_DEPRECATIONS
@@ -190,7 +190,7 @@ G_GNUC_END_IGNORE_DEPRECATIONS
 
       g_string_append_printf (contents, "# ModulesPath = %s\n#\n", path);
 
-      dirs = pango_split_file_list (path);
+      dirs = gtk_split_file_list (path);
       dirs_done = g_hash_table_new_full (g_str_hash, g_str_equal, NULL, NULL);
 
       for (i = 0; dirs[i]; i++)

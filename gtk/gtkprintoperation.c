@@ -696,6 +696,14 @@ gtk_print_operation_create_custom_widget (GtkPrintOperation *operation)
   return NULL;
 }
 
+static gboolean
+gtk_print_operation_paginate (GtkPrintOperation *operation,
+                              GtkPrintContext   *context)
+{
+  /* assume the number of pages is already set and pagination is not needed */
+  return TRUE;
+}
+
 static void
 gtk_print_operation_done (GtkPrintOperation       *operation,
                           GtkPrintOperationResult  result)
@@ -726,6 +734,19 @@ custom_widget_accumulator (GSignalInvocationHint *ihint,
   return continue_emission;
 }
 
+static gboolean
+paginate_accumulator (GSignalInvocationHint *ihint,
+                      GValue                *return_accu,
+                      const GValue          *handler_return,
+                      gpointer               dummy)
+{
+  *return_accu = *handler_return;
+
+  /* Stop signal emission on first invocation, so if it's a callback then
+   * the default handler won't run. */
+  return FALSE;
+}
+
 static void
 gtk_print_operation_class_init (GtkPrintOperationClass *class)
 {
@@ -737,6 +758,7 @@ gtk_print_operation_class_init (GtkPrintOperationClass *class)
  
   class->preview = gtk_print_operation_preview_handler; 
   class->create_custom_widget = gtk_print_operation_create_custom_widget;
+  class->paginate = gtk_print_operation_paginate;
   class->done = gtk_print_operation_done;
 
   /**
@@ -817,7 +839,7 @@ gtk_print_operation_class_init (GtkPrintOperationClass *class)
 		  G_TYPE_FROM_CLASS (gobject_class),
 		  G_SIGNAL_RUN_LAST,
 		  G_STRUCT_OFFSET (GtkPrintOperationClass, paginate),
-		  _gtk_boolean_handled_accumulator, NULL,
+		  paginate_accumulator, NULL,
 		  _gtk_marshal_BOOLEAN__OBJECT,
 		  G_TYPE_BOOLEAN, 1, GTK_TYPE_PRINT_CONTEXT);
 
@@ -1589,6 +1611,9 @@ gtk_print_operation_set_job_name (GtkPrintOperation *op,
   g_return_if_fail (job_name != NULL);
 
   priv = op->priv;
+
+  if (g_strcmp0 (priv->job_name, job_name) == 0)
+    return;
 
   g_free (priv->job_name);
   priv->job_name = g_strdup (job_name);
@@ -2506,7 +2531,6 @@ common_render_page (GtkPrintOperation *op,
   else
     {
       GtkPageOrientation  orientation;
-      GtkPageSetup       *page_setup;
       gdouble             paper_width, paper_height;
       gdouble             page_width, page_height;
       gdouble             context_width, context_height;
@@ -2698,6 +2722,7 @@ prepare_data (PrintPagesData *data)
 {
   GtkPrintOperationPrivate *priv;
   GtkPageSetup             *page_setup;
+  gboolean                  paginated = FALSE;
   gint                      i, j, counter;
 
   priv = data->op->priv;
@@ -2726,14 +2751,9 @@ prepare_data (PrintPagesData *data)
       return;
     }
 
-  if (g_signal_has_handler_pending (data->op, signals[PAGINATE], 0, FALSE))
-    {
-      gboolean paginated = FALSE;
-
-      g_signal_emit (data->op, signals[PAGINATE], 0, priv->print_context, &paginated);
-      if (!paginated)
-        return;
-    }
+  g_signal_emit (data->op, signals[PAGINATE], 0, priv->print_context, &paginated);
+  if (!paginated)
+    return;
 
   /* Initialize parts of PrintPagesData that depend on nr_of_pages
    */
@@ -3247,9 +3267,10 @@ gtk_print_operation_run (GtkPrintOperation        *op,
   if (run_print_pages)
     print_pages (op, parent, do_print, result);
 
-  if (priv->error && error)
+  if (priv->error)
     {
-      *error = g_error_copy (priv->error);
+      if (error)
+        *error = g_error_copy (priv->error);
       result = GTK_PRINT_OPERATION_RESULT_ERROR;
     }
   else if (priv->cancelled)

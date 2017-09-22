@@ -70,8 +70,13 @@ struct _GtkFontChooserIface
   void (* font_activated) (GtkFontChooser *chooser,
                            const gchar    *fontname);
 
+  /* More methods */
+  void              (* set_font_map)            (GtkFontChooser   *fontchooser,
+                                                 PangoFontMap     *fontmap);
+  PangoFontMap *    (* get_font_map)            (GtkFontChooser   *fontchooser);
+
    /* Padding */
-  gpointer padding[12];
+  gpointer padding[10];
 };
 
 GDK_AVAILABLE_IN_3_2
@@ -112,6 +117,11 @@ void             gtk_font_chooser_set_filter_func          (GtkFontChooser   *fo
                                                             GtkFontFilterFunc filter,
                                                             gpointer          user_data,
                                                             GDestroyNotify    destroy);
+GDK_AVAILABLE_IN_3_18
+void             gtk_font_chooser_set_font_map             (GtkFontChooser   *fontchooser,
+                                                            PangoFontMap     *fontmap);
+GDK_AVAILABLE_IN_3_18
+PangoFontMap *   gtk_font_chooser_get_font_map             (GtkFontChooser   *fontchooser);
 
 G_END_DECLS
 

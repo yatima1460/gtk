@@ -13,7 +13,7 @@ msgstr ""
 "PO-Revision-Date: 2012-04-05 02:15+0000\n"
 "Last-Translator: Khoem Sokhem <khoemsokhem@khmeros.info>\n"
 "Language-Team: Khmer <support@khmeros.info>\n"
-"Language: \n"
+"Language: km\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
@@ -1296,7 +1296,7 @@ msgstr "ផ្ទាល់​ខ្លួន"
 #.
 #: ../gtk/gtkcustompaperunixdialog.c:115
 msgid "default:mm"
-msgstr "លំនាំដើម ៖​ម.ម."
+msgstr "default:mm"
 
 #. And show the custom paper dialog
 #: ../gtk/gtkcustompaperunixdialog.c:397 ../gtk/gtkprintunixdialog.c:3275
@@ -1885,7 +1885,7 @@ msgstr "មិន​កំណត់​ទង់​បំបាត់​កំហ
 #.
 #: ../gtk/gtkmain.c:704
 msgid "default:LTR"
-msgstr "លំនាំដើម ៖​LTR"
+msgstr "default:LTR"
 
 #: ../gtk/gtkmain.c:772
 #, c-format

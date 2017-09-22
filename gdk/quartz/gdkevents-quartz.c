@@ -353,6 +353,9 @@ get_event_mask_from_ns_event (NSEvent *nsevent)
 
 	return mask;
       }
+    case NSEventTypeMagnify:
+    case NSEventTypeRotate:
+      return GDK_TOUCHPAD_GESTURE_MASK;
     case NSKeyDown:
     case NSKeyUp:
     case NSFlagsChanged:
@@ -507,6 +510,7 @@ create_focus_event (GdkWindow *window,
 
   device_manager = GDK_QUARTZ_DEVICE_MANAGER_CORE (_gdk_display->device_manager);
   gdk_event_set_device (event, device_manager->core_keyboard);
+  gdk_event_set_seat (event, gdk_device_get_seat (device_manager->core_keyboard));
 
   return event;
 }
@@ -518,6 +522,7 @@ generate_motion_event (GdkWindow *window)
   NSPoint screen_point;
   GdkEvent *event;
   gint x, y, x_root, y_root;
+  GdkQuartzDeviceManagerCore *device_manager;
 
   event = gdk_event_new (GDK_MOTION_NOTIFY);
   event->any.window = NULL;
@@ -539,7 +544,9 @@ generate_motion_event (GdkWindow *window)
   event->motion.state = _gdk_quartz_events_get_current_keyboard_modifiers () |
                         _gdk_quartz_events_get_current_mouse_modifiers ();
   event->motion.is_hint = FALSE;
-  event->motion.device = _gdk_display->core_pointer;
+  device_manager = GDK_QUARTZ_DEVICE_MANAGER_CORE (_gdk_display->device_manager);
+  event->motion.device = device_manager->core_pointer;
+  gdk_event_set_seat (event, gdk_device_get_seat (device_manager->core_pointer));
 
   append_event (event, TRUE);
 }
@@ -617,7 +624,7 @@ find_toplevel_under_pointer (GdkDisplay *display,
   GdkWindow *toplevel;
   GdkPointerWindowInfo *info;
 
-  info = _gdk_display_get_pointer_info (display, display->core_pointer);
+  info = _gdk_display_get_pointer_info (display, GDK_QUARTZ_DEVICE_MANAGER_CORE (display->device_manager)->core_pointer);
   toplevel = info->toplevel_under_pointer;
   if (toplevel && WINDOW_IS_TOPLEVEL (toplevel))
     get_window_point_from_screen_point (toplevel, screen_point, x, y);
@@ -702,7 +709,7 @@ find_toplevel_for_mouse_event (NSEvent    *nsevent,
    * events are discarded.
    */
   grab = _gdk_display_get_last_device_grab (display,
-                                            display->core_pointer);
+                                            GDK_QUARTZ_DEVICE_MANAGER_CORE (display->device_manager)->core_pointer);
   if (WINDOW_IS_TOPLEVEL (toplevel) && grab)
     {
       /* Implicit grabs do not go through XGrabPointer and thus the
@@ -825,6 +832,8 @@ find_window_for_ns_event (NSEvent *nsevent,
     case NSLeftMouseDragged:
     case NSRightMouseDragged:
     case NSOtherMouseDragged:
+    case NSEventTypeMagnify:
+    case NSEventTypeRotate:
       return find_toplevel_for_mouse_event (nsevent, x, y);
       
     case NSMouseEntered:
@@ -862,6 +871,8 @@ fill_crossing_event (GdkWindow       *toplevel,
                      GdkCrossingMode  mode,
                      GdkNotifyType    detail)
 {
+  GdkQuartzDeviceManagerCore *device_manager;
+
   event->any.type = event_type;
   event->crossing.window = toplevel;
   event->crossing.subwindow = NULL;
@@ -875,10 +886,123 @@ fill_crossing_event (GdkWindow       *toplevel,
   event->crossing.state = get_keyboard_modifiers_from_ns_event (nsevent) |
                          _gdk_quartz_events_get_current_mouse_modifiers ();
 
-  gdk_event_set_device (event, _gdk_display->core_pointer);
+  device_manager = GDK_QUARTZ_DEVICE_MANAGER_CORE (_gdk_display->device_manager);
+  gdk_event_set_device (event, device_manager->core_pointer);
+  gdk_event_set_seat (event, gdk_device_get_seat (device_manager->core_pointer));
 
   /* FIXME: Focus and button state? */
 }
+
+/* fill_pinch_event handles the conversion from the two OSX gesture events
+   NSEventTypeMagnfiy and NSEventTypeRotate to the GDK_TOUCHPAD_PINCH event.
+   The normal behavior of the OSX events is that they produce as sequence of
+     1 x NSEventPhaseBegan,
+     n x NSEventPhaseChanged,
+     1 x NSEventPhaseEnded
+   This can happen for both the Magnify and the Rotate events independently.
+   As both events are summarized in one GDK_TOUCHPAD_PINCH event sequence, a
+   little state machine handles the case of two NSEventPhaseBegan events in
+   a sequence, e.g. Magnify(Began), Magnify(Changed)..., Rotate(Began)...
+   such that PINCH(STARTED), PINCH(UPDATE).... will not show a second
+   PINCH(STARTED) event.
+*/
+#ifdef AVAILABLE_MAC_OS_X_VERSION_10_8_AND_LATER
+static void
+fill_pinch_event (GdkWindow *window,
+                  GdkEvent  *event,
+                  NSEvent   *nsevent,
+                  gint       x,
+                  gint       y,
+                  gint       x_root,
+                  gint       y_root)
+{
+  static double last_scale = 1.0;
+  static enum {
+    FP_STATE_IDLE,
+    FP_STATE_UPDATE
+  } last_state = FP_STATE_IDLE;
+  GdkQuartzDeviceManagerCore *device_manager;
+
+  device_manager = GDK_QUARTZ_DEVICE_MANAGER_CORE (_gdk_display->device_manager);
+
+  event->any.type = GDK_TOUCHPAD_PINCH;
+  event->touchpad_pinch.window = window;
+  event->touchpad_pinch.time = get_time_from_ns_event (nsevent);
+  event->touchpad_pinch.x = x;
+  event->touchpad_pinch.y = y;
+  event->touchpad_pinch.x_root = x_root;
+  event->touchpad_pinch.y_root = y_root;
+  event->touchpad_pinch.state = get_keyboard_modifiers_from_ns_event (nsevent);
+  event->touchpad_pinch.n_fingers = 2;
+  event->touchpad_pinch.dx = 0.0;
+  event->touchpad_pinch.dy = 0.0;
+  gdk_event_set_device (event, device_manager->core_pointer);
+
+  switch ([nsevent phase])
+    {
+    case NSEventPhaseBegan:
+      switch (last_state)
+        {
+        case FP_STATE_IDLE:
+          event->touchpad_pinch.phase = GDK_TOUCHPAD_GESTURE_PHASE_BEGIN;
+          last_state = FP_STATE_UPDATE;
+          last_scale = 1.0;
+          break;
+        case FP_STATE_UPDATE:
+          /* We have already received a PhaseBegan event but no PhaseEnded
+             event. This can happen, e.g. Magnify(Began), Magnify(Change)...
+             Rotate(Began), Rotate (Change),...., Magnify(End) Rotate(End)
+          */
+          event->touchpad_pinch.phase = GDK_TOUCHPAD_GESTURE_PHASE_UPDATE;
+          break;
+        }
+      break;
+    case NSEventPhaseChanged:
+      event->touchpad_pinch.phase = GDK_TOUCHPAD_GESTURE_PHASE_UPDATE;
+      break;
+    case NSEventPhaseEnded:
+      event->touchpad_pinch.phase = GDK_TOUCHPAD_GESTURE_PHASE_END;
+      switch (last_state)
+        {
+        case FP_STATE_IDLE:
+          /* We are idle but have received a second PhaseEnded event.
+             This can happen because we have Magnify and Rotate OSX
+             event sequences. We just send a second end GDK_PHASE_END.
+          */
+          break;
+        case FP_STATE_UPDATE:
+          last_state = FP_STATE_IDLE;
+          break;
+        }
+      break;
+    case NSEventPhaseCancelled:
+      event->touchpad_pinch.phase = GDK_TOUCHPAD_GESTURE_PHASE_CANCEL;
+      last_state = FP_STATE_IDLE;
+      break;
+    case NSEventPhaseMayBegin:
+    case NSEventPhaseStationary:
+      event->touchpad_pinch.phase = GDK_TOUCHPAD_GESTURE_PHASE_CANCEL;
+      break;
+    default:
+      g_assert_not_reached ();
+      break;
+    }
+
+  switch ([nsevent type])
+    {
+    case NSEventTypeMagnify:
+      last_scale *= [nsevent magnification] + 1.0;
+      event->touchpad_pinch.angle_delta = 0.0;
+      break;
+    case NSEventTypeRotate:
+      event->touchpad_pinch.angle_delta = - [nsevent rotation] * G_PI / 180.0;
+      break;
+    default:
+      g_assert_not_reached ();
+    }
+  event->touchpad_pinch.scale = last_scale;
+}
+#endif /* OSX Version >= 10.8 */
 
 static void
 fill_button_event (GdkWindow *window,
@@ -891,6 +1015,7 @@ fill_button_event (GdkWindow *window,
 {
   GdkEventType type;
   gint state;
+  GdkQuartzDeviceManagerCore *device_manager;
 
   state = get_keyboard_modifiers_from_ns_event (nsevent) |
          _gdk_quartz_events_get_current_mouse_modifiers ();
@@ -925,7 +1050,9 @@ fill_button_event (GdkWindow *window,
   /* FIXME event->axes */
   event->button.state = state;
   event->button.button = get_mouse_button_from_ns_event (nsevent);
-  event->button.device = _gdk_display->core_pointer;
+  device_manager = GDK_QUARTZ_DEVICE_MANAGER_CORE (_gdk_display->device_manager);
+  event->button.device = device_manager->core_pointer;
+  gdk_event_set_seat (event, gdk_device_get_seat (device_manager->core_pointer));
 }
 
 static void
@@ -937,6 +1064,8 @@ fill_motion_event (GdkWindow *window,
                    gint       x_root,
                    gint       y_root)
 {
+  GdkQuartzDeviceManagerCore *device_manager;
+
   event->any.type = GDK_MOTION_NOTIFY;
   event->motion.window = window;
   event->motion.time = get_time_from_ns_event (nsevent);
@@ -948,7 +1077,9 @@ fill_motion_event (GdkWindow *window,
   event->motion.state = get_keyboard_modifiers_from_ns_event (nsevent) |
                         _gdk_quartz_events_get_current_mouse_modifiers ();
   event->motion.is_hint = FALSE;
-  event->motion.device = _gdk_display->core_pointer;
+  device_manager = GDK_QUARTZ_DEVICE_MANAGER_CORE (_gdk_display->device_manager);
+  event->motion.device = device_manager->core_pointer;
+  gdk_event_set_seat (event, gdk_device_get_seat (device_manager->core_pointer));
 }
 
 static void
@@ -963,9 +1094,11 @@ fill_scroll_event (GdkWindow          *window,
                    gdouble             delta_y,
                    GdkScrollDirection  direction)
 {
+  GdkQuartzDeviceManagerCore *device_manager;
   NSPoint point;
 
   point = [nsevent locationInWindow];
+  device_manager = GDK_QUARTZ_DEVICE_MANAGER_CORE (_gdk_display->device_manager);
 
   event->any.type = GDK_SCROLL;
   event->scroll.window = window;
@@ -976,9 +1109,10 @@ fill_scroll_event (GdkWindow          *window,
   event->scroll.y_root = y_root;
   event->scroll.state = get_keyboard_modifiers_from_ns_event (nsevent);
   event->scroll.direction = direction;
-  event->scroll.device = _gdk_display->core_pointer;
+  event->scroll.device = device_manager->core_pointer;
   event->scroll.delta_x = delta_x;
   event->scroll.delta_y = delta_y;
+  gdk_event_set_seat (event, gdk_device_get_seat (device_manager->core_pointer));
 }
 
 static void
@@ -1000,11 +1134,13 @@ fill_key_event (GdkWindow    *window,
   event->key.time = get_time_from_ns_event (nsevent);
   event->key.state = get_keyboard_modifiers_from_ns_event (nsevent);
   event->key.hardware_keycode = [nsevent keyCode];
+  gdk_event_set_scancode (event, [nsevent keyCode]);
   event->key.group = ([nsevent modifierFlags] & NSAlternateKeyMask) ? 1 : 0;
   event->key.keyval = GDK_KEY_VoidSymbol;
 
   device_manager = GDK_QUARTZ_DEVICE_MANAGER_CORE (_gdk_display->device_manager);
   gdk_event_set_device (event, device_manager->core_keyboard);
+  gdk_event_set_seat (event, gdk_device_get_seat (device_manager->core_keyboard));
   
   gdk_keymap_translate_keyboard_state (gdk_keymap_get_for_display (_gdk_display),
 				       event->key.hardware_keycode,
@@ -1171,6 +1307,7 @@ _gdk_quartz_synthesize_null_key_event (GdkWindow *window)
   event->key.keyval = GDK_KEY_VoidSymbol;
   device_manager = GDK_QUARTZ_DEVICE_MANAGER_CORE (_gdk_display->device_manager);
   gdk_event_set_device (event, device_manager->core_keyboard);
+  gdk_event_set_seat (event, gdk_device_get_seat (device_manager->core_keyboard));
   append_event(event, FALSE);
 }
 
@@ -1419,7 +1556,7 @@ gdk_event_translate (GdkEvent *event,
           GdkDeviceGrabInfo *grab;
 
           grab = _gdk_display_get_last_device_grab (_gdk_display,
-                                                    _gdk_display->core_pointer);
+                                                    GDK_QUARTZ_DEVICE_MANAGER_CORE (_gdk_display->device_manager)->core_pointer);
           if (!grab)
             [impl->toplevel makeKeyWindow];
         }
@@ -1497,7 +1634,7 @@ gdk_event_translate (GdkEvent *event,
                 GdkEvent *emulated_event;
 
                 emulated_event = gdk_event_new (GDK_SCROLL);
-                _gdk_event_set_pointer_emulated (emulated_event, TRUE);
+                gdk_event_set_pointer_emulated (emulated_event, TRUE);
                 fill_scroll_event (window, emulated_event, nsevent,
                                    x, y, x_root, y_root,
                                    dx, dy, direction);
@@ -1511,7 +1648,17 @@ gdk_event_translate (GdkEvent *event,
           }
       }
       break;
-
+#ifdef AVAILABLE_MAC_OS_X_VERSION_10_8_AND_LATER
+    case NSEventTypeMagnify:
+    case NSEventTypeRotate:
+      /* Event handling requires [NSEvent phase] which was introduced in 10.7 */
+      /* However - Tests on 10.7 showed that phase property does not work     */
+      if (gdk_quartz_osx_version () >= GDK_OSX_MOUNTAIN_LION)
+        fill_pinch_event (window, event, nsevent, x, y, x_root, y_root);
+      else
+        return_val = FALSE;
+      break;
+#endif
     case NSMouseExited:
       if (WINDOW_IS_TOPLEVEL (window))
           [[NSCursor arrowCursor] set];

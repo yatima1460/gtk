@@ -76,6 +76,7 @@
 
 #include "gtkrecentfilter.h"
 #include "gtkbuildable.h"
+#include "gtkbuilderprivate.h"
 #include "gtkintl.h"
 #include "gtkprivate.h"
 
@@ -190,15 +191,8 @@ gtk_recent_filter_finalize (GObject *object)
   GtkRecentFilter *filter = GTK_RECENT_FILTER (object);
   
   g_free (filter->name);
-  
-  if (filter->rules)
-    {
-      g_slist_foreach (filter->rules,
-      		       (GFunc) filter_rule_free,
-      		       NULL);
-      g_slist_free (filter->rules);
-    }
-  
+  g_slist_free_full (filter->rules, (GDestroyNotify) filter_rule_free);
+
   G_OBJECT_CLASS (gtk_recent_filter_parent_class)->finalize (object);
 }
 
@@ -236,6 +230,7 @@ typedef enum {
 
 typedef struct {
   GtkRecentFilter *filter;
+  GtkBuilder      *builder;
   ParserType       type;
   GString         *string;
   gboolean         parsing;
@@ -249,31 +244,50 @@ parser_start_element (GMarkupParseContext *context,
 		      gpointer             user_data,
 		      GError             **error)
 {
-  SubParserData *parser_data = (SubParserData*)user_data;
+  SubParserData *data = (SubParserData*)user_data;
 
-  if (strcmp (element_name, "mime-types") == 0)
-    return;
+  if (!g_markup_collect_attributes (element_name, names, values, error,
+                                    G_MARKUP_COLLECT_INVALID, NULL, NULL,
+                                    G_MARKUP_COLLECT_INVALID))
+    {
+      _gtk_builder_prefix_error (data->builder, context, error);
+      return;
+    }
+
+  if (strcmp (element_name, "mime-types") == 0 ||
+      strcmp (element_name, "patterns") == 0 ||
+      strcmp (element_name, "applications") == 0)
+    {
+      if (!_gtk_builder_check_parent (data->builder, context, "object", error))
+        return;
+    }
   else if (strcmp (element_name, "mime-type") == 0)
     {
-      parser_data->parsing = TRUE;
-      return;
+      if (!_gtk_builder_check_parent (data->builder, context, "mime-types", error))
+        return;
+
+      data->parsing = TRUE;
     }
-  else if (strcmp (element_name, "patterns") == 0)
-    return;
   else if (strcmp (element_name, "pattern") == 0)
     {
-      parser_data->parsing = TRUE;
-      return;
+      if (!_gtk_builder_check_parent (data->builder, context, "patterns", error))
+        return;
+
+      data->parsing = TRUE;
     }
-  else if (strcmp (element_name, "applications") == 0)
-    return;
   else if (strcmp (element_name, "application") == 0)
     {
-      parser_data->parsing = TRUE;
-      return;
+      if (!_gtk_builder_check_parent (data->builder, context, "applications", error))
+        return;
+
+      data->parsing = TRUE;
     }
   else
-    g_warning ("Unsupported tag for GtkRecentFilter: %s\n", element_name);
+    {
+      _gtk_builder_error_unhandled_tag (data->builder, context,
+                                        "GtkRecentFilter", element_name,
+                                        error);
+    }
 }
 
 static void
@@ -283,10 +297,10 @@ parser_text_element (GMarkupParseContext *context,
 		     gpointer             user_data,
 		     GError             **error)
 {
-  SubParserData *parser_data = (SubParserData*)user_data;
+  SubParserData *data = (SubParserData*)user_data;
 
-  if (parser_data->parsing)
-    g_string_append_len (parser_data->string, text, text_len);
+  if (data->parsing)
+    g_string_append_len (data->string, text, text_len);
 }
 
 static void
@@ -295,28 +309,28 @@ parser_end_element (GMarkupParseContext *context,
 		    gpointer             user_data,
 		    GError             **error)
 {
-  SubParserData *parser_data = (SubParserData*)user_data;
+  SubParserData *data = (SubParserData*)user_data;
 
-  if (parser_data->string)
+  if (data->string)
     {
-      switch (parser_data->type)
+      switch (data->type)
 	{
 	case PARSE_MIME_TYPES:
-	  gtk_recent_filter_add_mime_type (parser_data->filter, parser_data->string->str);
+	  gtk_recent_filter_add_mime_type (data->filter, data->string->str);
 	  break;
 	case PARSE_PATTERNS:
-	  gtk_recent_filter_add_pattern (parser_data->filter, parser_data->string->str);
+	  gtk_recent_filter_add_pattern (data->filter, data->string->str);
 	  break;
 	case PARSE_APPLICATIONS:
-	  gtk_recent_filter_add_application (parser_data->filter, parser_data->string->str);
+	  gtk_recent_filter_add_application (data->filter, data->string->str);
 	  break;
 	default:
 	  break;
 	}
     }
 
-  g_string_set_size (parser_data->string, 0);
-  parser_data->parsing = FALSE;
+  g_string_set_size (data->string, 0);
+  data->parsing = FALSE;
 }
 
 static const GMarkupParser sub_parser =
@@ -328,46 +342,49 @@ static const GMarkupParser sub_parser =
 
 static gboolean
 gtk_recent_filter_buildable_custom_tag_start (GtkBuildable  *buildable,
-					      GtkBuilder    *builder,
-					      GObject       *child,
-					      const gchar   *tagname,
-					      GMarkupParser *parser,
-					      gpointer      *data)
+                                              GtkBuilder    *builder,
+                                              GObject       *child,
+                                              const gchar   *tagname,
+                                              GMarkupParser *parser,
+                                              gpointer      *parser_data)
 {
-  SubParserData *parser_data = NULL;
+  SubParserData *data = NULL;
 
   if (strcmp (tagname, "mime-types") == 0)
     {
-      parser_data         = g_slice_new0 (SubParserData);
-      parser_data->string = g_string_new ("");
-      parser_data->type   = PARSE_MIME_TYPES;
-      parser_data->filter = GTK_RECENT_FILTER (buildable);
+      data = g_slice_new0 (SubParserData);
+      data->string = g_string_new ("");
+      data->type = PARSE_MIME_TYPES;
+      data->filter = GTK_RECENT_FILTER (buildable);
+      data->builder = builder;
 
       *parser = sub_parser;
-      *data = parser_data;
+      *parser_data = data;
     }
   else if (strcmp (tagname, "patterns") == 0)
     {
-      parser_data         = g_slice_new0 (SubParserData);
-      parser_data->string = g_string_new ("");
-      parser_data->type   = PARSE_PATTERNS;
-      parser_data->filter = GTK_RECENT_FILTER (buildable);
+      data = g_slice_new0 (SubParserData);
+      data->string = g_string_new ("");
+      data->type = PARSE_PATTERNS;
+      data->filter = GTK_RECENT_FILTER (buildable);
+      data->builder = builder;
 
       *parser = sub_parser;
-      *data = parser_data;
+      *parser_data = data;
     }
   else if (strcmp (tagname, "applications") == 0)
     {
-      parser_data         = g_slice_new0 (SubParserData);
-      parser_data->string = g_string_new ("");
-      parser_data->type   = PARSE_APPLICATIONS;
-      parser_data->filter = GTK_RECENT_FILTER (buildable);
+      data = g_slice_new0 (SubParserData);
+      data->string = g_string_new ("");
+      data->type = PARSE_APPLICATIONS;
+      data->filter = GTK_RECENT_FILTER (buildable);
+      data->builder = builder;
 
       *parser = sub_parser;
-      *data = parser_data;
+      *parser_data = data;
     }
 
-  return parser_data != NULL;
+  return data != NULL;
 }
 
 static void
@@ -375,16 +392,16 @@ gtk_recent_filter_buildable_custom_tag_end (GtkBuildable *buildable,
 					    GtkBuilder   *builder,
 					    GObject      *child,
 					    const gchar  *tagname,
-					    gpointer     *data)
+					    gpointer     *parser_data)
 {
   if (strcmp (tagname, "mime-types") == 0 ||
       strcmp (tagname, "patterns") == 0 ||
       strcmp (tagname, "applications") == 0)
     {
-      SubParserData *parser_data = (SubParserData*)data;
+      SubParserData *data = (SubParserData*)parser_data;
 
-      g_string_free (parser_data->string, TRUE);
-      g_slice_free (SubParserData, parser_data);
+      g_string_free (data->string, TRUE);
+      g_slice_free (SubParserData, data);
     }
 }
 
@@ -446,7 +463,7 @@ gtk_recent_filter_set_name (GtkRecentFilter *filter,
  * Gets the human-readable name for the filter.
  * See gtk_recent_filter_set_name().
  *
- * Returns: the name of the filter, or %NULL.  The returned string
+ * Returns: (nullable): the name of the filter, or %NULL.  The returned string
  *   is owned by the filter object and should not be freed.
  *
  * Since: 2.10
@@ -726,9 +743,20 @@ gtk_recent_filter_filter (GtkRecentFilter           *filter,
       switch (rule->type)
         {
         case FILTER_RULE_MIME_TYPE:
-          if (filter_info->mime_type != NULL &&
-              g_content_type_is_a (filter_info->mime_type, rule->u.mime_type))
-            return TRUE;
+          if (filter_info->mime_type != NULL)
+            {
+              gchar *filter_content_type, *rule_content_type;
+              gboolean match;
+
+              filter_content_type = g_content_type_from_mime_type (filter_info->mime_type);
+              rule_content_type = g_content_type_from_mime_type (rule->u.mime_type);
+              match = g_content_type_is_a (filter_content_type, rule_content_type);
+              g_free (filter_content_type);
+              g_free (rule_content_type);
+
+              if (match)
+                return TRUE;
+            }
           break;
         case FILTER_RULE_APPLICATION:
           if (filter_info->applications)

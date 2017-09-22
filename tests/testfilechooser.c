@@ -35,8 +35,10 @@
 #  endif
 #endif
 
+#if 0
 static GtkWidget *preview_label;
 static GtkWidget *preview_image;
+#endif
 static GtkFileChooserAction action;
 
 static void
@@ -115,39 +117,6 @@ filter_changed (GtkFileChooserDialog *dialog,
 		gpointer              data)
 {
   g_print ("file filter changed\n");
-}
-
-static char *
-format_time (time_t t)
-{
-  gchar buf[128];
-  struct tm tm_buf;
-  time_t now = time (NULL);
-  const char *format;
-
-  if (abs (now - t) < 24*60*60)
-    format = "%X";
-  else
-    format = "%x";
-
-  localtime_r (&t, &tm_buf);
-  if (strftime (buf, sizeof (buf), format, &tm_buf) == 0)
-    return g_strdup ("<unknown>");
-  else
-    return g_strdup (buf);
-}
-
-static char *
-format_size (gint64 size)
-{
-  if (size < (gint64)1024)
-    return g_strdup_printf ("%d bytes", (gint)size);
-  else if (size < (gint64)1024*1024)
-    return g_strdup_printf ("%.1f K", size / (1024.));
-  else if (size < (gint64)1024*1024*1024)
-    return g_strdup_printf ("%.1f M", size / (1024.*1024.));
-  else
-    return g_strdup_printf ("%.1f G", size / (1024.*1024.*1024.));
 }
 
 #include <stdio.h>
@@ -272,6 +241,40 @@ my_new_from_file_at_size (const char *filename,
 	return pixbuf;
 }
 
+#if 0
+static char *
+format_time (time_t t)
+{
+  gchar buf[128];
+  struct tm tm_buf;
+  time_t now = time (NULL);
+  const char *format;
+
+  if (abs (now - t) < 24*60*60)
+    format = "%X";
+  else
+    format = "%x";
+
+  localtime_r (&t, &tm_buf);
+  if (strftime (buf, sizeof (buf), format, &tm_buf) == 0)
+    return g_strdup ("<unknown>");
+  else
+    return g_strdup (buf);
+}
+
+static char *
+format_size (gint64 size)
+{
+  if (size < (gint64)1024)
+    return g_strdup_printf ("%d bytes", (gint)size);
+  else if (size < (gint64)1024*1024)
+    return g_strdup_printf ("%.1f K", size / (1024.));
+  else if (size < (gint64)1024*1024*1024)
+    return g_strdup_printf ("%.1f M", size / (1024.*1024.));
+  else
+    return g_strdup_printf ("%.1f G", size / (1024.*1024.*1024.));
+}
+
 static void
 update_preview_cb (GtkFileChooser *chooser)
 {
@@ -327,6 +330,7 @@ update_preview_cb (GtkFileChooser *chooser)
 
   gtk_file_chooser_set_preview_widget_active (chooser, have_preview);
 }
+#endif
 
 static void
 set_current_folder (GtkFileChooser *chooser,
@@ -520,16 +524,17 @@ main (int argc, char **argv)
   GtkWidget *dialog;
   GtkWidget *extra;
   GtkFileFilter *filter;
-  GtkWidget *preview_vbox;
   gboolean force_rtl = FALSE;
   gboolean multiple = FALSE;
+  gboolean local_only = FALSE;
   char *action_arg = NULL;
   char *initial_filename = NULL;
   char *initial_folder = NULL;
   GError *error = NULL;
   GOptionEntry options[] = {
     { "action", 'a', 0, G_OPTION_ARG_STRING, &action_arg, "Filechooser action", "ACTION" },
-    { "multiple", 'm', 0, G_OPTION_ARG_NONE, &multiple, "Select-multiple", NULL },
+    { "multiple", 'm', 0, G_OPTION_ARG_NONE, &multiple, "Select multiple", NULL },
+    { "local-only", 'l', 0, G_OPTION_ARG_NONE, &local_only, "Local only", NULL },
     { "right-to-left", 'r', 0, G_OPTION_ARG_NONE, &force_rtl, "Force right-to-left layout.", NULL },
     { "initial-filename", 'f', 0, G_OPTION_ARG_FILENAME, &initial_filename, "Initial filename to select", "FILENAME" },
     { "initial-folder", 'F', 0, G_OPTION_ARG_FILENAME, &initial_folder, "Initial folder to show", "FILENAME" },
@@ -576,6 +581,7 @@ main (int argc, char **argv)
   dialog = g_object_new (GTK_TYPE_FILE_CHOOSER_DIALOG,
 			 "action", action,
 			 "select-multiple", multiple,
+                         "local-only", local_only,
 			 NULL);
 
   switch (action)
@@ -593,7 +599,7 @@ main (int argc, char **argv)
       gtk_window_set_title (GTK_WINDOW (dialog), "Save a file");
       gtk_dialog_add_buttons (GTK_DIALOG (dialog),
 			      _("_Cancel"), GTK_RESPONSE_CANCEL,
-			      _("_Open"), GTK_RESPONSE_OK,
+			      _("_Save"), GTK_RESPONSE_OK,
 			      NULL);
       break;
     }
@@ -643,6 +649,7 @@ main (int argc, char **argv)
   gtk_file_filter_add_pixbuf_formats (filter);
   gtk_file_chooser_add_filter (GTK_FILE_CHOOSER (dialog), filter);
 
+#if 0
   /* Preview widget */
   /* THIS IS A TERRIBLE PREVIEW WIDGET, AND SHOULD NOT BE COPIED AT ALL.
    */
@@ -660,6 +667,7 @@ main (int argc, char **argv)
   update_preview_cb (GTK_FILE_CHOOSER (dialog));
   g_signal_connect (dialog, "update-preview",
 		    G_CALLBACK (update_preview_cb), NULL);
+#endif
 
   /* Extra widget */
 

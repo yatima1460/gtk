@@ -32,7 +32,6 @@
 #include "gtkstylepropertyprivate.h"
 #include "gtkstyleproviderprivate.h"
 #include "gtkintl.h"
-#include "gtkwin32themeprivate.h"
 
 #include "deprecated/gtkthemingengine.h"
 #include "deprecated/gtkgradient.h"
@@ -317,7 +316,7 @@ gtk_style_properties_provider_lookup (GtkStyleProviderPrivate *provider,
     {
       GtkCssStyleProperty *prop = key;
       PropertyData *data = value;
-      GtkCssValue *value;
+      GtkCssValue *val;
       guint id;
 
       id = _gtk_css_style_property_get_id (prop);
@@ -325,11 +324,11 @@ gtk_style_properties_provider_lookup (GtkStyleProviderPrivate *provider,
       if (!_gtk_css_lookup_is_missing (lookup, id))
           continue;
 
-      value = property_data_match_state (data, _gtk_css_matcher_get_state (matcher));
-      if (value == NULL)
+      val = property_data_match_state (data, _gtk_css_matcher_get_state (matcher));
+      if (val == NULL)
         continue;
 
-      _gtk_css_lookup_set (lookup, id, NULL, value);
+      _gtk_css_lookup_set (lookup, id, NULL, val);
     }
 
   if (change)
@@ -846,7 +845,7 @@ gtk_style_properties_merge (GtkStyleProperties       *props,
 {
   GtkStylePropertiesPrivate *priv, *priv_to_merge;
   GHashTableIter iter;
-  gpointer key, value;
+  gpointer key, val;
 
   g_return_if_fail (GTK_IS_STYLE_PROPERTIES (props));
   g_return_if_fail (GTK_IS_STYLE_PROPERTIES (props_to_merge));
@@ -859,13 +858,13 @@ gtk_style_properties_merge (GtkStyleProperties       *props,
     {
       g_hash_table_iter_init (&iter, priv_to_merge->color_map);
 
-      while (g_hash_table_iter_next (&iter, &key, &value))
+      while (g_hash_table_iter_next (&iter, &key, &val))
         {
           const gchar *name;
           GtkSymbolicColor *color;
 
           name = key;
-          color = value;
+          color = val;
 
           if (!replace &&
               g_hash_table_lookup (priv->color_map, name))
@@ -878,11 +877,11 @@ gtk_style_properties_merge (GtkStyleProperties       *props,
   /* Merge symbolic style properties */
   g_hash_table_iter_init (&iter, priv_to_merge->properties);
 
-  while (g_hash_table_iter_next (&iter, &key, &value))
+  while (g_hash_table_iter_next (&iter, &key, &val))
     {
-      PropertyData *prop_to_merge = value;
+      PropertyData *prop_to_merge = val;
       PropertyData *prop;
-      guint i;
+      guint i, j;
 
       prop = g_hash_table_lookup (priv->properties, key);
 
@@ -926,7 +925,6 @@ gtk_style_properties_merge (GtkStyleProperties       *props,
                    value->value != NULL)
             {
               GPtrArray *array, *array_to_merge;
-              gint i;
 
               /* Append the array, mainly thought
                * for the gtk-key-bindings property
@@ -934,8 +932,8 @@ gtk_style_properties_merge (GtkStyleProperties       *props,
               array = g_value_get_boxed (_gtk_css_typed_value_get (value->value));
               array_to_merge = g_value_get_boxed (_gtk_css_typed_value_get (data->value));
 
-              for (i = 0; i < array_to_merge->len; i++)
-                g_ptr_array_add (array, g_ptr_array_index (array_to_merge, i));
+              for (j = 0; j < array_to_merge->len; j++)
+                g_ptr_array_add (array, g_ptr_array_index (array_to_merge, j));
             }
           else if (replace || value->value == NULL)
             {

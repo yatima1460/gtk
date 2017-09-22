@@ -44,7 +44,7 @@
 
 /**
  * SECTION:gtkimagemenuitem
- * @Short_description: A menu item with an icon
+ * @Short_description: A deprecated widget for a menu item with an icon
  * @Title: GtkImageMenuItem
  *
  * A GtkImageMenuItem is a menu item which has an icon next to the text label.
@@ -79,6 +79,35 @@
  * consider using icons in menu items only sparingly, and for "objects" (or
  * "nouns") elements only, like bookmarks, files, and links; "actions" (or
  * "verbs") should not have icons.
+ *
+ * Furthermore, if you would like to display keyboard accelerator, you must
+ * pack the accel label into the box using gtk_box_pack_end() and align the
+ * label, otherwise the accelerator will not display correctly. The following
+ * code snippet adds a keyboard accelerator to the menu item, with a key
+ * binding of Ctrl+M:
+ *
+ * |[<!-- language="C" -->
+ *   GtkWidget *box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
+ *   GtkWidget *icon = gtk_image_new_from_icon_name ("folder-music-symbolic", GTK_ICON_SIZE_MENU);
+ *   GtkWidget *label = gtk_accel_label_new ("Music");
+ *   GtkWidget *menu_item = gtk_menu_item_new ();
+ *   GtkAccelGroup *accel_group = gtk_accel_group_new ();
+ *
+ *   gtk_container_add (GTK_CONTAINER (box), icon);
+ *
+ *   gtk_label_set_use_underline (GTK_LABEL (label), TRUE);
+ *   gtk_label_set_xalign (GTK_LABEL (label), 0.0);
+ *
+ *   gtk_widget_add_accelerator (menu_item, "activate", accel_group,
+ *                               GDK_KEY_m, GDK_CONTROL_MASK, GTK_ACCEL_VISIBLE);
+ *   gtk_accel_label_set_accel_widget (GTK_ACCEL_LABEL (label), menu_item);
+ *
+ *   gtk_box_pack_end (GTK_BOX (box), label, TRUE, TRUE, 0);
+ *
+ *   gtk_container_add (GTK_CONTAINER (menu_item), box);
+ *
+ *   gtk_widget_show_all (menu_item);
+ * ]|
  */
 
 
@@ -188,7 +217,8 @@ gtk_image_menu_item_class_init (GtkImageMenuItemClass *klass)
    *
    * Child widget to appear next to the menu text.
    *
-   * Deprecated: 3.10
+   * Deprecated: 3.10: Use a #GtkMenuItem containing a #GtkBox with
+   *   a #GtkAccelLabel and a #GtkImage instead
    */
   g_object_class_install_property (gobject_class,
                                    PROP_IMAGE,
@@ -205,7 +235,7 @@ gtk_image_menu_item_class_init (GtkImageMenuItemClass *klass)
    *
    * Since: 2.16
    *
-   * Deprecated: 3.10
+   * Deprecated: 3.10: Use a named icon from the #GtkIconTheme instead
    */
   g_object_class_install_property (gobject_class,
                                    PROP_USE_STOCK,
@@ -225,7 +255,8 @@ gtk_image_menu_item_class_init (GtkImageMenuItemClass *klass)
    *
    * Since: 2.16
    *
-   * Deprecated: 3.10
+   * Deprecated: 3.10: Use a #GtkMenuItem containing a #GtkBox with
+   *   a #GtkAccelLabel and a #GtkImage instead
    */
   g_object_class_install_property (gobject_class,
                                    PROP_ALWAYS_SHOW_IMAGE,
@@ -242,7 +273,7 @@ gtk_image_menu_item_class_init (GtkImageMenuItemClass *klass)
    *
    * Since: 2.16
    *
-   * Deprecated: 3.10
+   * Deprecated: 3.10: Use gtk_widget_add_accelerator() instead 
    */
   g_object_class_install_property (gobject_class,
                                    PROP_ACCEL_GROUP,
@@ -614,12 +645,11 @@ gtk_image_menu_item_size_allocate (GtkWidget     *widget,
       GtkBorder padding;
       GtkRequisition child_requisition;
       GtkAllocation child_allocation;
-      guint horizontal_padding, toggle_spacing;
+      guint toggle_spacing;
       gint toggle_size;
 
       toggle_size = GTK_MENU_ITEM (image_menu_item)->priv->toggle_size;
       gtk_widget_style_get (widget,
-                            "horizontal-padding", &horizontal_padding,
                             "toggle-spacing", &toggle_spacing,
                             NULL);
 
@@ -641,10 +671,10 @@ gtk_image_menu_item_size_allocate (GtkWidget     *widget,
         {
           if ((gtk_widget_get_direction (widget) == GTK_TEXT_DIR_LTR) ==
               (pack_dir == GTK_PACK_DIRECTION_LTR))
-            x = offset + horizontal_padding + padding.left +
+            x = offset + padding.left +
                (toggle_size - toggle_spacing - child_requisition.width) / 2;
           else
-            x = widget_allocation.width - offset - horizontal_padding - padding.right -
+            x = widget_allocation.width - offset - padding.right -
               toggle_size + toggle_spacing +
               (toggle_size - toggle_spacing - child_requisition.width) / 2;
 
@@ -654,10 +684,10 @@ gtk_image_menu_item_size_allocate (GtkWidget     *widget,
         {
           if ((gtk_widget_get_direction (widget) == GTK_TEXT_DIR_LTR) ==
               (pack_dir == GTK_PACK_DIRECTION_TTB))
-            y = offset + horizontal_padding + padding.top +
+            y = offset + padding.top +
               (toggle_size - toggle_spacing - child_requisition.height) / 2;
           else
-            y = widget_allocation.height - offset - horizontal_padding - padding.bottom -
+            y = widget_allocation.height - offset - padding.bottom -
               toggle_size + toggle_spacing +
               (toggle_size - toggle_spacing - child_requisition.height) / 2;
 
@@ -903,7 +933,7 @@ gtk_image_menu_item_new_with_mnemonic (const gchar *label)
  *
  * Returns: a new #GtkImageMenuItem.
  *
- * Deprecated: 3.10: Use gtk_menu_item_new() instead.
+ * Deprecated: 3.10: Use gtk_menu_item_new_with_mnemonic() instead.
  */
 GtkWidget*
 gtk_image_menu_item_new_from_stock (const gchar   *stock_id,

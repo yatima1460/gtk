@@ -32,7 +32,6 @@
 
 #include <gtk/gtkcontainer.h>
 
-
 G_BEGIN_DECLS
 
 #define GTK_TYPE_BIN                  (gtk_bin_get_type ())
@@ -81,6 +80,8 @@ GtkWidget *gtk_bin_get_child (GtkBin *bin);
 
 void       _gtk_bin_set_child (GtkBin    *bin,
                                GtkWidget *widget);
+
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(GtkBin, g_object_unref)
 
 G_END_DECLS
 

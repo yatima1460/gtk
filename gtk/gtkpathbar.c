@@ -23,7 +23,9 @@
 #include <string.h>
 
 #include "gtkbox.h"
+#include "gtkcssnodeprivate.h"
 #include "gtkdnd.h"
+#include "gtkdragsource.h"
 #include "gtkicontheme.h"
 #include "gtkimage.h"
 #include "gtkintl.h"
@@ -44,9 +46,9 @@ struct _GtkPathBarPrivate
 
   GCancellable *get_info_cancellable;
 
-  cairo_surface_t *root_icon;
-  cairo_surface_t *home_icon;
-  cairo_surface_t *desktop_icon;
+  GIcon *root_icon;
+  GIcon *home_icon;
+  GIcon *desktop_icon;
 
   GdkWindow *event_window;
 
@@ -56,7 +58,6 @@ struct _GtkPathBarPrivate
   GtkWidget *up_slider_button;
   GtkWidget *down_slider_button;
   guint settings_signal_id;
-  gint icon_size;
   gint16 slider_width;
   gint16 button_offset;
   guint timer;
@@ -134,8 +135,6 @@ static void gtk_path_bar_forall                   (GtkContainer     *container,
 						   gboolean          include_internals,
 						   GtkCallback       callback,
 						   gpointer          callback_data);
-static GtkWidgetPath *gtk_path_bar_get_path_for_child (GtkContainer *container,
-                                                       GtkWidget    *child);
 static gboolean gtk_path_bar_scroll               (GtkWidget        *widget,
 						   GdkEventScroll   *event);
 static void gtk_path_bar_scroll_up                (GtkPathBar       *path_bar);
@@ -187,8 +186,8 @@ gtk_path_bar_init (GtkPathBar *path_bar)
   /* Add the children manually because GtkPathBar derives from an abstract class,
    * Glade cannot edit a <template> in gtkpathbar.ui if it's only a GtkContainer.
    */
-  gtk_container_add (GTK_CONTAINER (path_bar), path_bar->priv->down_slider_button);
   gtk_container_add (GTK_CONTAINER (path_bar), path_bar->priv->up_slider_button);
+  gtk_container_add (GTK_CONTAINER (path_bar), path_bar->priv->down_slider_button);
 
   /* GtkBuilder wont let us connect 'swapped' without specifying the signal's
    * user data in the .ui file
@@ -206,7 +205,6 @@ gtk_path_bar_init (GtkPathBar *path_bar)
   gtk_style_context_add_class (context, GTK_STYLE_CLASS_LINKED);
 
   path_bar->priv->get_info_cancellable = NULL;
-  path_bar->priv->icon_size = FALLBACK_ICON_SIZE;
 }
 
 static void
@@ -239,7 +237,6 @@ gtk_path_bar_class_init (GtkPathBarClass *path_bar_class)
   container_class->add = gtk_path_bar_add;
   container_class->forall = gtk_path_bar_forall;
   container_class->remove = gtk_path_bar_remove;
-  container_class->get_path_for_child = gtk_path_bar_get_path_for_child;
   gtk_container_class_handle_border_width (container_class);
   /* FIXME: */
   /*  container_class->child_type = gtk_path_bar_child_type;*/
@@ -284,22 +281,15 @@ gtk_path_bar_finalize (GObject *object)
   gtk_path_bar_stop_scrolling (path_bar);
 
   g_list_free (path_bar->priv->button_list);
-  if (path_bar->priv->root_file)
-    g_object_unref (path_bar->priv->root_file);
-  if (path_bar->priv->home_file)
-    g_object_unref (path_bar->priv->home_file);
-  if (path_bar->priv->desktop_file)
-    g_object_unref (path_bar->priv->desktop_file);
+  g_clear_object (&path_bar->priv->root_file);
+  g_clear_object (&path_bar->priv->home_file);
+  g_clear_object (&path_bar->priv->desktop_file);
 
-  if (path_bar->priv->root_icon)
-    cairo_surface_destroy (path_bar->priv->root_icon);
-  if (path_bar->priv->home_icon)
-    cairo_surface_destroy (path_bar->priv->home_icon);
-  if (path_bar->priv->desktop_icon)
-    cairo_surface_destroy (path_bar->priv->desktop_icon);
+  g_clear_object (&path_bar->priv->root_icon);
+  g_clear_object (&path_bar->priv->home_icon);
+  g_clear_object (&path_bar->priv->desktop_icon);
 
-  if (path_bar->priv->file_system)
-    g_object_unref (path_bar->priv->file_system);
+  g_clear_object (&path_bar->priv->file_system);
 
   G_OBJECT_CLASS (gtk_path_bar_parent_class)->finalize (object);
 }
@@ -378,12 +368,23 @@ gtk_path_bar_get_preferred_width (GtkWidget *widget,
   /* Theoretically, the slider could be bigger than the other button.  But we're
    * not going to worry about that now.
    */
-  path_bar->priv->slider_width = MIN (height * 2 / 3 + 5, height);
+  path_bar->priv->slider_width = 0;
+
+  gtk_widget_get_preferred_width (path_bar->priv->up_slider_button, &child_min, &child_nat);
   if (path_bar->priv->button_list && path_bar->priv->button_list->next != NULL)
     {
-      *minimum += path_bar->priv->slider_width * 2;
-      *natural += path_bar->priv->slider_width * 2;
+      *minimum += child_min;
+      *natural += child_nat;
     }
+  path_bar->priv->slider_width = MAX (path_bar->priv->slider_width, child_min);
+
+  gtk_widget_get_preferred_width (path_bar->priv->down_slider_button, &child_min, &child_nat);
+  if (path_bar->priv->button_list && path_bar->priv->button_list->next != NULL)
+    {
+      *minimum += child_min;
+      *natural += child_nat;
+    }
+  path_bar->priv->slider_width = MAX (path_bar->priv->slider_width, child_min);
 }
 
 static void
@@ -408,6 +409,14 @@ gtk_path_bar_get_preferred_height (GtkWidget *widget,
       *minimum = MAX (*minimum, child_min);
       *natural = MAX (*natural, child_nat);
     }
+
+  gtk_widget_get_preferred_height (path_bar->priv->up_slider_button, &child_min, &child_nat);
+  *minimum = MAX (*minimum, child_min);
+  *natural = MAX (*natural, child_nat);
+
+  gtk_widget_get_preferred_height (path_bar->priv->down_slider_button, &child_min, &child_nat);
+  *minimum = MAX (*minimum, child_min);
+  *natural = MAX (*natural, child_nat);
 }
 
 static void
@@ -501,27 +510,6 @@ gtk_path_bar_unrealize (GtkWidget *widget)
   GTK_WIDGET_CLASS (gtk_path_bar_parent_class)->unrealize (widget);
 }
 
-static void
-child_ordering_changed (GtkPathBar *path_bar)
-{
-  GList *l;
-
-  if (path_bar->priv->up_slider_button)
-    _gtk_widget_invalidate_style_context (path_bar->priv->up_slider_button,
-                                          GTK_CSS_CHANGE_POSITION | GTK_CSS_CHANGE_SIBLING_POSITION);
-  if (path_bar->priv->down_slider_button)
-    _gtk_widget_invalidate_style_context (path_bar->priv->down_slider_button,
-                                          GTK_CSS_CHANGE_POSITION | GTK_CSS_CHANGE_SIBLING_POSITION);
-
-  for (l = path_bar->priv->button_list; l; l = l->next)
-    {
-      ButtonData *data = l->data;
-
-      _gtk_widget_invalidate_style_context (data->button,
-                                            GTK_CSS_CHANGE_POSITION | GTK_CSS_CHANGE_SIBLING_POSITION);
-    }
-}
-
 /* This is a tad complicated
  */
 static void
@@ -535,11 +523,10 @@ gtk_path_bar_size_allocate (GtkWidget     *widget,
   GList *list, *first_button;
   gint width;
   gint allocation_width;
-  gboolean need_sliders = FALSE;
+  gboolean need_sliders = TRUE;
   gint up_slider_offset = 0;
   gint down_slider_offset = 0;
   GtkRequisition child_requisition;
-  gboolean needs_reorder = FALSE;
 
   gtk_widget_set_allocation (widget, allocation);
 
@@ -593,7 +580,7 @@ gtk_path_bar_size_allocate (GtkWidget     *widget,
       else
 	first_button = path_bar->priv->button_list;
       need_sliders = TRUE;
-      
+
       /* To see how much space we have, and how many buttons we can display.
        * We start at the first button, count forward until hit the new
        * button, then count backwards.
@@ -704,7 +691,6 @@ gtk_path_bar_size_allocate (GtkWidget     *widget,
       else if (gtk_widget_get_has_tooltip (child))
 	gtk_widget_set_tooltip_text (child, NULL);
       
-      needs_reorder |= gtk_widget_get_child_visible (child) == FALSE;
       gtk_widget_set_child_visible (child, TRUE);
       gtk_widget_size_allocate (child, &child_allocation);
 
@@ -722,14 +708,12 @@ gtk_path_bar_size_allocate (GtkWidget     *widget,
   while (list)
     {
       child = BUTTON_DATA (list->data)->button;
-      needs_reorder |= gtk_widget_get_child_visible (child) == TRUE;
       gtk_widget_set_child_visible (child, FALSE);
       list = list->prev;
     }
   for (list = first_button->next; list; list = list->next)
     {
       child = BUTTON_DATA (list->data)->button;
-      needs_reorder |= gtk_widget_get_child_visible (child) == TRUE;
       gtk_widget_set_child_visible (child, FALSE);
     }
 
@@ -739,7 +723,6 @@ gtk_path_bar_size_allocate (GtkWidget     *widget,
       child_allocation.x = up_slider_offset + allocation->x;
       gtk_widget_size_allocate (path_bar->priv->up_slider_button, &child_allocation);
 
-      needs_reorder |= gtk_widget_get_child_visible (path_bar->priv->up_slider_button) == FALSE;
       gtk_widget_set_child_visible (path_bar->priv->up_slider_button, TRUE);
       gtk_widget_show_all (path_bar->priv->up_slider_button);
 
@@ -748,10 +731,9 @@ gtk_path_bar_size_allocate (GtkWidget     *widget,
     }
   else
     {
-      needs_reorder |= gtk_widget_get_child_visible (path_bar->priv->up_slider_button) == TRUE;
       gtk_widget_set_child_visible (path_bar->priv->up_slider_button, FALSE);
     }
-      
+
   if (need_sliders)
     {
       child_allocation.width = path_bar->priv->slider_width;
@@ -759,19 +741,14 @@ gtk_path_bar_size_allocate (GtkWidget     *widget,
       
       gtk_widget_size_allocate (path_bar->priv->down_slider_button, &child_allocation);
 
-      needs_reorder |= gtk_widget_get_child_visible (path_bar->priv->down_slider_button) == FALSE;
       gtk_widget_set_child_visible (path_bar->priv->down_slider_button, TRUE);
       gtk_widget_show_all (path_bar->priv->down_slider_button);
       gtk_path_bar_update_slider_buttons (path_bar);
     }
   else
     {
-      needs_reorder |= gtk_widget_get_child_visible (path_bar->priv->down_slider_button) == TRUE;
       gtk_widget_set_child_visible (path_bar->priv->down_slider_button, FALSE);
     }
-
-  if (needs_reorder)
-    child_ordering_changed (path_bar);
 
   _gtk_widget_set_simple_clip (widget, NULL);
 }
@@ -902,82 +879,6 @@ gtk_path_bar_forall (GtkContainer *container,
 
   if (path_bar->priv->down_slider_button)
     (* callback) (path_bar->priv->down_slider_button, callback_data);
-}
-
-static GtkWidgetPath *
-gtk_path_bar_get_path_for_child (GtkContainer *container,
-                                 GtkWidget    *child)
-{
-  GtkPathBar *path_bar = GTK_PATH_BAR (container);
-  GtkWidgetPath *path;
-
-  path = _gtk_widget_create_path (GTK_WIDGET (path_bar));
-
-  if (gtk_widget_get_visible (child) &&
-      gtk_widget_get_child_visible (child))
-    {
-      GtkWidgetPath *sibling_path;
-      GList *visible_children;
-      GList *l;
-      int pos;
-
-      /* 1. Build the list of visible children, in visually left-to-right order
-       * (i.e. independently of the widget's direction).  Note that our
-       * button_list is stored in innermost-to-outermost path order!
-       */
-
-      visible_children = NULL;
-
-      if (gtk_widget_get_visible (path_bar->priv->down_slider_button) &&
-          gtk_widget_get_child_visible (path_bar->priv->down_slider_button))
-        visible_children = g_list_prepend (visible_children, path_bar->priv->down_slider_button);
-
-      for (l = path_bar->priv->button_list; l; l = l->next)
-        {
-          ButtonData *data = l->data;
-
-          if (gtk_widget_get_visible (data->button) &&
-              gtk_widget_get_child_visible (data->button))
-            visible_children = g_list_prepend (visible_children, data->button);
-        }
-
-      if (gtk_widget_get_visible (path_bar->priv->up_slider_button) &&
-          gtk_widget_get_child_visible (path_bar->priv->up_slider_button))
-        visible_children = g_list_prepend (visible_children, path_bar->priv->up_slider_button);
-
-      if (gtk_widget_get_direction (GTK_WIDGET (path_bar)) == GTK_TEXT_DIR_RTL)
-        visible_children = g_list_reverse (visible_children);
-
-      /* 2. Find the index of the child within that list */
-
-      pos = 0;
-
-      for (l = visible_children; l; l = l->next)
-        {
-          GtkWidget *button = l->data;
-
-          if (button == child)
-            break;
-
-          pos++;
-        }
-
-      /* 3. Build the path */
-
-      sibling_path = gtk_widget_path_new ();
-
-      for (l = visible_children; l; l = l->next)
-        gtk_widget_path_append_for_widget (sibling_path, l->data);
-
-      gtk_widget_path_append_with_siblings (path, sibling_path, pos);
-
-      g_list_free (visible_children);
-      gtk_widget_path_unref (sibling_path);
-    }
-  else
-    gtk_widget_path_append_for_widget (path, child);
-
-  return path;
 }
 
 static void
@@ -1234,21 +1135,9 @@ reload_icons (GtkPathBar *path_bar)
 {
   GList *list;
 
-  if (path_bar->priv->root_icon)
-    {
-      cairo_surface_destroy (path_bar->priv->root_icon);
-      path_bar->priv->root_icon = NULL;
-    }
-  if (path_bar->priv->home_icon)
-    {
-      cairo_surface_destroy (path_bar->priv->home_icon);
-      path_bar->priv->home_icon = NULL;
-    }
-  if (path_bar->priv->desktop_icon)
-    {
-      cairo_surface_destroy (path_bar->priv->desktop_icon);
-      path_bar->priv->desktop_icon = NULL;
-    }
+  g_clear_object (&path_bar->priv->root_icon);
+  g_clear_object (&path_bar->priv->home_icon);
+  g_clear_object (&path_bar->priv->desktop_icon);
 
   for (list = path_bar->priv->button_list; list; list = list->next)
     {
@@ -1262,19 +1151,11 @@ reload_icons (GtkPathBar *path_bar)
 	  gtk_path_bar_update_button_appearance (path_bar, button_data, current_dir);
 	}
     }
-  
 }
 
 static void
 change_icon_theme (GtkPathBar *path_bar)
 {
-  gint width, height;
-
-  if (gtk_icon_size_lookup (GTK_ICON_SIZE_MENU, &width, &height))
-    path_bar->priv->icon_size = MAX (width, height);
-  else
-    path_bar->priv->icon_size = FALLBACK_ICON_SIZE;
-
   reload_icons (path_bar);
 }
 
@@ -1375,7 +1256,7 @@ set_button_image_get_info_cb (GCancellable *cancellable,
 			      gpointer      user_data)
 {
   gboolean cancelled = g_cancellable_is_cancelled (cancellable);
-  cairo_surface_t *surface;
+  GIcon *icon;
   struct SetButtonImageData *data = user_data;
 
   if (cancellable != data->button_data->cancellable)
@@ -1392,25 +1273,17 @@ set_button_image_get_info_cb (GCancellable *cancellable,
   if (cancelled || error)
     goto out;
 
-  surface = _gtk_file_info_render_symbolic_icon (info,
-                                                 GTK_WIDGET (data->path_bar),
-			 	                 data->path_bar->priv->icon_size);
-  gtk_image_set_from_surface (GTK_IMAGE (data->button_data->image), surface);
+  icon = g_file_info_get_symbolic_icon (info);
+  gtk_image_set_from_gicon (GTK_IMAGE (data->button_data->image), icon, GTK_ICON_SIZE_BUTTON);
 
   switch (data->button_data->type)
     {
       case HOME_BUTTON:
-	if (data->path_bar->priv->home_icon)
-	  cairo_surface_destroy (surface);
-	else
-	  data->path_bar->priv->home_icon = surface;
+        g_set_object (&data->path_bar->priv->home_icon, icon);
 	break;
 
       case DESKTOP_BUTTON:
-	if (data->path_bar->priv->desktop_icon)
-	  cairo_surface_destroy (surface);
-	else
-	  data->path_bar->priv->desktop_icon = surface;
+        g_set_object (&data->path_bar->priv->desktop_icon, icon);
 	break;
 
       default:
@@ -1435,7 +1308,7 @@ set_button_image (GtkPathBar *path_bar,
 
       if (path_bar->priv->root_icon != NULL)
         {
-          gtk_image_set_from_surface (GTK_IMAGE (button_data->image), path_bar->priv->root_icon);
+          gtk_image_set_from_gicon (GTK_IMAGE (button_data->image), path_bar->priv->root_icon, GTK_ICON_SIZE_BUTTON);
 	  break;
 	}
 
@@ -1443,19 +1316,16 @@ set_button_image (GtkPathBar *path_bar,
       if (volume == NULL)
 	return;
 
-      path_bar->priv->root_icon = _gtk_file_system_volume_render_symbolic_icon (volume,
-								                GTK_WIDGET (path_bar),
-								                path_bar->priv->icon_size,
-								                NULL);
+      path_bar->priv->root_icon = _gtk_file_system_volume_get_symbolic_icon (volume);
       _gtk_file_system_volume_unref (volume);
+      gtk_image_set_from_gicon (GTK_IMAGE (button_data->image), path_bar->priv->root_icon, GTK_ICON_SIZE_BUTTON);
 
-      gtk_image_set_from_surface (GTK_IMAGE (button_data->image), path_bar->priv->root_icon);
       break;
 
     case HOME_BUTTON:
       if (path_bar->priv->home_icon != NULL)
         {
-	  gtk_image_set_from_surface (GTK_IMAGE (button_data->image), path_bar->priv->home_icon);
+          gtk_image_set_from_gicon (GTK_IMAGE (button_data->image), path_bar->priv->home_icon, GTK_ICON_SIZE_BUTTON);
 	  break;
 	}
 
@@ -1477,7 +1347,7 @@ set_button_image (GtkPathBar *path_bar,
     case DESKTOP_BUTTON:
       if (path_bar->priv->desktop_icon != NULL)
         {
-	  gtk_image_set_from_surface (GTK_IMAGE (button_data->image), path_bar->priv->desktop_icon);
+          gtk_image_set_from_gicon (GTK_IMAGE (button_data->image), path_bar->priv->desktop_icon, GTK_ICON_SIZE_BUTTON);
 	  break;
 	}
 
@@ -1615,7 +1485,7 @@ make_directory_button (GtkPathBar  *path_bar,
   button_data->type = find_button_type (path_bar, file);
   button_data->button = gtk_toggle_button_new ();
   atk_obj = gtk_widget_get_accessible (button_data->button);
-  gtk_button_set_focus_on_click (GTK_BUTTON (button_data->button), FALSE);
+  gtk_widget_set_focus_on_click (button_data->button, FALSE);
   gtk_widget_add_events (button_data->button, GDK_SCROLL_MASK);
 
   switch (button_data->type)
@@ -1743,18 +1613,24 @@ gtk_path_bar_set_file_finish (struct SetFileInfo *info,
   if (result)
     {
       GList *l;
+      GtkCssNode *prev;
 
       gtk_path_bar_clear_buttons (info->path_bar);
       info->path_bar->priv->button_list = g_list_reverse (info->new_buttons);
       info->path_bar->priv->fake_root = info->fake_root;
+      prev = gtk_widget_get_css_node (info->path_bar->priv->down_slider_button);
 
       for (l = info->path_bar->priv->button_list; l; l = l->next)
 	{
 	  GtkWidget *button = BUTTON_DATA (l->data)->button;
-	  gtk_container_add (GTK_CONTAINER (info->path_bar), button);
-	}
+          GtkCssNode *node = gtk_widget_get_css_node (button);
 
-      child_ordering_changed (info->path_bar);
+          gtk_css_node_insert_before (gtk_widget_get_css_node (GTK_WIDGET (info->path_bar)),
+                                      node,
+                                      prev);
+	  gtk_container_add (GTK_CONTAINER (info->path_bar), button);
+          prev = node;
+	}
     }
   else
     {

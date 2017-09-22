@@ -10,9 +10,9 @@
     <releaseinfo>
       This document is for the GDK 3 library, version &version;
       The latest versions can be found online at
-      <ulink role="online-location" url="http://developer.gnome.org/gdk3/">http://developer.gnome.org/gdk3/</ulink>.
+      <ulink role="online-location" url="https://developer.gnome.org/gdk3/">https://developer.gnome.org/gdk3/</ulink>.
       If you are looking for the older GDK 2 series of libraries,
-      see <ulink role="online-location" url="http://developer.gnome.org/gdk2/">http://developer.gnome.org/gdk2/</ulink>.
+      see <ulink role="online-location" url="https://developer.gnome.org/gdk2/">https://developer.gnome.org/gdk2/</ulink>.
     </releaseinfo>
   </bookinfo>
 
@@ -22,8 +22,10 @@
     <xi:include href="xml/gdkdisplaymanager.xml" />
     <xi:include href="xml/gdkdisplay.xml" />
     <xi:include href="xml/gdkscreen.xml" />
-    <xi:include href="xml/gdkdevicemanager.xml" />
+    <xi:include href="xml/gdkseat.xml" />
+    <xi:include href="xml/gdkmonitor.xml" />
     <xi:include href="xml/gdkdevice.xml" />
+    <xi:include href="xml/gdkdevicepad.xml" />
     <xi:include href="xml/regions.xml" />
     <xi:include href="xml/pixbufs.xml" />
     <xi:include href="xml/rgba_colors.xml" />
@@ -32,6 +34,7 @@
     <xi:include href="xml/windows.xml" />
     <xi:include href="xml/gdkframeclock.xml" />
     <xi:include href="xml/gdkframetimings.xml" />
+    <xi:include href="xml/gdkdrawingcontext.xml" />
     <xi:include href="xml/gdkglcontext.xml" />
     <xi:include href="xml/events.xml" />
     <xi:include href="xml/event_structs.xml" />
@@ -51,6 +54,7 @@
   <reference>
     <title>Deprecated</title>
     <xi:include href="xml/colors.xml" />
+    <xi:include href="xml/gdkdevicemanager.xml" />
   </reference>
 
   <index id="api-index-full">
@@ -96,6 +100,18 @@
   <index id="api-index-3-16" role="3.16">
     <title>Index of new symbols in 3.16</title>
     <xi:include href="xml/api-index-3.16.xml"><xi:fallback /></xi:include>
+  </index>
+  <index id="api-index-3-18" role="3.18">
+    <title>Index of new symbols in 3.18</title>
+    <xi:include href="xml/api-index-3.18.xml"><xi:fallback /></xi:include>
+  </index>
+  <index id="api-index-3-20" role="3.20">
+    <title>Index of new symbols in 3.20</title>
+    <xi:include href="xml/api-index-3.20.xml"><xi:fallback /></xi:include>
+  </index>
+  <index id="api-index-3-22" role="3.22">
+    <title>Index of new symbols in 3.22</title>
+    <xi:include href="xml/api-index-3.22.xml"><xi:fallback /></xi:include>
   </index>
 
   <xi:include href="xml/annotation-glossary.xml"><xi:fallback /></xi:include>

@@ -60,6 +60,16 @@ gtk_css_value_bg_size_compute (GtkCssValue             *value,
   if (value->y)
     y = _gtk_css_value_compute (value->y, property_id, provider, style, parent_style);
 
+  if (x == value->x && y == value->y)
+    {
+      if (x)
+        _gtk_css_value_unref (x);
+      if (y)
+        _gtk_css_value_unref (y);
+
+      return _gtk_css_value_ref (value);
+    }
+
   return _gtk_css_bg_size_value_new (value->x ? x : NULL,
                                      value->y ? y : NULL);
 }
@@ -194,7 +204,7 @@ _gtk_css_bg_size_value_parse (GtkCssParser *parser)
 
   if (_gtk_css_parser_try (parser, "auto", TRUE))
     y = NULL;
-  else if (!_gtk_css_parser_has_number (parser))
+  else if (!gtk_css_number_value_can_parse (parser))
     y = NULL;
   else
     {

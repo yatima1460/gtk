@@ -133,7 +133,7 @@ gdk_keymap_class_init (GdkKeymapClass *klass)
    * Since: 2.0
    */
   signals[DIRECTION_CHANGED] =
-    g_signal_new ("direction-changed",
+    g_signal_new (g_intern_static_string ("direction-changed"),
 		  G_OBJECT_CLASS_TYPE (object_class),
 		  G_SIGNAL_RUN_LAST,
 		  G_STRUCT_OFFSET (GdkKeymapClass, direction_changed),
@@ -151,7 +151,7 @@ gdk_keymap_class_init (GdkKeymapClass *klass)
    * Since: 2.2
    */
   signals[KEYS_CHANGED] =
-    g_signal_new ("keys-changed",
+    g_signal_new (g_intern_static_string ("keys-changed"),
 		  G_OBJECT_CLASS_TYPE (object_class),
 		  G_SIGNAL_RUN_LAST,
 		  G_STRUCT_OFFSET (GdkKeymapClass, keys_changed),
@@ -171,7 +171,7 @@ gdk_keymap_class_init (GdkKeymapClass *klass)
    * Since: 2.16
    */
   signals[STATE_CHANGED] =
-    g_signal_new ("state_changed",
+    g_signal_new (g_intern_static_string ("state_changed"),
                   G_OBJECT_CLASS_TYPE (object_class),
                   G_SIGNAL_RUN_LAST,
                   G_STRUCT_OFFSET (GdkKeymapClass, state_changed),
@@ -358,6 +358,24 @@ gdk_keymap_get_num_lock_state (GdkKeymap *keymap)
 }
 
 /**
+ * gdk_keymap_get_scroll_lock_state:
+ * @keymap: a #GdkKeymap
+ *
+ * Returns whether the Scroll Lock modifer is locked.
+ *
+ * Returns: %TRUE if Scroll Lock is on
+ *
+ * Since: 3.18
+ */
+gboolean
+gdk_keymap_get_scroll_lock_state (GdkKeymap *keymap)
+{
+  g_return_val_if_fail (GDK_IS_KEYMAP (keymap), FALSE);
+
+  return GDK_KEYMAP_GET_CLASS (keymap)->get_scroll_lock_state (keymap);
+}
+
+/**
  * gdk_keymap_get_modifier_state:
  * @keymap: a #GdkKeymap
  *
@@ -419,9 +437,9 @@ gdk_keymap_get_entries_for_keyval (GdkKeymap     *keymap,
  * gdk_keymap_get_entries_for_keycode:
  * @keymap: a #GdkKeymap
  * @hardware_keycode: a keycode
- * @keys: (out) (array length=n_entries) (transfer full): return
+ * @keys: (out) (array length=n_entries) (transfer full) (optional): return
  *     location for array of #GdkKeymapKey, or %NULL
- * @keyvals: (out) (array length=n_entries) (transfer full): return
+ * @keyvals: (out) (array length=n_entries) (transfer full) (optional): return
  *     location for array of keyvals, or %NULL
  * @n_entries: length of @keys and @keyvals
  *
@@ -595,7 +613,7 @@ gdk_keymap_add_virtual_modifiers (GdkKeymap       *keymap,
  * This function is useful when matching key events against
  * accelerators.
  *
- * Returns: %TRUE if no virtual modifiers were mapped to the
+ * Returns: %FALSE if two virtual modifiers were mapped to the
  *     same non-virtual modifier. Note that %FALSE is also returned
  *     if a virtual modifier is mapped to a non-virtual modifier that
  *     was already set in @state.
@@ -634,6 +652,10 @@ gdk_keymap_real_get_modifier_mask (GdkKeymap         *keymap,
 
     case GDK_MODIFIER_INTENT_SHIFT_GROUP:
       return 0;
+
+    case GDK_MODIFIER_INTENT_DEFAULT_MOD_MASK:
+      return (GDK_SHIFT_MASK   | GDK_CONTROL_MASK | GDK_MOD1_MASK    |
+	      GDK_SUPER_MASK   | GDK_HYPER_MASK   | GDK_META_MASK);
 
     default:
       g_return_val_if_reached (0);

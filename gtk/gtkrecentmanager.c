@@ -113,6 +113,9 @@
 /* return all items by default */
 #define DEFAULT_LIMIT   -1
 
+/* limit the size of the list */
+#define MAX_LIST_SIZE 1000
+
 /* keep in sync with xdgmime */
 #define GTK_RECENT_DEFAULT_MIME "application/octet-stream"
 
@@ -211,6 +214,9 @@ static void     gtk_recent_manager_set_filename        (GtkRecentManager  *manag
                                                         const gchar       *filename);
 static void     gtk_recent_manager_clamp_to_age        (GtkRecentManager  *manager,
                                                         gint               age);
+static void     gtk_recent_manager_clamp_to_size       (GtkRecentManager  *manager,
+                                                        const gint         size);
+
 static void     gtk_recent_manager_enabled_changed     (GtkRecentManager  *manager);
 
 
@@ -229,16 +235,6 @@ static guint signal_changed = 0;
 static GtkRecentManager *recent_manager_singleton = NULL;
 
 G_DEFINE_TYPE_WITH_PRIVATE (GtkRecentManager, gtk_recent_manager, G_TYPE_OBJECT)
-
-static void
-filename_warning (const gchar *format,
-                  const gchar *filename,
-                  const gchar *message)
-{
-  gchar *utf8 = g_filename_to_utf8 (filename, -1, NULL, NULL, NULL);
-  g_warning (format, utf8 ? utf8 : "(invalid filename)", message);
-  g_free (utf8);
-}
 
 /* Test of haystack has the needle prefix, comparing case
  * insensitive. haystack may be UTF-8, but needle must
@@ -472,6 +468,7 @@ gtk_recent_manager_real_changed (GtkRecentManager *manager)
         {
           GtkSettings *settings;
           gint age;
+          gint max_size = MAX_LIST_SIZE;
           gboolean enabled;
 
           settings = gtk_settings_get_default ();
@@ -486,13 +483,19 @@ gtk_recent_manager_real_changed (GtkRecentManager *manager)
               enabled = TRUE;
             }
 
-          if (age == 0 || !enabled)
+          if (age == 0 || max_size == 0 || !enabled)
             {
               g_bookmark_file_free (priv->recent_items);
               priv->recent_items = g_bookmark_file_new ();
+              priv->size = 0;
             }
-          else if (age > 0)
-            gtk_recent_manager_clamp_to_age (manager, age);
+          else
+            {
+              if (age > 0)
+                gtk_recent_manager_clamp_to_age (manager, age);
+              if (max_size > 0)
+                gtk_recent_manager_clamp_to_size (manager, max_size);
+            }
         }
 
       if (priv->filename != NULL)
@@ -501,17 +504,21 @@ gtk_recent_manager_real_changed (GtkRecentManager *manager)
           g_bookmark_file_to_file (priv->recent_items, priv->filename, &write_error);
           if (write_error)
             {
-              filename_warning ("Attempting to store changes into `%s', but failed: %s",
-                                priv->filename,
-                                write_error->message);
+              gchar *utf8 = g_filename_to_utf8 (priv->filename, -1, NULL, NULL, NULL);
+              g_warning ("Attempting to store changes into '%s', but failed: %s",
+                         utf8 ? utf8 : "(invalid filename)",
+                         write_error->message);
+              g_free (utf8);
               g_error_free (write_error);
             }
 
           if (g_chmod (priv->filename, 0600) < 0)
             {
-              filename_warning ("Attempting to set the permissions of `%s', but failed: %s",
-                                priv->filename,
-                                g_strerror (errno));
+              gchar *utf8 = g_filename_to_utf8 (priv->filename, -1, NULL, NULL, NULL);
+              g_warning ("Attempting to set the permissions of '%s', but failed: %s",
+                         utf8 ? utf8 : "(invalid filename)",
+                         g_strerror (errno));
+              g_free (utf8);
             }
         }
 
@@ -543,12 +550,10 @@ gtk_recent_manager_monitor_changed (GFileMonitor      *monitor,
     {
     case G_FILE_MONITOR_EVENT_CHANGED:
     case G_FILE_MONITOR_EVENT_CREATED:
+    case G_FILE_MONITOR_EVENT_DELETED:
       gdk_threads_enter ();
       gtk_recent_manager_changed (manager);
       gdk_threads_leave ();
-      break;
-
-    case G_FILE_MONITOR_EVENT_DELETED:
       break;
 
     default:
@@ -629,11 +634,13 @@ gtk_recent_manager_set_filename (GtkRecentManager *manager,
       priv->monitor = g_file_monitor_file (file, G_FILE_MONITOR_NONE, NULL, &error);
       if (error)
         {
-          filename_warning ("Unable to monitor `%s': %s\n"
-                            "The GtkRecentManager will not update its contents "
-                            "if the file is changed from other instances",
-                            priv->filename,
-                            error->message);
+          gchar *utf8 = g_filename_to_utf8 (priv->filename, -1, NULL, NULL, NULL);
+          g_warning ("Unable to monitor '%s': %s\n"
+                     "The GtkRecentManager will not update its contents "
+                     "if the file is changed from other instances",
+                     utf8 ? utf8 : "(invalid filename)",
+                     error->message);
+          g_free (utf8);
           g_error_free (error);
         }
       else
@@ -682,10 +689,14 @@ build_recent_items_list (GtkRecentManager *manager)
            */
           if (read_error->domain == G_FILE_ERROR &&
             read_error->code != G_FILE_ERROR_NOENT)
-            filename_warning ("Attempting to read the recently used resources "
-                              "file at `%s', but the parser failed: %s.",
-                              priv->filename,
-                              read_error->message);
+            {
+              gchar *utf8 = g_filename_to_utf8 (priv->filename, -1, NULL, NULL, NULL);
+              g_warning ("Attempting to read the recently used resources "
+                         "file at '%s', but the parser failed: %s.",
+                         utf8 ? utf8 : "(invalid filename)",
+                         read_error->message);
+              g_free (utf8);
+            }
 
           g_bookmark_file_free (priv->recent_items);
           priv->recent_items = NULL;
@@ -764,7 +775,7 @@ gtk_recent_manager_add_item_query_info (GObject      *source_object,
   GtkRecentManager *manager = user_data;
   GtkRecentData recent_data;
   GFileInfo *file_info;
-  gchar *uri, *basename;
+  gchar *uri, *basename, *content_type;
 
   uri = g_file_get_uri (file);
 
@@ -775,8 +786,6 @@ gtk_recent_manager_add_item_query_info (GObject      *source_object,
 
   if (file_info)
     {
-      gchar *content_type;
-
       content_type = g_file_info_get_attribute_as_string (file_info, G_FILE_ATTRIBUTE_STANDARD_FAST_CONTENT_TYPE);
 
       if (G_LIKELY (content_type))
@@ -790,8 +799,10 @@ gtk_recent_manager_add_item_query_info (GObject      *source_object,
   else
     {
       basename = g_file_get_basename (file);
-      recent_data.mime_type = g_content_type_guess (basename, NULL, 0, NULL);
+      content_type = g_content_type_guess (basename, NULL, 0, NULL);
+      recent_data.mime_type = g_content_type_get_mime_type (content_type);
       g_free (basename);
+      g_free (content_type);
     }
 
   recent_data.app_name = g_strdup (g_get_application_name ());
@@ -911,7 +922,7 @@ gtk_recent_manager_add_full (GtkRecentManager    *manager,
   if ((data->display_name) &&
       (!g_utf8_validate (data->display_name, -1, NULL)))
     {
-      g_warning ("Attempting to add `%s' to the list of recently used "
+      g_warning ("Attempting to add '%s' to the list of recently used "
                  "resources, but the display name is not a valid UTF-8 "
                  "encoded string",
                  uri);
@@ -921,7 +932,7 @@ gtk_recent_manager_add_full (GtkRecentManager    *manager,
   if ((data->description) &&
       (!g_utf8_validate (data->description, -1, NULL)))
     {
-      g_warning ("Attempting to add `%s' to the list of recently used "
+      g_warning ("Attempting to add '%s' to the list of recently used "
                  "resources, but the description is not a valid UTF-8 "
                  "encoded string",
                  uri);
@@ -931,7 +942,7 @@ gtk_recent_manager_add_full (GtkRecentManager    *manager,
 
   if (!data->mime_type)
     {
-      g_warning ("Attempting to add `%s' to the list of recently used "
+      g_warning ("Attempting to add '%s' to the list of recently used "
                  "resources, but no MIME type was defined",
                  uri);
       return FALSE;
@@ -939,7 +950,7 @@ gtk_recent_manager_add_full (GtkRecentManager    *manager,
 
   if (!data->app_name)
     {
-      g_warning ("Attempting to add `%s' to the list of recently used "
+      g_warning ("Attempting to add '%s' to the list of recently used "
                  "resources, but no name of the application that is "
                  "registering it was defined",
                  uri);
@@ -948,7 +959,7 @@ gtk_recent_manager_add_full (GtkRecentManager    *manager,
 
   if (!data->app_exec)
     {
-      g_warning ("Attempting to add `%s' to the list of recently used "
+      g_warning ("Attempting to add '%s' to the list of recently used "
                  "resources, but no command line for the application "
                  "that is registering it was defined",
                  uri);
@@ -976,7 +987,7 @@ gtk_recent_manager_add_full (GtkRecentManager    *manager,
 
   g_bookmark_file_set_mime_type (priv->recent_items, uri, data->mime_type);
 
-  if (data->groups && data->groups[0] != '\0')
+  if (data->groups && ((char*)data->groups)[0] != '\0')
     {
       gint j;
 
@@ -1162,7 +1173,7 @@ build_recent_info (GBookmarkFile *bookmarks,
  * returns a #GtkRecentInfo-struct containing informations about the resource
  * like its MIME type, or its display name.
  *
- * Returns: a #GtkRecentInfo-struct containing information
+ * Returns: (nullable): a #GtkRecentInfo-struct containing information
  *   about the resource pointed by @uri, or %NULL if the URI was
  *   not registered in the recently used resources list. Free with
  *   gtk_recent_info_unref().
@@ -1274,9 +1285,9 @@ gtk_recent_manager_move_item (GtkRecentManager  *recent_manager,
       g_error_free (move_error);
 
       g_set_error (error, GTK_RECENT_MANAGER_ERROR,
-                   GTK_RECENT_MANAGER_ERROR_NOT_FOUND,
-                   _("Unable to find an item with URI '%s'"),
-                   uri);
+                   GTK_RECENT_MANAGER_ERROR_UNKNOWN,
+                   _("Unable to move the item with URI '%s' to '%s'"),
+                   uri, new_uri);
       return FALSE;
     }
 
@@ -1456,6 +1467,34 @@ gtk_recent_manager_clamp_to_age (GtkRecentManager *manager,
   g_strfreev (uris);
 }
 
+static void
+gtk_recent_manager_clamp_to_size (GtkRecentManager *manager,
+                                  const gint        size)
+{
+  GtkRecentManagerPrivate *priv = manager->priv;
+  gchar **uris;
+  gsize n_uris, i;
+
+  if (G_UNLIKELY (!priv->recent_items) || G_UNLIKELY (size < 0))
+    return;
+
+  uris = g_bookmark_file_get_uris (priv->recent_items, &n_uris);
+
+  if (n_uris < size)
+  {
+    g_strfreev (uris);
+    return;
+  }
+
+  for (i = 0; i < n_uris - size; i++)
+    {
+      const gchar *uri = uris[i];
+      g_bookmark_file_remove_item (priv->recent_items, uri, NULL);
+    }
+
+  g_strfreev (uris);
+}
+
 /*****************
  * GtkRecentInfo *
  *****************/
@@ -1495,28 +1534,12 @@ gtk_recent_info_free (GtkRecentInfo *recent_info)
   g_free (recent_info->description);
   g_free (recent_info->mime_type);
 
-  if (recent_info->applications)
-    {
-      g_slist_foreach (recent_info->applications,
-                       (GFunc) recent_app_info_free,
-                       NULL);
-      g_slist_free (recent_info->applications);
-
-      recent_info->applications = NULL;
-    }
+  g_slist_free_full (recent_info->applications, (GDestroyNotify)recent_app_info_free);
 
   if (recent_info->apps_lookup)
     g_hash_table_destroy (recent_info->apps_lookup);
 
-  if (recent_info->groups)
-    {
-      g_slist_foreach (recent_info->groups,
-                       (GFunc) g_free,
-                       NULL);
-      g_slist_free (recent_info->groups);
-
-      recent_info->groups = NULL;
-    }
+  g_slist_free_full (recent_info->groups, g_free);
 
   if (recent_info->icon)
     g_object_unref (recent_info->icon);
@@ -1985,7 +2008,7 @@ get_icon_fallback (const gchar *icon_name,
  *
  * Retrieves the icon of size @size associated to the resource MIME type.
  *
- * Returns: (transfer full): a #GdkPixbuf containing the icon,
+ * Returns: (nullable) (transfer full): a #GdkPixbuf containing the icon,
  *     or %NULL. Use g_object_unref() when finished using the icon.
  *
  * Since: 2.10
@@ -2020,7 +2043,7 @@ gtk_recent_info_get_icon (GtkRecentInfo *info,
  *
  * Retrieves the icon associated to the resource MIME type.
  *
- * Returns: (transfer full): a #GIcon containing the icon, or %NULL.
+ * Returns: (nullable) (transfer full): a #GIcon containing the icon, or %NULL.
  *   Use g_object_unref() when finished using the icon
  *
  * Since: 2.22
@@ -2283,7 +2306,7 @@ gtk_recent_info_get_short_name (GtkRecentInfo *info)
  * is local, it returns a local path; if the resource is not local,
  * it returns the UTF-8 encoded content of gtk_recent_info_get_uri().
  *
- * Returns: a newly allocated UTF-8 string containing the
+ * Returns: (nullable): a newly allocated UTF-8 string containing the
  *   resource’s URI or %NULL. Use g_free() when done using it.
  *
  * Since: 2.10
@@ -2444,7 +2467,7 @@ gtk_recent_info_has_group (GtkRecentInfo *info,
  *
  * Creates a #GAppInfo for the specified #GtkRecentInfo
  *
- * Returns: (transfer full): the newly created #GAppInfo, or %NULL.
+ * Returns: (nullable) (transfer full): the newly created #GAppInfo, or %NULL.
  *   In case of error, @error will be set either with a
  *   %GTK_RECENT_MANAGER_ERROR or a %G_IO_ERROR
  */

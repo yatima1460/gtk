@@ -114,9 +114,6 @@ static void gtk_table_get_preferred_height (GtkWidget *widget,
                                             gint      *natural);
 static void gtk_table_size_allocate (GtkWidget	    *widget,
 				     GtkAllocation  *allocation);
-static void gtk_table_compute_expand (GtkWidget     *widget,
-                                      gboolean      *hexpand,
-                                      gboolean      *vexpand);
 static void gtk_table_add	    (GtkContainer   *container,
 				     GtkWidget	    *widget);
 static void gtk_table_remove	    (GtkContainer   *container,
@@ -173,7 +170,6 @@ gtk_table_class_init (GtkTableClass *class)
   widget_class->get_preferred_width = gtk_table_get_preferred_width;
   widget_class->get_preferred_height = gtk_table_get_preferred_height;
   widget_class->size_allocate = gtk_table_size_allocate;
-  widget_class->compute_expand = gtk_table_compute_expand;
   
   container_class->add = gtk_table_add;
   container_class->remove = gtk_table_remove;
@@ -283,43 +279,6 @@ gtk_table_class_init (GtkTableClass *class)
 								 P_("Extra space to put between the child and its upper and lower neighbors, in pixels"),
 								 0, 65535, 0,
 								 GTK_PARAM_READWRITE));
-}
-
-static void
-gtk_table_compute_expand (GtkWidget *widget,
-                          gboolean  *hexpand_p,
-                          gboolean  *vexpand_p)
-{
-  GtkTable *table = GTK_TABLE (widget);
-  GtkTablePrivate *priv = table->priv;
-  GList *list;
-  GtkTableChild *child;
-  gboolean hexpand;
-  gboolean vexpand;
-
-  hexpand = FALSE;
-  vexpand = FALSE;
-
-  for (list = priv->children; list; list = list->next)
-    {
-      child = list->data;
-
-      if (!hexpand)
-        hexpand = child->xexpand ||
-                  gtk_widget_compute_expand (child->widget,
-                                             GTK_ORIENTATION_HORIZONTAL);
-
-      if (!vexpand)
-        vexpand = child->yexpand ||
-                  gtk_widget_compute_expand (child->widget,
-                                             GTK_ORIENTATION_VERTICAL);
-
-      if (hexpand && vexpand)
-        break;
-    }
-
-  *hexpand_p = hexpand;
-  *vexpand_p = vexpand;
 }
 
 static GType
@@ -450,32 +409,14 @@ gtk_table_set_child_property (GtkContainer    *container,
       break;
     case CHILD_PROP_X_OPTIONS:
       {
-        gboolean xexpand;
-
-        xexpand = (g_value_get_flags (value) & GTK_EXPAND) != 0;
-
-        if (table_child->xexpand != xexpand)
-          {
-            table_child->xexpand = xexpand;
-            gtk_widget_queue_compute_expand (GTK_WIDGET (table));
-          }
-
+        table_child->xexpand = (g_value_get_flags (value) & GTK_EXPAND) != 0;
         table_child->xshrink = (g_value_get_flags (value) & GTK_SHRINK) != 0;
         table_child->xfill = (g_value_get_flags (value) & GTK_FILL) != 0;
       }
       break;
     case CHILD_PROP_Y_OPTIONS:
       {
-        gboolean yexpand;
-
-        yexpand = (g_value_get_flags (value) & GTK_EXPAND) != 0;
-
-        if (table_child->yexpand != yexpand)
-          {
-            table_child->yexpand = yexpand;
-            gtk_widget_queue_compute_expand (GTK_WIDGET (table));
-          }
-
+        table_child->yexpand = (g_value_get_flags (value) & GTK_EXPAND) != 0;
         table_child->yshrink = (g_value_get_flags (value) & GTK_SHRINK) != 0;
         table_child->yfill = (g_value_get_flags (value) & GTK_FILL) != 0;
       }
@@ -1792,10 +1733,10 @@ gtk_table_size_allocate_pass1 (GtkTable *table)
 	      for (col = 0; col < priv->ncols; col++)
 		if (priv->cols[col].shrink)
 		  {
-		    gint allocation = priv->cols[col].allocation;
+		    gint alloc = priv->cols[col].allocation;
 
 		    priv->cols[col].allocation = MAX (1, (gint) priv->cols[col].allocation - extra / nshrink);
-		    extra -= allocation - priv->cols[col].allocation;
+		    extra -= alloc - priv->cols[col].allocation;
 		    nshrink -= 1;
 		    if (priv->cols[col].allocation < 2)
 		      {
@@ -1884,10 +1825,10 @@ gtk_table_size_allocate_pass1 (GtkTable *table)
 	      for (row = 0; row < priv->nrows; row++)
 		if (priv->rows[row].shrink)
 		  {
-		    gint allocation = priv->rows[row].allocation;
+		    gint alloc = priv->rows[row].allocation;
 
 		    priv->rows[row].allocation = MAX (1, (gint) priv->rows[row].allocation - extra / nshrink);
-		    extra -= allocation - priv->rows[row].allocation;
+		    extra -= alloc - priv->rows[row].allocation;
 		    nshrink -= 1;
 		    if (priv->rows[row].allocation < 2)
 		      {

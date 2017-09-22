@@ -22,6 +22,8 @@
 #include "gdkmir.h"
 #include "gdkmir-private.h"
 
+#include <mir_toolkit/events/window_placement.h>
+
 #define NANO_TO_MILLI(x) ((x) / 1000000)
 
 struct _GdkMirWindowReference {
@@ -32,7 +34,7 @@ struct _GdkMirWindowReference {
 
 typedef struct {
   GdkMirWindowReference *window_ref;
-  MirEvent               event;
+  const MirEvent        *event;
 } GdkMirQueuedEvent;
 
 struct _GdkMirEventSource
@@ -54,7 +56,7 @@ send_event (GdkWindow *window, GdkDevice *device, GdkEvent *event)
 
   gdk_event_set_device (event, device);
   gdk_event_set_source_device (event, device);
-  gdk_event_set_screen (event, gdk_display_get_screen (gdk_window_get_display (window), 0));
+  gdk_event_set_screen (event, gdk_display_get_default_screen (gdk_window_get_display (window)));
   event->any.window = g_object_ref (window);
 
   display = gdk_window_get_display (window);
@@ -125,22 +127,38 @@ static void
 generate_key_event (GdkWindow *window, GdkEventType type, guint state, guint keyval, guint16 keycode, gboolean is_modifier, guint32 event_time)
 {
   GdkEvent *event;
+  GdkDisplay *display;
+  GdkSeat *seat;
+  GdkDevice *keyboard;
 
   event = gdk_event_new (type);
   event->key.state = state;
   event->key.keyval = keyval;
   event->key.hardware_keycode = keycode + 8;
+  gdk_event_set_scancode (event, keycode + 8);
   event->key.is_modifier = is_modifier;
   event->key.time = event_time;
   set_key_event_string (&event->key);
 
-  send_event (window, _gdk_mir_device_manager_get_keyboard (gdk_display_get_device_manager (gdk_window_get_display (window))), event);
+  display = gdk_window_get_display (window);
+  seat = gdk_display_get_default_seat (display);
+  keyboard = gdk_seat_get_keyboard (seat);
+
+  send_event (window, keyboard, event);
 }
 
 static GdkDevice *
 get_pointer (GdkWindow *window)
 {
-  return gdk_device_manager_get_client_pointer (gdk_display_get_device_manager (gdk_window_get_display (window)));
+  GdkDisplay *display;
+  GdkSeat *seat;
+  GdkDevice *pointer;
+
+  display = gdk_window_get_display (window);
+  seat = gdk_display_get_default_seat (display);
+  pointer = gdk_seat_get_pointer (seat);
+
+  return pointer;
 }
 
 static void
@@ -180,7 +198,7 @@ generate_scroll_event (GdkWindow *window, gdouble x, gdouble y, gdouble delta_x,
   else
     {
       event->scroll.direction = GDK_SCROLL_SMOOTH;
-      event->scroll.delta_x = -delta_x;
+      event->scroll.delta_x = delta_x;
       event->scroll.delta_y = -delta_y;
     }
 
@@ -224,9 +242,15 @@ generate_focus_event (GdkWindow *window, gboolean focused)
   GdkEvent *event;
 
   if (focused)
-    gdk_synthesize_window_state (window, 0, GDK_WINDOW_STATE_FOCUSED);
+    {
+      gdk_synthesize_window_state (window, 0, GDK_WINDOW_STATE_FOCUSED);
+      _gdk_mir_display_focus_window (gdk_window_get_display (window), window);
+    }
   else
-    gdk_synthesize_window_state (window, GDK_WINDOW_STATE_FOCUSED, 0);
+    {
+      gdk_synthesize_window_state (window, GDK_WINDOW_STATE_FOCUSED, 0);
+      _gdk_mir_display_unfocus_window (gdk_window_get_display (window), window);
+    }
 
   event = gdk_event_new (GDK_FOCUS_CHANGE);
   event->focus_change.send_event = FALSE;
@@ -236,198 +260,182 @@ generate_focus_event (GdkWindow *window, gboolean focused)
 }
 
 static guint
-get_modifier_state (unsigned int modifiers, unsigned int button_state)
+get_modifier_state (unsigned int modifiers, guint button_state)
 {
-  guint modifier_state = 0;
+  guint modifier_state = button_state;
 
-  if ((modifiers & mir_key_modifier_alt) != 0)
+  if ((modifiers & (mir_input_event_modifier_alt |
+                    mir_input_event_modifier_alt_left |
+                    mir_input_event_modifier_alt_right)) != 0)
     modifier_state |= GDK_MOD1_MASK;
-  if ((modifiers & mir_key_modifier_shift) != 0)
+  if ((modifiers & (mir_input_event_modifier_shift |
+                    mir_input_event_modifier_shift_left |
+                    mir_input_event_modifier_shift_right)) != 0)
     modifier_state |= GDK_SHIFT_MASK;
-  if ((modifiers & mir_key_modifier_ctrl) != 0)
+  if ((modifiers & (mir_input_event_modifier_ctrl |
+                    mir_input_event_modifier_ctrl_left |
+                    mir_input_event_modifier_ctrl_right)) != 0)
     modifier_state |= GDK_CONTROL_MASK;
-  if ((modifiers & mir_key_modifier_meta) != 0)
-    modifier_state |= GDK_SUPER_MASK;
-  if ((modifiers & mir_key_modifier_caps_lock) != 0)
+  if ((modifiers & (mir_input_event_modifier_meta |
+                    mir_input_event_modifier_meta_left |
+                    mir_input_event_modifier_meta_right)) != 0)
+    modifier_state |= GDK_META_MASK;
+  if ((modifiers & mir_input_event_modifier_caps_lock) != 0)
     modifier_state |= GDK_LOCK_MASK;
-  if ((button_state & mir_motion_button_primary) != 0)
-    modifier_state |= GDK_BUTTON1_MASK;
-  if ((button_state & mir_motion_button_secondary) != 0)
-    modifier_state |= GDK_BUTTON3_MASK;
-  if ((button_state & mir_motion_button_tertiary) != 0)
-    modifier_state |= GDK_BUTTON2_MASK;
 
   return modifier_state;
 }
 
 static void
-handle_key_event (GdkWindow *window, const MirKeyEvent *event)
+handle_key_event (GdkWindow *window, const MirInputEvent *event)
 {
+  const MirKeyboardEvent *keyboard_event = mir_input_event_get_keyboard_event (event);
   GdkMirWindowImpl *impl = GDK_MIR_WINDOW_IMPL (window->impl);
   GdkKeymap *keymap;
   guint modifier_state;
-  MirMotionButton button_state;
+  guint button_state;
 
-  switch (event->action)
-    {
-    case mir_key_action_down:
-    case mir_key_action_up:
-      // FIXME: Convert keycode
-      _gdk_mir_window_impl_get_cursor_state (impl, NULL, NULL, NULL, &button_state);
-      modifier_state = get_modifier_state (event->modifiers, button_state);
-      keymap = gdk_keymap_get_for_display (gdk_window_get_display (window));
+  if (!keyboard_event)
+    return;
 
-      generate_key_event (window,
-                          event->action == mir_key_action_down ? GDK_KEY_PRESS : GDK_KEY_RELEASE,
-                          modifier_state,
-                          event->key_code,
-                          event->scan_code,
-                          _gdk_mir_keymap_key_is_modifier (keymap, event->key_code),
-                          NANO_TO_MILLI (event->event_time));
-      break;
-    default:
-    //case mir_key_action_multiple:
-      // FIXME
-      break;
-    }
-}
+  _gdk_mir_window_impl_get_cursor_state (impl, NULL, NULL, NULL, &button_state);
+  modifier_state = get_modifier_state (mir_keyboard_event_modifiers (keyboard_event), button_state);
+  keymap = gdk_keymap_get_for_display (gdk_window_get_display (window));
 
-/* TODO: Remove once we have proper transient window support. */
-typedef struct
-{
-  GdkWindow *except;
-  gdouble    x;
-  gdouble    y;
-  guint32    time;
-} LeaveInfo;
-
-/* TODO: Remove once we have proper transient window support. */
-/*
- * leave_windows_except:
- *
- * Generate a leave event for every window except the one the cursor is in.
- */
-static void
-leave_windows_except (GdkWindow *window,
-                      gpointer   user_data)
-{
-  LeaveInfo info = *((LeaveInfo *) user_data);
-
-  info.x -= window->x;
-  info.y -= window->y;
-
-  _gdk_mir_window_transient_children_foreach (window, leave_windows_except, &info);
-
-  if (window != info.except)
-    {
-      GdkMirWindowImpl *impl = GDK_MIR_WINDOW_IMPL (window->impl);
-      gboolean cursor_inside;
-      MirMotionButton button_state;
-
-      _gdk_mir_window_impl_get_cursor_state (impl, NULL, NULL, &cursor_inside, &button_state);
-
-      if (cursor_inside)
-        generate_crossing_event (window, GDK_LEAVE_NOTIFY, info.x, info.y, info.time);
-
-      _gdk_mir_window_impl_set_cursor_state (impl, info.x, info.y, FALSE, button_state);
-    }
+  generate_key_event (window,
+                      mir_keyboard_event_action (keyboard_event) == mir_keyboard_action_up ? GDK_KEY_RELEASE : GDK_KEY_PRESS,
+                      modifier_state,
+                      mir_keyboard_event_key_code (keyboard_event),
+                      mir_keyboard_event_scan_code (keyboard_event),
+                      _gdk_mir_keymap_key_is_modifier (keymap, mir_keyboard_event_key_code (keyboard_event)),
+                      NANO_TO_MILLI (mir_input_event_get_event_time (event)));
 }
 
 static void
-handle_motion_event (GdkWindow *window, const MirMotionEvent *event)
+handle_touch_event (GdkWindow           *window,
+                    const MirTouchEvent *mir_touch_event)
 {
+  const MirInputEvent *mir_input_event = mir_touch_event_input_event (mir_touch_event);
+  guint n = mir_touch_event_point_count (mir_touch_event);
+  GdkEvent *gdk_event;
+  guint i;
+
+  for (i = 0; i < n; i++)
+    {
+      MirTouchAction action = mir_touch_event_action (mir_touch_event, i);
+      if (action == mir_touch_action_up)
+        gdk_event = gdk_event_new (GDK_TOUCH_END);
+      else if (action == mir_touch_action_down)
+        gdk_event = gdk_event_new (GDK_TOUCH_BEGIN);
+      else
+        gdk_event = gdk_event_new (GDK_TOUCH_UPDATE);
+
+      gdk_event->touch.window = window;
+      gdk_event->touch.sequence = GINT_TO_POINTER (mir_touch_event_id (mir_touch_event, i));
+      gdk_event->touch.time = mir_input_event_get_event_time (mir_input_event);
+      gdk_event->touch.state = get_modifier_state (mir_touch_event_modifiers (mir_touch_event), 0);
+      gdk_event->touch.x = mir_touch_event_axis_value (mir_touch_event, i, mir_touch_axis_x);
+      gdk_event->touch.y = mir_touch_event_axis_value (mir_touch_event, i, mir_touch_axis_y);
+      gdk_event->touch.x_root = mir_touch_event_axis_value (mir_touch_event, i, mir_touch_axis_x);
+      gdk_event->touch.y_root = mir_touch_event_axis_value (mir_touch_event, i, mir_touch_axis_y);
+      gdk_event->touch.emulating_pointer = TRUE;
+      gdk_event_set_pointer_emulated (gdk_event, TRUE);
+
+      send_event (window, get_pointer (window), gdk_event);
+    }
+}
+
+static guint
+get_button_state (const MirPointerEvent *event)
+{
+  guint state = 0;
+
+  if (mir_pointer_event_button_state (event, mir_pointer_button_primary)) /* left */
+    state |= GDK_BUTTON1_MASK;
+  if (mir_pointer_event_button_state (event, mir_pointer_button_secondary)) /* right */
+    state |= GDK_BUTTON3_MASK;
+  if (mir_pointer_event_button_state (event, mir_pointer_button_tertiary)) /* middle */
+    state |= GDK_BUTTON2_MASK;
+
+  return state;
+}
+
+static void
+handle_motion_event (GdkWindow *window, const MirInputEvent *event)
+{
+  const MirPointerEvent *pointer_event = mir_input_event_get_pointer_event (event);
   GdkMirWindowImpl *impl = GDK_MIR_WINDOW_IMPL (window->impl);
   gdouble x, y;
   gboolean cursor_inside;
-  MirMotionButton button_state;
+  guint button_state;
+  guint new_button_state;
   guint modifier_state;
   guint32 event_time;
   GdkEventType event_type;
-  MirMotionButton changed_button_state;
+  guint changed_button_state;
+
+  if (!pointer_event)
+    return;
 
   _gdk_mir_window_impl_get_cursor_state (impl, &x, &y, &cursor_inside, &button_state);
-  if (event->pointer_count > 0)
-    {
-      x = event->pointer_coordinates[0].x;
-      y = event->pointer_coordinates[0].y;
-    }
-  modifier_state = get_modifier_state (event->modifiers, event->button_state);
-  event_time = NANO_TO_MILLI (event->event_time);
-
-  /* TODO: Remove once we have proper transient window support. */
-  if (event->action == mir_motion_action_hover_exit)
-    {
-      LeaveInfo info;
-
-      info.x = x;
-      info.y = y;
-      info.time = event_time;
-      info.except = window;
-
-      /* Leave all transient children from leaf to root, except the root since we do it later. */
-      _gdk_mir_window_transient_children_foreach (window, leave_windows_except, &info);
-    }
-  else
-    {
-      LeaveInfo info;
-
-      info.x = x;
-      info.y = y;
-      info.time = event_time;
-      info.except = _gdk_mir_window_get_visible_transient_child (window, x, y, &x, &y);
-
-      /* Leave all transient children from leaf to root, except the pointer window since we enter it. */
-      _gdk_mir_window_transient_children_foreach (window, leave_windows_except, &info);
-
-      window = info.except;
-
-      if (window)
-        {
-          /* Enter the pointer window. */
-          gboolean cursor_inside_pointer_window;
-
-          impl = GDK_MIR_WINDOW_IMPL (window->impl);
-          _gdk_mir_window_impl_get_cursor_state (impl, NULL, NULL, &cursor_inside_pointer_window, NULL);
-
-          if (!cursor_inside_pointer_window)
-            {
-              generate_crossing_event (window, GDK_ENTER_NOTIFY, x, y, event_time);
-              _gdk_mir_window_impl_set_cursor_state (impl, x, y, TRUE, event->button_state);
-            }
-        }
-    }
+  new_button_state = get_button_state (pointer_event);
+  modifier_state = get_modifier_state (mir_pointer_event_modifiers (pointer_event), new_button_state);
+  event_time = NANO_TO_MILLI (mir_input_event_get_event_time (event));
 
   if (window)
     {
+      gdouble new_x;
+      gdouble new_y;
+      gdouble hscroll;
+      gdouble vscroll;
+
       /* Update which window has focus */
       _gdk_mir_pointer_set_location (get_pointer (window), x, y, window, modifier_state);
-      switch (event->action)
+      switch (mir_pointer_event_action (pointer_event))
         {
-        case mir_motion_action_down:
-        case mir_motion_action_up:
-          event_type = event->action == mir_motion_action_down ? GDK_BUTTON_PRESS : GDK_BUTTON_RELEASE;
-          changed_button_state = button_state ^ event->button_state;
-          if (changed_button_state == 0 || (changed_button_state & mir_motion_button_primary) != 0)
+        case mir_pointer_action_button_up:
+        case mir_pointer_action_button_down:
+          event_type = mir_pointer_event_action (pointer_event) == mir_pointer_action_button_down ? GDK_BUTTON_PRESS : GDK_BUTTON_RELEASE;
+          changed_button_state = button_state ^ new_button_state;
+          if (changed_button_state == 0 || (changed_button_state & GDK_BUTTON1_MASK) != 0)
             generate_button_event (window, event_type, x, y, GDK_BUTTON_PRIMARY, modifier_state, event_time);
-          if ((changed_button_state & mir_motion_button_secondary) != 0)
-            generate_button_event (window, event_type, x, y, GDK_BUTTON_SECONDARY, modifier_state, event_time);
-          if ((changed_button_state & mir_motion_button_tertiary) != 0)
+          if ((changed_button_state & GDK_BUTTON2_MASK) != 0)
             generate_button_event (window, event_type, x, y, GDK_BUTTON_MIDDLE, modifier_state, event_time);
-          button_state = event->button_state;
+          if ((changed_button_state & GDK_BUTTON3_MASK) != 0)
+            generate_button_event (window, event_type, x, y, GDK_BUTTON_SECONDARY, modifier_state, event_time);
+          button_state = new_button_state;
           break;
-        case mir_motion_action_scroll:
-          generate_scroll_event (window, x, y, event->pointer_coordinates[0].hscroll, event->pointer_coordinates[0].vscroll, modifier_state, event_time);
+        case mir_pointer_action_motion:
+          new_x = mir_pointer_event_axis_value (pointer_event, mir_pointer_axis_x);
+          new_y = mir_pointer_event_axis_value (pointer_event, mir_pointer_axis_y);
+          hscroll = mir_pointer_event_axis_value (pointer_event, mir_pointer_axis_hscroll);
+          vscroll = mir_pointer_event_axis_value (pointer_event, mir_pointer_axis_vscroll);
+
+          if (hscroll != 0.0 || vscroll != 0.0)
+            generate_scroll_event (window, x, y, hscroll, vscroll, modifier_state, event_time);
+          if (ABS (new_x - x) > 0.5 || ABS (new_y - y) > 0.5)
+            {
+              generate_motion_event (window, new_x, new_y, modifier_state, event_time);
+              x = new_x;
+              y = new_y;
+            }
+
           break;
-        case mir_motion_action_move: // move with button
-        case mir_motion_action_hover_move: // move without button
-          generate_motion_event (window, x, y, modifier_state, event_time);
+        case mir_pointer_action_enter:
+          if (!cursor_inside)
+            {
+              cursor_inside = TRUE;
+              generate_crossing_event (window, GDK_ENTER_NOTIFY, x, y, event_time);
+            }
           break;
-        case mir_motion_action_hover_exit:
+        case mir_pointer_action_leave:
           if (cursor_inside)
             {
               cursor_inside = FALSE;
               generate_crossing_event (window, GDK_LEAVE_NOTIFY, x, y, event_time);
             }
+          break;
+        default:
           break;
         }
 
@@ -436,23 +444,60 @@ handle_motion_event (GdkWindow *window, const MirMotionEvent *event)
 }
 
 static void
-handle_surface_event (GdkWindow *window, const MirSurfaceEvent *event)
+handle_window_event (GdkWindow            *window,
+                     const MirWindowEvent *event)
 {
   GdkMirWindowImpl *impl = GDK_MIR_WINDOW_IMPL (window->impl);
+  MirWindowState state;
 
-  switch (event->attrib)
+  switch (mir_window_event_get_attribute (event))
     {
-    case mir_surface_attrib_type:
-      _gdk_mir_window_impl_set_surface_type (impl, event->value);
+    case mir_window_attrib_type:
+      _gdk_mir_window_impl_set_window_type (impl, mir_window_event_get_attribute_value (event));
       break;
-    case mir_surface_attrib_state:
-      _gdk_mir_window_impl_set_surface_state (impl, event->value);
-      // FIXME: notify
+    case mir_window_attrib_state:
+      state = mir_window_event_get_attribute_value (event);
+      _gdk_mir_window_impl_set_window_state (impl, state);
+
+      switch (state)
+        {
+        case mir_window_state_restored:
+        case mir_window_state_hidden:
+          gdk_synthesize_window_state (window,
+                                       GDK_WINDOW_STATE_ICONIFIED |
+                                       GDK_WINDOW_STATE_MAXIMIZED |
+                                       GDK_WINDOW_STATE_FULLSCREEN,
+                                       0);
+          break;
+        case mir_window_state_minimized:
+          gdk_synthesize_window_state (window,
+                                       GDK_WINDOW_STATE_MAXIMIZED |
+                                       GDK_WINDOW_STATE_FULLSCREEN,
+                                       GDK_WINDOW_STATE_ICONIFIED);
+          break;
+        case mir_window_state_maximized:
+        case mir_window_state_vertmaximized:
+        case mir_window_state_horizmaximized:
+          gdk_synthesize_window_state (window,
+                                       GDK_WINDOW_STATE_ICONIFIED |
+                                       GDK_WINDOW_STATE_FULLSCREEN,
+                                       GDK_WINDOW_STATE_MAXIMIZED);
+          break;
+        case mir_window_state_fullscreen:
+          gdk_synthesize_window_state (window,
+                                       GDK_WINDOW_STATE_ICONIFIED |
+                                       GDK_WINDOW_STATE_MAXIMIZED,
+                                       GDK_WINDOW_STATE_FULLSCREEN);
+          break;
+        default:
+          break;
+        }
+
       break;
-    case mir_surface_attrib_swapinterval:
+    case mir_window_attrib_swapinterval:
       break;
-    case mir_surface_attrib_focus:
-      generate_focus_event (window, event->value != 0);
+    case mir_window_attrib_focus:
+      generate_focus_event (window, mir_window_event_get_attribute_value (event) != 0);
       break;
     default:
       break;
@@ -478,25 +523,38 @@ static void
 handle_resize_event (GdkWindow            *window,
                      const MirResizeEvent *event)
 {
-  window->width = event->width;
-  window->height = event->height;
+  window->width = mir_resize_event_get_width (event);
+  window->height = mir_resize_event_get_height (event);
   _gdk_window_update_size (window);
 
-  generate_configure_event (window, event->width, event->height);
+  generate_configure_event (window, mir_resize_event_get_width (event), mir_resize_event_get_height (event));
 }
 
 static void
-handle_close_event (GdkWindow                  *window,
-                    const MirCloseSurfaceEvent *event)
+handle_close_event (GdkWindow *window)
 {
   send_event (window, get_pointer (window), gdk_event_new (GDK_DESTROY));
   gdk_window_destroy_notify (window);
 }
 
+static void
+handle_window_output_event (GdkWindow                  *window,
+                            const MirWindowOutputEvent *event)
+{
+  _gdk_mir_window_set_scale (window, mir_window_output_event_get_scale (event));
+}
+
+static void
+handle_window_placement_event (GdkWindow                     *window,
+                               const MirWindowPlacementEvent *event)
+{
+  _gdk_mir_window_set_final_rect (window, mir_window_placement_get_relative_position (event));
+}
+
 typedef struct
 {
   GdkWindow *window;
-  MirEvent event;
+  MirEvent *event;
 } EventData;
 
 static void
@@ -504,33 +562,61 @@ gdk_mir_event_source_queue_event (GdkDisplay     *display,
                                   GdkWindow      *window,
                                   const MirEvent *event)
 {
+  const MirInputEvent *input_event;
+
   // FIXME: Only generate events if the window wanted them?
-  switch (event->type)
+  switch (mir_event_get_type (event))
     {
+    case mir_event_type_input:
+      input_event = mir_event_get_input_event (event);
+
+      switch (mir_input_event_get_type (input_event))
+        {
+        case mir_input_event_type_key:
+          handle_key_event (window, input_event);
+          break;
+        case mir_input_event_type_touch:
+          handle_touch_event (window, mir_input_event_get_touch_event (input_event));
+          break;
+        case mir_input_event_type_pointer:
+          handle_motion_event (window, input_event);
+          break;
+        default:
+          break;
+        }
+
+      break;
     case mir_event_type_key:
-      handle_key_event (window, &event->key);
+      handle_key_event (window, mir_event_get_input_event (event));
       break;
     case mir_event_type_motion:
-      handle_motion_event (window, &event->motion);
+      handle_motion_event (window, mir_event_get_input_event (event));
       break;
-    case mir_event_type_surface:
-      handle_surface_event (window, &event->surface);
+    case mir_event_type_window:
+      handle_window_event (window, mir_event_get_window_event (event));
       break;
     case mir_event_type_resize:
-      handle_resize_event (window, &event->resize);
+      handle_resize_event (window, mir_event_get_resize_event (event));
       break;
     case mir_event_type_prompt_session_state_change:
-      // FIXME?
       break;
     case mir_event_type_orientation:
-      // FIXME?
       break;
-    case mir_event_type_close_surface:
-      handle_close_event (window, &event->close_surface);
+    case mir_event_type_close_window:
+      handle_close_event (window);
+      break;
+    case mir_event_type_keymap:
+      break;
+    case mir_event_type_window_output:
+      handle_window_output_event (window, mir_event_get_window_output_event (event));
+      break;
+    case mir_event_type_input_device_state:
+      break;
+    case mir_event_type_window_placement:
+      handle_window_placement_event (window, mir_event_get_window_placement_event (event));
       break;
     default:
-      g_warning ("Ignoring unknown Mir event %d", event->type);
-      // FIXME?
+      g_warning ("Ignoring unknown Mir event %d", mir_event_get_type (event));
       break;
     }
 }
@@ -551,6 +637,7 @@ static void
 gdk_mir_queued_event_free (GdkMirQueuedEvent *event)
 {
   _gdk_mir_window_reference_unref (event->window_ref);
+  mir_event_unref (event->event);
   g_slice_free (GdkMirQueuedEvent, event);
 }
 
@@ -569,9 +656,9 @@ gdk_mir_event_source_convert_events (GdkMirEventSource *source)
       if (window != NULL)
         {
           if (source->log_events)
-            _gdk_mir_print_event (&event->event);
+            _gdk_mir_print_event (event->event);
 
-          gdk_mir_event_source_queue_event (source->display, window, &event->event);
+          gdk_mir_event_source_queue_event (source->display, window, event->event);
         }
       else
         g_warning ("window was destroyed before event arrived...");
@@ -660,8 +747,14 @@ _gdk_mir_event_source_new (GdkDisplay *display)
 {
   GdkMirEventSource *source;
   GSource *g_source;
+  char *name;
 
   g_source = g_source_new (&gdk_mir_event_source_funcs, sizeof (GdkMirEventSource));
+  name = g_strdup_printf ("GDK Mir Event source (%s)", gdk_display_get_name (display));
+  g_source_set_name (g_source, name);
+  g_free (name);
+  g_source_set_priority (g_source, GDK_PRIORITY_EVENTS);
+  g_source_set_can_recurse (g_source, TRUE);
   g_source_attach (g_source, NULL);
 
   source = (GdkMirEventSource *) g_source;
@@ -735,7 +828,7 @@ _gdk_mir_event_source_queue (GdkMirWindowReference *window_ref,
   queued_event = g_slice_new (GdkMirQueuedEvent);
   g_atomic_int_inc (&window_ref->ref_count);
   queued_event->window_ref = window_ref;
-  queued_event->event = *event;
+  queued_event->event = mir_event_ref (event);
 
   g_mutex_lock (&source->mir_event_lock);
   g_queue_push_tail (&source->mir_events, queued_event);

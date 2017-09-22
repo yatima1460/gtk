@@ -34,6 +34,7 @@
 #include "gtkinfobar.h"
 #include "gtkaccessible.h"
 #include "gtkbuildable.h"
+#include "gtkbuilderprivate.h"
 #include "gtkbbox.h"
 #include "gtkbox.h"
 #include "gtklabel.h"
@@ -47,6 +48,7 @@
 #include "gtkorientable.h"
 #include "gtkrender.h"
 #include "gtktypebuiltins.h"
+#include "gtkwidgetprivate.h"
 #include "deprecated/gtkstock.h"
 
 /**
@@ -80,7 +82,7 @@
  * GtkInfoBar *bar;
  *
  * widget = gtk_info_bar_new ();
- * bar = GTK_INFO_BAR (bar);
+ * bar = GTK_INFO_BAR (widget);
  *
  * gtk_widget_set_no_show_all (widget, TRUE);
  * message_label = gtk_label_new ("");
@@ -118,6 +120,12 @@
  * multiple <action-widget> elements. The “response” attribute specifies a
  * numeric response, and the content of the element is the id of widget
  * (which should be a child of the dialogs @action_area).
+ *
+ * # CSS nodes
+ *
+ * GtkInfoBar has a single CSS node with name infobar. The node may get
+ * one of the style classes .info, .warning, .error or .question, depending
+ * on the message type.
  */
 
 enum
@@ -167,14 +175,6 @@ static void     gtk_info_bar_get_property (GObject        *object,
                                            guint           prop_id,
                                            GValue         *value,
                                            GParamSpec     *pspec);
-static void     gtk_info_bar_get_preferred_width          (GtkWidget *widget,
-                                                           gint      *minimum_width,
-                                                           gint      *natural_width);
-static void     gtk_info_bar_get_preferred_height         (GtkWidget *widget,
-                                                           gint      *minimum_height,
-                                                           gint      *natural_height);
-static gboolean gtk_info_bar_draw                         (GtkWidget      *widget,
-                                                           cairo_t        *cr);
 static void     gtk_info_bar_buildable_interface_init     (GtkBuildableIface *iface);
 static gboolean  gtk_info_bar_buildable_custom_tag_start   (GtkBuildable  *buildable,
                                                             GtkBuilder    *builder,
@@ -236,12 +236,6 @@ gtk_info_bar_get_property (GObject    *object,
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
     }
-}
-
-static void
-gtk_info_bar_finalize (GObject *object)
-{
-  G_OBJECT_CLASS (gtk_info_bar_parent_class)->finalize (object);
 }
 
 static void
@@ -307,79 +301,6 @@ gtk_info_bar_close (GtkInfoBar *info_bar)
 }
 
 static void
-get_padding_and_border (GtkWidget *widget,
-                        GtkBorder *border)
-{
-  GtkStyleContext *context;
-  GtkStateFlags state;
-  GtkBorder tmp;
-
-  context = gtk_widget_get_style_context (widget);
-  state = gtk_widget_get_state_flags (widget);
-
-  gtk_style_context_get_padding (context, state, border);
-  gtk_style_context_get_border (context, state, &tmp);
-  border->top += tmp.top;
-  border->right += tmp.right;
-  border->bottom += tmp.bottom;
-  border->left += tmp.left;
-}
-
-static void
-gtk_info_bar_get_preferred_width (GtkWidget *widget,
-                                  gint      *minimum_width,
-                                  gint      *natural_width)
-{
-  GtkBorder border;
-
-  get_padding_and_border (widget, &border);
-
-  GTK_WIDGET_CLASS (gtk_info_bar_parent_class)->get_preferred_width (widget,
-                                                                     minimum_width,
-                                                                     natural_width);
-
-  *minimum_width += border.left + border.right;
-  *natural_width += border.left + border.right;
-}
-
-static void
-gtk_info_bar_get_preferred_height (GtkWidget *widget,
-                                   gint      *minimum_height,
-                                   gint      *natural_height)
-{
-  GtkBorder border;
-
-  get_padding_and_border (widget, &border);
-
-  GTK_WIDGET_CLASS (gtk_info_bar_parent_class)->get_preferred_height (widget,
-                                                                      minimum_height,
-                                                                      natural_height);
-
-  *minimum_height += border.top + border.bottom;
-  *natural_height += border.top + border.bottom;
-}
-
-static gboolean
-gtk_info_bar_draw (GtkWidget *widget,
-                   cairo_t   *cr)
-{
-  GtkStyleContext *context;
-
-  context = gtk_widget_get_style_context (widget);
-
-  gtk_render_background (context, cr, 0, 0,
-                         gtk_widget_get_allocated_width (widget),
-                         gtk_widget_get_allocated_height (widget));
-  gtk_render_frame (context, cr, 0, 0,
-                    gtk_widget_get_allocated_width (widget),
-                    gtk_widget_get_allocated_height (widget));
-
-  GTK_WIDGET_CLASS (gtk_info_bar_parent_class)->draw (widget, cr);
-
-  return FALSE;
-}
-
-static void
 gtk_info_bar_show (GtkWidget *widget)
 {
   GtkInfoBarPrivate *priv = GTK_INFO_BAR (widget)->priv;
@@ -421,11 +342,7 @@ gtk_info_bar_class_init (GtkInfoBarClass *klass)
 
   object_class->get_property = gtk_info_bar_get_property;
   object_class->set_property = gtk_info_bar_set_property;
-  object_class->finalize = gtk_info_bar_finalize;
 
-  widget_class->get_preferred_width = gtk_info_bar_get_preferred_width;
-  widget_class->get_preferred_height = gtk_info_bar_get_preferred_height;
-  widget_class->draw = gtk_info_bar_draw;
   widget_class->show = gtk_info_bar_show;
   widget_class->hide = gtk_info_bar_hide;
 
@@ -519,7 +436,7 @@ gtk_info_bar_class_init (GtkInfoBarClass *klass)
                                                              0,
                                                              G_MAXINT,
                                                              CONTENT_AREA_DEFAULT_BORDER,
-                                                             GTK_PARAM_READABLE));
+                                                             GTK_PARAM_READABLE|G_PARAM_DEPRECATED));
 
   /**
    * GtkInfoBar:content-area-spacing:
@@ -537,7 +454,7 @@ gtk_info_bar_class_init (GtkInfoBarClass *klass)
                                                              0,
                                                              G_MAXINT,
                                                              CONTENT_AREA_DEFAULT_SPACING,
-                                                             GTK_PARAM_READABLE));
+                                                             GTK_PARAM_READABLE|G_PARAM_DEPRECATED));
 
   /**
    * GtkInfoBar:button-spacing:
@@ -554,7 +471,7 @@ gtk_info_bar_class_init (GtkInfoBarClass *klass)
                                                              0,
                                                              G_MAXINT,
                                                              ACTION_AREA_DEFAULT_SPACING,
-                                                             GTK_PARAM_READABLE));
+                                                             GTK_PARAM_READABLE|G_PARAM_DEPRECATED));
 
   /**
    * GtkInfoBar:action-area-border:
@@ -571,7 +488,7 @@ gtk_info_bar_class_init (GtkInfoBarClass *klass)
                                                              0,
                                                              G_MAXINT,
                                                              ACTION_AREA_DEFAULT_BORDER,
-                                                             GTK_PARAM_READABLE));
+                                                             GTK_PARAM_READABLE|G_PARAM_DEPRECATED));
 
   binding_set = gtk_binding_set_by_class (klass);
 
@@ -582,8 +499,10 @@ gtk_info_bar_class_init (GtkInfoBarClass *klass)
   gtk_widget_class_set_template_from_resource (widget_class, "/org/gtk/libgtk/ui/gtkinfobar.ui");
   gtk_widget_class_bind_template_child_internal_private (widget_class, GtkInfoBar, content_area);
   gtk_widget_class_bind_template_child_internal_private (widget_class, GtkInfoBar, action_area);
-  gtk_widget_class_bind_template_child_internal_private (widget_class, GtkInfoBar, close_button);
-  gtk_widget_class_bind_template_child_internal_private (widget_class, GtkInfoBar, revealer);
+  gtk_widget_class_bind_template_child_private (widget_class, GtkInfoBar, close_button);
+  gtk_widget_class_bind_template_child_private (widget_class, GtkInfoBar, revealer);
+
+  gtk_widget_class_set_css_name (widget_class, "infobar");
 }
 
 static void
@@ -597,21 +516,22 @@ close_button_clicked_cb (GtkWidget  *button,
 static void
 gtk_info_bar_init (GtkInfoBar *info_bar)
 {
+  GtkInfoBarPrivate *priv;
   GtkWidget *widget = GTK_WIDGET (info_bar);
 
-  info_bar->priv = gtk_info_bar_get_instance_private (info_bar);
+  priv = info_bar->priv = gtk_info_bar_get_instance_private (info_bar);
 
   gtk_widget_set_redraw_on_allocate (widget, TRUE);
 
   /* message-type is a CONSTRUCT property, so we init to a value
    * different from its default to trigger its property setter
    * during construction */
-  info_bar->priv->message_type = GTK_MESSAGE_OTHER;
+  priv->message_type = GTK_MESSAGE_OTHER;
 
-  gtk_widget_init_template (GTK_WIDGET (info_bar));
+  gtk_widget_init_template (widget);
 
-  gtk_widget_set_no_show_all (info_bar->priv->close_button, TRUE);
-  g_signal_connect (info_bar->priv->close_button, "clicked",
+  gtk_widget_set_no_show_all (priv->close_button, TRUE);
+  g_signal_connect (priv->close_button, "clicked",
                     G_CALLBACK (close_button_clicked_cb), info_bar);
 }
 
@@ -977,8 +897,10 @@ gtk_info_bar_response (GtkInfoBar *info_bar,
 
 typedef struct
 {
-  gchar *widget_name;
-  gchar *response_id;
+  gchar *name;
+  gint response_id;
+  gint line;
+  gint col;
 } ActionWidgetInfo;
 
 typedef struct
@@ -986,57 +908,118 @@ typedef struct
   GtkInfoBar *info_bar;
   GtkBuilder *builder;
   GSList *items;
-  gchar *response;
-} ActionWidgetsSubParserData;
+  gint response_id;
+  gboolean is_text;
+  GString *string;
+  gint line;
+  gint col;
+} SubParserData;
 
 static void
-attributes_start_element (GMarkupParseContext  *context,
-                          const gchar          *element_name,
-                          const gchar         **names,
-                          const gchar         **values,
-                          gpointer              user_data,
-                          GError              **error)
+action_widget_info_free (gpointer data)
 {
-  ActionWidgetsSubParserData *parser_data = (ActionWidgetsSubParserData*)user_data;
-  guint i;
+  ActionWidgetInfo *item = data;
+
+  g_free (item->name);
+  g_free (item);
+}
+
+static void
+parser_start_element (GMarkupParseContext  *context,
+                      const gchar          *element_name,
+                      const gchar         **names,
+                      const gchar         **values,
+                      gpointer              user_data,
+                      GError              **error)
+{
+  SubParserData *data = (SubParserData*)user_data;
 
   if (strcmp (element_name, "action-widget") == 0)
     {
-      for (i = 0; names[i]; i++)
-        if (strcmp (names[i], "response") == 0)
-          parser_data->response = g_strdup (values[i]);
+      const gchar *response;
+      GValue gvalue = G_VALUE_INIT;
+
+      if (!_gtk_builder_check_parent (data->builder, context, "action-widgets", error))
+        return;
+
+      if (!g_markup_collect_attributes (element_name, names, values, error,
+                                        G_MARKUP_COLLECT_STRING, "response", &response,
+                                        G_MARKUP_COLLECT_INVALID))
+        {
+          _gtk_builder_prefix_error (data->builder, context, error);
+          return;
+        }
+
+      if (!gtk_builder_value_from_string_type (data->builder, GTK_TYPE_RESPONSE_TYPE, response, &gvalue, error))
+        {
+          _gtk_builder_prefix_error (data->builder, context, error);
+          return;
+        }
+
+      data->response_id = g_value_get_enum (&gvalue);
+      data->is_text = TRUE;
+      g_string_set_size (data->string, 0);
+      g_markup_parse_context_get_position (context, &data->line, &data->col);
     }
   else if (strcmp (element_name, "action-widgets") == 0)
-    return;
+    {
+      if (!_gtk_builder_check_parent (data->builder, context, "object", error))
+        return;
+
+      if (!g_markup_collect_attributes (element_name, names, values, error,
+                                        G_MARKUP_COLLECT_INVALID, NULL, NULL,
+                                        G_MARKUP_COLLECT_INVALID))
+        _gtk_builder_prefix_error (data->builder, context, error);
+    }
   else
-    g_warning ("Unsupported tag for GtkInfoBar: %s\n", element_name);
+    {
+      _gtk_builder_error_unhandled_tag (data->builder, context,
+                                        "GtkInfoBar", element_name,
+                                        error);
+    }
 }
 
 static void
-attributes_text_element (GMarkupParseContext  *context,
-                         const gchar          *text,
-                         gsize                 text_len,
-                         gpointer              user_data,
-                         GError              **error)
+parser_text_element (GMarkupParseContext  *context,
+                     const gchar          *text,
+                     gsize                 text_len,
+                     gpointer              user_data,
+                     GError              **error)
 {
-  ActionWidgetsSubParserData *parser_data = (ActionWidgetsSubParserData*)user_data;
-  ActionWidgetInfo *item;
+  SubParserData *data = (SubParserData*)user_data;
 
-  if (!parser_data->response)
-    return;
-
-  item = g_new (ActionWidgetInfo, 1);
-  item->widget_name = g_strndup (text, text_len);
-  item->response_id = parser_data->response;
-  parser_data->items = g_slist_prepend (parser_data->items, item);
-  parser_data->response = NULL;
+  if (data->is_text)
+    g_string_append_len (data->string, text, text_len);
 }
 
-static const GMarkupParser attributes_parser =
+static void
+parser_end_element (GMarkupParseContext  *context,
+                    const gchar          *element_name,
+                    gpointer              user_data,
+                    GError              **error)
 {
-  attributes_start_element,
-  NULL,
-  attributes_text_element,
+  SubParserData *data = (SubParserData*)user_data;
+
+  if (data->is_text)
+    {
+      ActionWidgetInfo *item;
+
+      item = g_new (ActionWidgetInfo, 1);
+      item->name = g_strdup (data->string->str);
+      item->response_id = data->response_id;
+      item->line = data->line;
+      item->col = data->col;
+
+      data->items = g_slist_prepend (data->items, item);
+      data->is_text = FALSE;
+    }
+}
+
+static const GMarkupParser sub_parser =
+{
+  parser_start_element,
+  parser_end_element,
+  parser_text_element,
 };
 
 gboolean
@@ -1045,22 +1028,24 @@ gtk_info_bar_buildable_custom_tag_start (GtkBuildable  *buildable,
                                          GObject       *child,
                                          const gchar   *tagname,
                                          GMarkupParser *parser,
-                                         gpointer      *data)
+                                         gpointer      *parser_data)
 {
-  ActionWidgetsSubParserData *parser_data;
+  SubParserData *data;
 
   if (parent_buildable_iface->custom_tag_start (buildable, builder, child,
-                                                tagname, parser, data))
+                                                tagname, parser, parser_data))
     return TRUE;
 
   if (!child && strcmp (tagname, "action-widgets") == 0)
     {
-      parser_data = g_slice_new0 (ActionWidgetsSubParserData);
-      parser_data->info_bar = GTK_INFO_BAR (buildable);
-      parser_data->items = NULL;
+      data = g_slice_new0 (SubParserData);
+      data->info_bar = GTK_INFO_BAR (buildable);
+      data->builder = builder;
+      data->string = g_string_new ("");
+      data->items = NULL;
 
-      *parser = attributes_parser;
-      *data = parser_data;
+      *parser = sub_parser;
+      *parser_data = data;
       return TRUE;
     }
 
@@ -1075,7 +1060,7 @@ gtk_info_bar_buildable_custom_finished (GtkBuildable *buildable,
                                         gpointer      user_data)
 {
   GSList *l;
-  ActionWidgetsSubParserData *parser_data;
+  SubParserData *data;
   GObject *object;
   GtkInfoBar *info_bar;
   ResponseData *ad;
@@ -1089,24 +1074,19 @@ gtk_info_bar_buildable_custom_finished (GtkBuildable *buildable,
     }
 
   info_bar = GTK_INFO_BAR (buildable);
-  parser_data = (ActionWidgetsSubParserData*)user_data;
-  parser_data->items = g_slist_reverse (parser_data->items);
+  data = (SubParserData*)user_data;
+  data->items = g_slist_reverse (data->items);
 
-  for (l = parser_data->items; l; l = l->next)
+  for (l = data->items; l; l = l->next)
     {
       ActionWidgetInfo *item = l->data;
 
-      object = gtk_builder_get_object (builder, item->widget_name);
+      object = _gtk_builder_lookup_object (builder, item->name, item->line, item->col);
       if (!object)
-        {
-          g_warning ("Unknown object %s specified in action-widgets of %s",
-                     item->widget_name,
-                     gtk_buildable_get_name (GTK_BUILDABLE (buildable)));
-          continue;
-        }
+        continue;
 
       ad = get_response_data (GTK_WIDGET (object), TRUE);
-      ad->response_id = atoi (item->response_id);
+      ad->response_id = item->response_id;
 
       if (GTK_IS_BUTTON (object))
         signal_id = g_signal_lookup ("clicked", GTK_TYPE_BUTTON);
@@ -1119,23 +1099,17 @@ gtk_info_bar_buildable_custom_finished (GtkBuildable *buildable,
 
           closure = g_cclosure_new_object (G_CALLBACK (action_widget_activated),
                                            G_OBJECT (info_bar));
-          g_signal_connect_closure_by_id (object,
-                                          signal_id,
-                                          0,
-                                          closure,
-                                          FALSE);
+          g_signal_connect_closure_by_id (object, signal_id, 0, closure, FALSE);
         }
 
       if (ad->response_id == GTK_RESPONSE_HELP)
         gtk_button_box_set_child_secondary (GTK_BUTTON_BOX (info_bar->priv->action_area),
                                             GTK_WIDGET (object), TRUE);
-
-      g_free (item->widget_name);
-      g_free (item->response_id);
-      g_free (item);
     }
-  g_slist_free (parser_data->items);
-  g_slice_free (ActionWidgetsSubParserData, parser_data);
+
+  g_slist_free_full (data->items, action_widget_info_free);
+  g_string_free (data->string, TRUE);
+  g_slice_free (SubParserData, data);
 }
 
 /**
@@ -1144,8 +1118,8 @@ gtk_info_bar_buildable_custom_finished (GtkBuildable *buildable,
  * @message_type: a #GtkMessageType
  *
  * Sets the message type of the message area.
- * GTK+ uses this type to determine what color to use
- * when drawing the message area.
+ *
+ * GTK+ uses this type to determine how the message is displayed.
  *
  * Since: 2.18
  */

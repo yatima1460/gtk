@@ -64,13 +64,19 @@ GtkCssValue *           gtk_css_style_get_value                 (GtkCssStyle    
                                                                  guint                   id);
 GtkCssSection *         gtk_css_style_get_section               (GtkCssStyle            *style,
                                                                  guint                   id);
-GtkBitmask *            gtk_css_style_get_difference            (GtkCssStyle            *style,
+GtkBitmask *            gtk_css_style_add_difference            (GtkBitmask             *accumulated,
+                                                                 GtkCssStyle            *style,
                                                                  GtkCssStyle            *other);
 gboolean                gtk_css_style_is_static                 (GtkCssStyle            *style);
 
 char *                  gtk_css_style_to_string                 (GtkCssStyle            *style);
-void                    gtk_css_style_print                     (GtkCssStyle            *style,
-                                                                 GString                *string);
+gboolean                gtk_css_style_print                     (GtkCssStyle            *style,
+                                                                 GString                *string,
+                                                                 guint                   indent,
+                                                                 gboolean                skip_initial);
+PangoAttrList *         gtk_css_style_get_pango_attributes      (GtkCssStyle            *style);
+
+PangoFontDescription *  gtk_css_style_get_pango_font            (GtkCssStyle            *style);
 
 G_END_DECLS
 

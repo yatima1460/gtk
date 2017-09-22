@@ -219,6 +219,8 @@ gtk_test_widget_send_key (GtkWidget      *widget,
  * Returns: whether all actions neccessary for the button click simulation were carried out successfully.
  *
  * Since: 2.14
+ *
+ * Deprecated: 3.20: This testing infrastructure is phased out in favor of reftests.
  **/
 gboolean
 gtk_test_widget_click (GtkWidget      *widget,
@@ -250,6 +252,8 @@ gtk_test_widget_click (GtkWidget      *widget,
  * Returns: whether all actions neccessary for the button click simulation were carried out successfully.
  *
  * Since: 2.14
+ *
+ * Deprecated: 3.20: This testing infrastructure is phased out in favor of reftests.
  **/
 gboolean
 gtk_test_spin_button_click (GtkSpinButton  *spinner,
@@ -435,7 +439,7 @@ gtk_test_find_sibling (GtkWidget *base_widget,
  * gtk_test_widget_click() for possible caveats involving the search of
  * such widgets and synthesizing widget events.
  *
- * Returns: (transfer none): a valid widget if any is found or %NULL.
+ * Returns: (nullable) (transfer none): a valid widget if any is found or %NULL.
  *
  * Since: 2.14
  **/
@@ -464,6 +468,8 @@ gtk_test_find_widget (GtkWidget    *widget,
  * @percentage argument.
  *
  * Since: 2.14
+ *
+ * Deprecated: 3.20: This testing infrastructure is phased out in favor of reftests.
  **/
 void
 gtk_test_slider_set_perc (GtkWidget      *widget,
@@ -496,6 +502,8 @@ gtk_test_slider_set_perc (GtkWidget      *widget,
  * Returns: gtk_adjustment_get_value (adjustment) for an adjustment belonging to @widget.
  *
  * Since: 2.14
+ *
+ * Deprecated: 3.20: This testing infrastructure is phased out in favor of reftests.
  **/
 double
 gtk_test_slider_get_value (GtkWidget *widget)
@@ -517,6 +525,8 @@ gtk_test_slider_get_value (GtkWidget *widget)
  * GtkEditable (entry and text widgets) or GtkTextView.
  *
  * Since: 2.14
+ *
+ * Deprecated: 3.20: This testing infrastructure is phased out in favor of reftests.
  **/
 void
 gtk_test_text_set (GtkWidget   *widget,
@@ -547,6 +557,8 @@ gtk_test_text_set (GtkWidget   *widget,
  * Returns: new 0-terminated C string, needs to be released with g_free().
  *
  * Since: 2.14
+ *
+ * Deprecated: 3.20: This testing infrastructure is phased out in favor of reftests.
  **/
 gchar*
 gtk_test_text_get (GtkWidget *widget)
@@ -583,6 +595,8 @@ gtk_test_text_get (GtkWidget *widget)
  * Returns: (transfer none): a newly created widget.
  *
  * Since: 2.14
+ *
+ * Deprecated: 3.20: This testing infrastructure is phased out in favor of reftests.
  */
 GtkWidget*
 gtk_test_create_widget (GType        widget_type,
@@ -641,6 +655,8 @@ test_increment_intp (int *intp)
  * Returns: (transfer full): a widget pointer to the newly created GtkWindow.
  *
  * Since: 2.14
+ *
+ * Deprecated: 3.20: This testing infrastructure is phased out in favor of reftests.
  **/
 GtkWidget*
 gtk_test_display_button_window (const gchar *window_title,
@@ -648,17 +664,23 @@ gtk_test_display_button_window (const gchar *window_title,
                                 ...) /* NULL terminated list of (label, &int) pairs */
 {
   va_list var_args;
-  GtkWidget *window = gtk_test_create_widget (GTK_TYPE_WINDOW, "title", window_title, NULL);
-  GtkWidget *vbox = gtk_test_create_widget (GTK_TYPE_BOX, "parent", window, "orientation", GTK_ORIENTATION_VERTICAL, NULL);
+  GtkWidget *window, *vbox;
   const char *arg1;
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
+  window = gtk_test_create_widget (GTK_TYPE_WINDOW, "title", window_title, NULL);
+  vbox = gtk_test_create_widget (GTK_TYPE_BOX, "parent", window, "orientation", GTK_ORIENTATION_VERTICAL, NULL);
   gtk_test_create_widget (GTK_TYPE_LABEL, "label", dialog_text, "parent", vbox, NULL);
+G_GNUC_END_IGNORE_DEPRECATIONS;
   g_signal_connect (window, "destroy", G_CALLBACK (try_main_quit), NULL);
   va_start (var_args, dialog_text);
   arg1 = va_arg (var_args, const char*);
   while (arg1)
     {
       int *arg2 = va_arg (var_args, int*);
-      GtkWidget *button = gtk_test_create_widget (GTK_TYPE_BUTTON, "label", arg1, "parent", vbox, NULL);
+      GtkWidget *button;
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
+      button = gtk_test_create_widget (GTK_TYPE_BUTTON, "label", arg1, "parent", vbox, NULL);
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
       g_signal_connect_swapped (button, "clicked", G_CALLBACK (test_increment_intp), arg2);
       arg1 = va_arg (var_args, const char*);
     }
@@ -683,14 +705,19 @@ gtk_test_display_button_window (const gchar *window_title,
  * Returns: (transfer none): a widget pointer to the newly created GtkWindow.
  *
  * Since: 2.14
+ *
+ * Deprecated: 3.20: This testing infrastructure is phased out in favor of reftests.
  **/
 GtkWidget*
 gtk_test_create_simple_window (const gchar *window_title,
                                const gchar *dialog_text)
 {
-  GtkWidget *window = gtk_test_create_widget (GTK_TYPE_WINDOW, "title", window_title, NULL);
-  GtkWidget *vbox = gtk_test_create_widget (GTK_TYPE_BOX, "parent", window, "orientation", GTK_ORIENTATION_VERTICAL, NULL);
+  GtkWidget *window, *vbox;
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
+  window = gtk_test_create_widget (GTK_TYPE_WINDOW, "title", window_title, NULL);
+  vbox = gtk_test_create_widget (GTK_TYPE_BOX, "parent", window, "orientation", GTK_ORIENTATION_VERTICAL, NULL);
   gtk_test_create_widget (GTK_TYPE_LABEL, "label", dialog_text, "parent", vbox, NULL);
+G_GNUC_END_IGNORE_DEPRECATIONS;
   g_signal_connect (window, "destroy", G_CALLBACK (try_main_quit), NULL);
   gtk_widget_show_all (vbox);
   return window;

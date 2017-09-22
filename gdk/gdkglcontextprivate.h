@@ -56,6 +56,7 @@ typedef struct {
   guint position_location;
   guint uv_location;
   guint map_location;
+  guint flip_location;
 } GdkGLContextProgram;
 
 typedef struct {
@@ -67,7 +68,13 @@ typedef struct {
   GdkGLContextProgram texture_rect_quad_program;
 
   GdkGLContextProgram *current_program;
+
+  guint is_legacy : 1;
+  guint use_es : 1;
 } GdkGLContextPaintData;
+
+void                    gdk_gl_context_set_is_legacy            (GdkGLContext    *context,
+                                                                 gboolean         is_legacy);
 
 void                    gdk_gl_context_upload_texture           (GdkGLContext    *context,
                                                                  cairo_surface_t *image_surface,
@@ -78,6 +85,7 @@ GdkGLContextPaintData * gdk_gl_context_get_paint_data           (GdkGLContext   
 gboolean                gdk_gl_context_use_texture_rectangle    (GdkGLContext    *context);
 gboolean                gdk_gl_context_has_framebuffer_blit     (GdkGLContext    *context);
 gboolean                gdk_gl_context_has_frame_terminator     (GdkGLContext    *context);
+gboolean                gdk_gl_context_has_unpack_subimage      (GdkGLContext    *context);
 void                    gdk_gl_context_end_frame                (GdkGLContext    *context,
                                                                  cairo_region_t  *painted,
                                                                  cairo_region_t  *damage);

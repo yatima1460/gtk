@@ -39,6 +39,7 @@ struct _GdkX11Display
   GdkDisplay parent_instance;
   Display *xdisplay;
   GdkScreen *screen;
+  GList *screens;
 
   GSource *event_source;
 
@@ -66,6 +67,7 @@ struct _GdkX11Display
 
   gboolean have_randr12;
   gboolean have_randr13;
+  gboolean have_randr15;
   gint xrandr_event_base;
 
   /* If the SECURITY extension is in place, whether this client holds
@@ -95,12 +97,11 @@ struct _GdkX11Display
   /* translation queue */
   GQueue *translate_queue;
 
-  /* Input device */
-  /* input GdkDevice list */
-  GList *input_devices;
-
   /* input GdkWindow list */
   GList *input_windows;
+
+  GPtrArray *monitors;
+  int primary_monitor;
 
   /* Startup notification */
   gchar *startup_notification_id;
@@ -130,6 +131,12 @@ struct _GdkX11Display
   gint glx_error_base;
   gint glx_event_base;
 
+  /* Translation between X server time and system-local monotonic time */
+  gint64 server_time_query_time;
+  gint64 server_time_offset;
+
+  guint server_time_is_monotonic_time : 1;
+
   guint have_glx : 1;
 
   /* GLX extensions we check */
@@ -141,6 +148,7 @@ struct _GdkX11Display
   guint has_glx_sync_control : 1;
   guint has_glx_multisample : 1;
   guint has_glx_visual_rating : 1;
+  guint has_glx_create_es2_context : 1;
 };
 
 struct _GdkX11DisplayClass

@@ -58,6 +58,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include "gtktextbufferprivate.h"
 #include "gtktexttag.h"
 #include "gtktexttagprivate.h"
 #include "gtktexttagtable.h"
@@ -754,10 +755,12 @@ _gtk_text_btree_delete (GtkTextIter *start,
   gtk_text_iter_order (start, end);
 
   tree = _gtk_text_iter_get_btree (start);
- 
-  if (gtk_get_debug_flags () & GTK_DEBUG_TEXT)
+
+#ifdef G_ENABLE_DEBUG
+  if (GTK_DEBUG_CHECK (TEXT))
     _gtk_text_btree_check (tree);
-  
+#endif
+
   /* Broadcast the need for redisplay before we break the iterators */
   DV (g_print ("invalidating due to deleting some text (%s)\n", G_STRLOC));
   _gtk_text_btree_invalidate_region (tree, start, end, FALSE);
@@ -1077,8 +1080,10 @@ _gtk_text_btree_delete (GtkTextIter *start,
   chars_changed (tree);
   segments_changed (tree);
 
-  if (gtk_get_debug_flags () & GTK_DEBUG_TEXT)
+#ifdef G_ENABLE_DEBUG
+  if (GTK_DEBUG_CHECK (TEXT))
     _gtk_text_btree_check (tree);
+#endif
 
   /* Re-initialize our iterators */
   _gtk_text_btree_get_iter_at_line (tree, start, start_line, start_byte_offset);
@@ -1359,8 +1364,10 @@ find_line_by_y (GtkTextBTree *tree, BTreeView *view,
 {
   gint current_y = 0;
 
-  if (gtk_get_debug_flags () & GTK_DEBUG_TEXT)
+#ifdef G_ENABLE_DEBUG
+  if (GTK_DEBUG_CHECK (TEXT))
     _gtk_text_btree_check (tree);
+#endif
 
   if (node->level == 0)
     {
@@ -1532,7 +1539,7 @@ _gtk_text_btree_find_line_top (GtkTextBTree *tree,
                                        ran out of nodes */
         }
 
-      iter = g_slist_next (iter);
+      iter = iter->next;
     }
 
   g_assert_not_reached (); /* we return when we find the target line */
@@ -2011,8 +2018,10 @@ _gtk_text_btree_tag (const GtkTextIter *start_orig,
 
   queue_tag_redisplay (tree, tag, &start, &end);
 
-  if (gtk_get_debug_flags () & GTK_DEBUG_TEXT)
+#ifdef G_ENABLE_DEBUG
+  if (GTK_DEBUG_CHECK (TEXT))
     _gtk_text_btree_check (tree);
+#endif
 }
 
 
@@ -2641,14 +2650,18 @@ redisplay_region (GtkTextBTree      *tree,
       else
         end_y = _gtk_text_btree_find_line_top (tree, end_line, view->view_id);
 
+      ld = _gtk_text_line_get_data (start_line, view->view_id);
+      if (ld)
+        start_y -= ld->top_ink;
+
       ld = _gtk_text_line_get_data (end_line, view->view_id);
       if (ld)
-        end_y += ld->height;
+        end_y += ld->height + ld->bottom_ink;
 
       if (cursors_only)
 	gtk_text_layout_cursors_changed (view->layout, start_y,
 					 end_y - start_y,
-					  end_y - start_y);
+					 end_y - start_y);
       else
 	gtk_text_layout_changed (view->layout, start_y,
 				 end_y - start_y,
@@ -2726,7 +2739,7 @@ real_set_mark (GtkTextBTree      *tree,
 
   if (should_exist && mark == NULL)
     {
-      g_warning ("No mark `%s' exists!", name);
+      g_warning ("No mark '%s' exists!", name);
       return NULL;
     }
 
@@ -2736,9 +2749,11 @@ real_set_mark (GtkTextBTree      *tree,
   
   iter = *where;
 
-  if (gtk_get_debug_flags () & GTK_DEBUG_TEXT)
+#ifdef G_ENABLE_DEBUG
+  if (GTK_DEBUG_CHECK (TEXT))
     _gtk_text_iter_check (&iter);
-  
+#endif
+
   if (mark != NULL)
     {
       if (redraw_selections &&
@@ -2793,9 +2808,11 @@ real_set_mark (GtkTextBTree      *tree,
                              mark);
     }
 
-  if (gtk_get_debug_flags () & GTK_DEBUG_TEXT)
+#ifdef G_ENABLE_DEBUG
+  if (GTK_DEBUG_CHECK (TEXT))
     _gtk_text_iter_check (&iter);
-  
+#endif
+
   /* Link mark into new location */
   gtk_text_btree_link_segment (mark, &iter);
 
@@ -2808,12 +2825,14 @@ real_set_mark (GtkTextBTree      *tree,
 
   redisplay_mark_if_visible (mark);
 
-  if (gtk_get_debug_flags () & GTK_DEBUG_TEXT)
-    _gtk_text_iter_check (&iter);
+#ifdef G_ENABLE_DEBUG
+  if (GTK_DEBUG_CHECK (TEXT))
+    {
+      _gtk_text_iter_check (&iter);
+      _gtk_text_btree_check (tree);
+    }
+#endif
 
-  if (gtk_get_debug_flags () & GTK_DEBUG_TEXT)
-    _gtk_text_btree_check (tree);
-  
   return mark;
 }
 
@@ -2953,7 +2972,7 @@ _gtk_text_btree_remove_mark (GtkTextBTree *tree,
 
   if (segment->body.mark.not_deleteable)
     {
-      g_warning ("Can't delete special mark `%s'", segment->body.mark.name);
+      g_warning ("Can't delete special mark '%s'", segment->body.mark.name);
       return;
     }
 
@@ -3601,6 +3620,8 @@ _gtk_text_line_data_new (GtkTextLayout *layout,
   line_data->next = NULL;
   line_data->width = 0;
   line_data->height = 0;
+  line_data->top_ink = 0;
+  line_data->bottom_ink = 0;
   line_data->valid = FALSE;
 
   return line_data;
@@ -4329,8 +4350,10 @@ _gtk_text_line_next_could_contain_tag (GtkTextLine  *line,
 
   g_return_val_if_fail (line != NULL, NULL);
 
-  if (gtk_get_debug_flags () & GTK_DEBUG_TEXT)
+#ifdef G_ENABLE_DEBUG
+  if (GTK_DEBUG_CHECK (TEXT))
     _gtk_text_btree_check (tree);
+#endif
 
   if (tag == NULL)
     {
@@ -4492,8 +4515,10 @@ _gtk_text_line_previous_could_contain_tag (GtkTextLine  *line,
 
   g_return_val_if_fail (line != NULL, NULL);
 
-  if (gtk_get_debug_flags () & GTK_DEBUG_TEXT)
+#ifdef G_ENABLE_DEBUG
+  if (GTK_DEBUG_CHECK (TEXT))
     _gtk_text_btree_check (tree);
+#endif
 
   if (tag == NULL)
     {
@@ -4582,7 +4607,7 @@ _gtk_text_line_previous_could_contain_tag (GtkTextLine  *line,
                   goto found;
                 }
 
-              tmp = g_slist_next (tmp);
+              tmp = tmp->next;
             }
 
           g_slist_free (child_nodes);
@@ -4657,7 +4682,7 @@ _gtk_text_line_previous_could_contain_tag (GtkTextLine  *line,
               break;
             }
 
-          iter = g_slist_next (iter);
+          iter = iter->next;
         }
 
       g_slist_free (child_nodes);
@@ -5264,8 +5289,10 @@ _gtk_text_btree_validate (GtkTextBTree *tree,
       if (new_height)
         *new_height = state.new_height;
 
-      if (gtk_get_debug_flags () & GTK_DEBUG_TEXT)
+#ifdef G_ENABLE_DEBUG
+      if (GTK_DEBUG_CHECK (TEXT))
         _gtk_text_btree_check (tree);
+#endif
 
       return TRUE;
     }
@@ -5792,7 +5819,7 @@ gtk_text_btree_rebalance (GtkTextBTree *tree,
           GtkTextBTreeNode *other;
           GtkTextBTreeNode *halfwaynode = NULL; /* Initialization needed only */
           GtkTextLine *halfwayline = NULL; /* to prevent cc warnings. */
-          int total_children, first_children, i;
+          int total_children, first_children;
 
           /*
            * Too few children for this GtkTextBTreeNode.  If this is the root then,
@@ -5861,46 +5888,46 @@ gtk_text_btree_rebalance (GtkTextBTree *tree,
             }
           if (node->level == 0)
             {
-              GtkTextLine *line;
+              GtkTextLine *line2;
 
-              for (line = node->children.line, i = 1;
-                   line->next != NULL;
-                   line = line->next, i++)
+              for (line2 = node->children.line, i = 1;
+                   line2->next != NULL;
+                   line2 = line2->next, i++)
                 {
                   if (i == first_children)
                     {
-                      halfwayline = line;
+                      halfwayline = line2;
                     }
                 }
-              line->next = other->children.line;
+              line2->next = other->children.line;
               while (i <= first_children)
                 {
-                  halfwayline = line;
-                  line = line->next;
+                  halfwayline = line2;
+                  line2 = line2->next;
                   i++;
                 }
             }
           else
             {
-              GtkTextBTreeNode *child;
+              GtkTextBTreeNode *child2;
 
-              for (child = node->children.node, i = 1;
-                   child->next != NULL;
-                   child = child->next, i++)
+              for (child2 = node->children.node, i = 1;
+                   child2->next != NULL;
+                   child2 = child2->next, i++)
                 {
                   if (i <= first_children)
                     {
                       if (i == first_children)
                         {
-                          halfwaynode = child;
+                          halfwaynode = child2;
                         }
                     }
                 }
-              child->next = other->children.node;
+              child2->next = other->children.node;
               while (i <= first_children)
                 {
-                  halfwaynode = child;
-                  child = child->next;
+                  halfwaynode = child2;
+                  child2 = child2->next;
                   i++;
                 }
             }
@@ -5973,8 +6000,10 @@ post_insert_fixup (GtkTextBTree *tree,
       gtk_text_btree_rebalance (tree, node);
     }
 
-  if (gtk_get_debug_flags () & GTK_DEBUG_TEXT)
+#ifdef G_ENABLE_DEBUG
+  if (GTK_DEBUG_CHECK (TEXT))
     _gtk_text_btree_check (tree);
+#endif
 }
 
 static GtkTextTagInfo*
@@ -5992,7 +6021,7 @@ gtk_text_btree_get_existing_tag_info (GtkTextBTree *tree,
       if (info->tag == tag)
         return info;
 
-      list = g_slist_next (list);
+      list = list->next;
     }
 
   return NULL;
@@ -6018,12 +6047,6 @@ gtk_text_btree_get_tag_info (GtkTextBTree *tree,
       info->toggle_count = 0;
 
       tree->tag_infos = g_slist_prepend (tree->tag_infos, info);
-
-#if 0
-      g_print ("Created tag info %p for tag %s(%p)\n",
-               info, info->tag->name ? info->tag->name : "anon",
-               info->tag);
-#endif
     }
 
   return info;
@@ -6044,12 +6067,6 @@ gtk_text_btree_remove_tag_info (GtkTextBTree *tree,
       info = list->data;
       if (info->tag == tag)
         {
-#if 0
-          g_print ("Removing tag info %p for tag %s(%p)\n",
-                   info, info->tag->name ? info->tag->name : "anon",
-                   info->tag);
-#endif
-          
           if (prev != NULL)
             {
               prev->next = list->next;
@@ -6068,7 +6085,7 @@ gtk_text_btree_remove_tag_info (GtkTextBTree *tree,
         }
 
       prev = list;
-      list = g_slist_next (list);
+      list = list->next;
     }
 }
 
@@ -6539,8 +6556,10 @@ gtk_text_btree_link_segment (GtkTextLineSegment *seg,
   cleanup_line (line);
   segments_changed (tree);
 
-  if (gtk_get_debug_flags () & GTK_DEBUG_TEXT)
+#ifdef G_ENABLE_DEBUG
+  if (GTK_DEBUG_CHECK (TEXT))
     _gtk_text_btree_check (tree);
+#endif
 }
 
 static void
@@ -6634,7 +6653,7 @@ _gtk_toggle_segment_check_func (GtkTextLineSegment *segPtr,
 /*
  * Debug
  */
-
+#ifdef G_ENABLE_DEBUG
 static void
 gtk_text_btree_node_view_check_consistency (GtkTextBTree     *tree,
                                             GtkTextBTreeNode *node,
@@ -7081,6 +7100,7 @@ _gtk_text_btree_check (GtkTextBTree *tree)
                seg->body.chars);
     }
 }
+#endif /* G_ENABLE_DEBUG */
 
 void _gtk_text_btree_spew_line (GtkTextBTree* tree, GtkTextLine* line);
 void _gtk_text_btree_spew_segment (GtkTextBTree* tree, GtkTextLineSegment* seg);
@@ -7117,10 +7137,10 @@ _gtk_text_btree_spew (GtkTextBTree *tree)
 
         info = list->data;
 
-        printf ("  tag `%s': root at %p, toggle count %d\n",
+        printf ("  tag '%s': root at %p, toggle count %d\n",
                 info->tag->priv->name, info->tag_root, info->toggle_count);
 
-        list = g_slist_next (list);
+        list = list->next;
       }
 
     if (tree->tag_infos == NULL)
@@ -7163,19 +7183,19 @@ _gtk_text_btree_spew_line_short (GtkTextLine *line, int indent)
                 *s = '\\';
               ++s;
             }
-          printf ("%s chars `%s'...\n", spaces, str);
+          printf ("%s chars '%s'...\n", spaces, str);
           g_free (str);
         }
       else if (seg->type == &gtk_text_right_mark_type)
         {
-          printf ("%s right mark `%s' visible: %d\n",
+          printf ("%s right mark '%s' visible: %d\n",
                   spaces,
                   seg->body.mark.name,
                   seg->body.mark.visible);
         }
       else if (seg->type == &gtk_text_left_mark_type)
         {
-          printf ("%s left mark `%s' visible: %d\n",
+          printf ("%s left mark '%s' visible: %d\n",
                   spaces,
                   seg->body.mark.name,
                   seg->body.mark.visible);
@@ -7183,7 +7203,7 @@ _gtk_text_btree_spew_line_short (GtkTextLine *line, int indent)
       else if (seg->type == &gtk_text_toggle_on_type ||
                seg->type == &gtk_text_toggle_off_type)
         {
-          printf ("%s tag `%s' %s\n",
+          printf ("%s tag '%s' %s\n",
                   spaces, seg->body.toggle.info->tag->priv->name,
                   seg->type == &gtk_text_toggle_off_type ? "off" : "on");
         }
@@ -7210,7 +7230,7 @@ _gtk_text_btree_spew_node (GtkTextBTreeNode *node, int indent)
   s = node->summary;
   while (s)
     {
-      printf ("%s %d toggles of `%s' below this node\n",
+      printf ("%s %d toggles of '%s' below this node\n",
               spaces, s->toggle_count, s->info->tag->priv->name);
       s = s->next;
     }
@@ -7265,19 +7285,19 @@ _gtk_text_btree_spew_segment (GtkTextBTree* tree, GtkTextLineSegment * seg)
   if (seg->type == &gtk_text_char_type)
     {
       gchar* str = g_strndup (seg->body.chars, seg->byte_count);
-      printf ("       `%s'\n", str);
+      printf ("       '%s'\n", str);
       g_free (str);
     }
   else if (seg->type == &gtk_text_right_mark_type)
     {
-      printf ("       right mark `%s' visible: %d not_deleteable: %d\n",
+      printf ("       right mark '%s' visible: %d not_deleteable: %d\n",
               seg->body.mark.name,
               seg->body.mark.visible,
               seg->body.mark.not_deleteable);
     }
   else if (seg->type == &gtk_text_left_mark_type)
     {
-      printf ("       left mark `%s' visible: %d not_deleteable: %d\n",
+      printf ("       left mark '%s' visible: %d not_deleteable: %d\n",
               seg->body.mark.name,
               seg->body.mark.visible,
               seg->body.mark.not_deleteable);
@@ -7285,7 +7305,7 @@ _gtk_text_btree_spew_segment (GtkTextBTree* tree, GtkTextLineSegment * seg)
   else if (seg->type == &gtk_text_toggle_on_type ||
            seg->type == &gtk_text_toggle_off_type)
     {
-      printf ("       tag `%s' priority %d\n",
+      printf ("       tag '%s' priority %d\n",
               seg->body.toggle.info->tag->priv->name,
               seg->body.toggle.info->tag->priv->priority);
     }

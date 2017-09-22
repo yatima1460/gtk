@@ -204,7 +204,8 @@ disconnect_resize_handler (GtkMagnifier *magnifier)
 
   if (priv->resize_handler)
     {
-      g_signal_handler_disconnect (priv->inspected, priv->resize_handler);
+      if (priv->inspected)
+        g_signal_handler_disconnect (priv->inspected, priv->resize_handler);
       priv->resize_handler = 0;
     }
 }
@@ -225,9 +226,12 @@ connect_draw_handler (GtkMagnifier *magnifier)
 
   priv = _gtk_magnifier_get_instance_private (magnifier);
 
-  if (priv->inspected)
-    priv->draw_handler = g_signal_connect (priv->inspected, "draw",
-                                           G_CALLBACK (draw_handler), magnifier);
+  if (!priv->draw_handler)
+    {
+      if (priv->inspected)
+        priv->draw_handler = g_signal_connect (priv->inspected, "draw",
+                                               G_CALLBACK (draw_handler), magnifier);
+    }
 }
 
 static void
@@ -239,7 +243,8 @@ disconnect_draw_handler (GtkMagnifier *magnifier)
 
   if (priv->draw_handler)
     {
-      g_signal_handler_disconnect (priv->inspected, priv->draw_handler);
+      if (priv->inspected)
+        g_signal_handler_disconnect (priv->inspected, priv->draw_handler);
       priv->draw_handler = 0;
     }
 }
@@ -250,6 +255,22 @@ _gtk_magnifier_destroy (GtkWidget *widget)
   _gtk_magnifier_set_inspected (GTK_MAGNIFIER (widget), NULL);
 
   GTK_WIDGET_CLASS (_gtk_magnifier_parent_class)->destroy (widget);
+}
+
+static void
+gtk_magnifier_map (GtkWidget *widget)
+{
+  connect_draw_handler (GTK_MAGNIFIER (widget));
+
+  GTK_WIDGET_CLASS (_gtk_magnifier_parent_class)->map (widget);
+}
+
+static void
+gtk_magnifier_unmap (GtkWidget *widget)
+{
+  GTK_WIDGET_CLASS (_gtk_magnifier_parent_class)->unmap (widget);
+
+  disconnect_draw_handler (GTK_MAGNIFIER (widget));
 }
 
 static void
@@ -265,6 +286,8 @@ _gtk_magnifier_class_init (GtkMagnifierClass *klass)
   widget_class->draw = _gtk_magnifier_draw;
   widget_class->get_preferred_width = gtk_magnifier_get_preferred_width;
   widget_class->get_preferred_height = gtk_magnifier_get_preferred_height;
+  widget_class->map = gtk_magnifier_map;
+  widget_class->unmap = gtk_magnifier_unmap;
 
   g_object_class_install_property (object_class,
                                    PROP_INSPECTED,
@@ -298,8 +321,7 @@ _gtk_magnifier_init (GtkMagnifier *magnifier)
   priv = _gtk_magnifier_get_instance_private (magnifier);
 
   gtk_widget_set_events (widget,
-                         gtk_widget_get_events (widget) |
-                         GDK_EXPOSURE_MASK);
+                         gtk_widget_get_events (widget));
 
   gtk_widget_set_has_window (widget, FALSE);
   priv->magnification = 1;
@@ -344,9 +366,16 @@ _gtk_magnifier_set_inspected (GtkMagnifier *magnifier,
   disconnect_draw_handler (magnifier);
   disconnect_resize_handler (magnifier);
 
+  if (priv->inspected)
+    g_object_remove_weak_pointer (G_OBJECT (priv->inspected),
+                                  (gpointer *) &priv->inspected);
   priv->inspected = inspected;
+  if (priv->inspected)
+    g_object_add_weak_pointer (G_OBJECT (priv->inspected),
+                               (gpointer *) &priv->inspected);
 
-  connect_draw_handler (magnifier);
+  if (gtk_widget_get_mapped (GTK_WIDGET (magnifier)))
+    connect_draw_handler (magnifier);
   connect_resize_handler (magnifier);
 
   g_object_notify (G_OBJECT (magnifier), "inspected");

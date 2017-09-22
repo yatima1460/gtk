@@ -1,17 +1,33 @@
-/* Application Class
- *
- * Demonstrates a simple application.
- *
- * This examples uses GtkApplication, GtkApplicationWindow, GtkBuilder
- * as well as GMenu and GResource. Due to the way GtkApplication is structured,
- * it is run as a separate process.
- */
 
 #include "config.h"
 
 #include <gtk/gtk.h>
 
-#ifdef STANDALONE
+typedef GtkApplication DemoApplication;
+typedef GtkApplicationClass DemoApplicationClass;
+
+G_DEFINE_TYPE (DemoApplication, demo_application, GTK_TYPE_APPLICATION)
+
+typedef struct {
+  GtkApplicationWindow parent_instance;
+
+  GtkWidget *message;
+  GtkWidget *infobar;
+  GtkWidget *status;
+  GtkWidget *menutool;
+  GMenuModel *toolmenu;
+  GtkTextBuffer *buffer;
+
+  int width;
+  int height;
+  gboolean maximized;
+  gboolean fullscreen;
+} DemoApplicationWindow;
+typedef GtkApplicationWindowClass DemoApplicationWindowClass;
+
+G_DEFINE_TYPE (DemoApplicationWindow, demo_application_window, GTK_TYPE_APPLICATION_WINDOW)
+
+static void create_window (GApplication *app, const char *contents);
 
 static void
 show_action_dialog (GSimpleAction *action)
@@ -37,10 +53,9 @@ show_action_dialog (GSimpleAction *action)
 static void
 show_action_infobar (GSimpleAction *action,
                      GVariant      *parameter,
-                     gpointer       window)
+                     gpointer       data)
 {
-  GtkWidget *infobar;
-  GtkWidget *message;
+  DemoApplicationWindow *window = data;
   gchar *text;
   const gchar *name;
   const gchar *value;
@@ -48,21 +63,93 @@ show_action_infobar (GSimpleAction *action,
   name = g_action_get_name (G_ACTION (action));
   value = g_variant_get_string (parameter, NULL);
 
-  message = g_object_get_data (G_OBJECT (window), "message");
-  infobar = g_object_get_data (G_OBJECT (window), "infobar");
   text = g_strdup_printf ("You activated radio action: \"%s\".\n"
                           "Current value: %s", name, value);
-  gtk_label_set_text (GTK_LABEL (message), text);
-  gtk_widget_show (infobar);
+  gtk_label_set_text (GTK_LABEL (window->message), text);
+  gtk_widget_show (window->infobar);
   g_free (text);
 }
 
 static void
-activate_action (GSimpleAction  *action,
-                 GVariant       *parameter,
-                 gpointer        user_data)
+activate_action (GSimpleAction *action,
+                 GVariant      *parameter,
+                 gpointer       user_data)
 {
   show_action_dialog (action);
+}
+
+static void
+activate_new (GSimpleAction *action,
+              GVariant      *parameter,
+              gpointer       user_data)
+{
+  GApplication *app = user_data;
+
+  create_window (app, NULL);
+}
+
+static void
+open_response_cb (GtkNativeDialog *dialog,
+                  gint             response_id,
+                  gpointer         user_data)
+{
+  GtkFileChooserNative *native = user_data;
+  GApplication *app = g_object_get_data (G_OBJECT (native), "app");
+  GtkWidget *message_dialog;
+  GFile *file;
+  char *contents;
+  GError *error = NULL;
+
+  if (response_id == GTK_RESPONSE_ACCEPT)
+    {
+      file = gtk_file_chooser_get_file (GTK_FILE_CHOOSER (native));
+
+      if (g_file_load_contents (file, NULL, &contents, NULL, NULL, &error))
+        {
+          create_window (app, contents);
+          g_free (contents);
+        }
+      else
+        {
+          message_dialog = gtk_message_dialog_new (NULL,
+                                                   GTK_DIALOG_DESTROY_WITH_PARENT,
+                                                   GTK_MESSAGE_ERROR,
+                                                   GTK_BUTTONS_CLOSE,
+                                                   "Error loading file: \"%s\"",
+                                                   error->message);
+          g_signal_connect (message_dialog, "response",
+                            G_CALLBACK (gtk_widget_destroy), NULL);
+          gtk_widget_show (message_dialog);
+          g_error_free (error);
+        }
+    }
+
+  gtk_native_dialog_destroy (GTK_NATIVE_DIALOG (native));
+  g_object_unref (native);
+}
+
+
+static void
+activate_open (GSimpleAction *action,
+               GVariant      *parameter,
+               gpointer       user_data)
+{
+  GApplication *app = user_data;
+  GtkFileChooserNative *native;
+
+  native = gtk_file_chooser_native_new ("Open File",
+                                        NULL,
+                                        GTK_FILE_CHOOSER_ACTION_OPEN,
+                                        "_Open",
+                                        "_Cancel");
+
+  g_object_set_data_full (G_OBJECT (native), "app", g_object_ref (app), g_object_unref);
+  g_signal_connect (native,
+                    "response",
+                    G_CALLBACK (open_response_cb),
+                    native);
+
+  gtk_native_dialog_show (GTK_NATIVE_DIALOG (native));
 }
 
 static void
@@ -152,8 +239,8 @@ activate_quit (GSimpleAction *action,
 }
 
 static void
-update_statusbar (GtkTextBuffer *buffer,
-                  GtkStatusbar  *statusbar)
+update_statusbar (GtkTextBuffer         *buffer,
+                  DemoApplicationWindow *window)
 {
   gchar *msg;
   gint row, col;
@@ -161,7 +248,7 @@ update_statusbar (GtkTextBuffer *buffer,
   GtkTextIter iter;
 
   /* clear any previous message, underflow is allowed */
-  gtk_statusbar_pop (statusbar, 0);
+  gtk_statusbar_pop (GTK_STATUSBAR (window->status), 0);
 
   count = gtk_text_buffer_get_char_count (buffer);
 
@@ -175,18 +262,18 @@ update_statusbar (GtkTextBuffer *buffer,
   msg = g_strdup_printf ("Cursor at row %d column %d - %d chars in document",
                          row, col, count);
 
-  gtk_statusbar_push (statusbar, 0, msg);
+  gtk_statusbar_push (GTK_STATUSBAR (window->status), 0, msg);
 
   g_free (msg);
 }
 
 static void
-mark_set_callback (GtkTextBuffer     *buffer,
-                   const GtkTextIter *new_location,
-                   GtkTextMark       *mark,
-                   gpointer           data)
+mark_set_callback (GtkTextBuffer         *buffer,
+                   const GtkTextIter     *new_location,
+                   GtkTextMark           *mark,
+                   DemoApplicationWindow *window)
 {
-  update_statusbar (buffer, GTK_STATUSBAR (data));
+  update_statusbar (buffer, window);
 }
 
 static void
@@ -226,8 +313,8 @@ change_radio_state (GSimpleAction *action,
 }
 
 static GActionEntry app_entries[] = {
-  { "new", activate_action, NULL, NULL, NULL },
-  { "open", activate_action, NULL, NULL, NULL },
+  { "new", activate_new, NULL, NULL, NULL },
+  { "open", activate_open, NULL, NULL, NULL },
   { "save", activate_action, NULL, NULL, NULL },
   { "save-as", activate_action, NULL, NULL, NULL },
   { "quit", activate_quit, NULL, NULL, NULL },
@@ -244,9 +331,9 @@ static GActionEntry win_entries[] = {
 };
 
 static void
-clicked_cb (GtkWidget *widget, GtkWidget *info)
+clicked_cb (GtkWidget *widget, DemoApplicationWindow *window)
 {
-  gtk_widget_hide (info);
+  gtk_widget_hide (window->infobar);
 }
 
 static void
@@ -256,8 +343,10 @@ startup (GApplication *app)
   GMenuModel *appmenu;
   GMenuModel *menubar;
 
+  G_APPLICATION_CLASS (demo_application_parent_class)->startup (app);
+
   builder = gtk_builder_new ();
-  gtk_builder_add_from_resource (builder, "/application/menus.ui", NULL);
+  gtk_builder_add_from_resource (builder, "/application_demo/menus.ui", NULL);
 
   appmenu = (GMenuModel *)gtk_builder_get_object (builder, "appmenu");
   menubar = (GMenuModel *)gtk_builder_get_object (builder, "menubar");
@@ -269,76 +358,32 @@ startup (GApplication *app)
 }
 
 static void
-activate (GApplication *app)
+create_window (GApplication *app,
+               const char   *content)
 {
-  GtkBuilder *builder;
-  GtkWidget *window;
-  GtkWidget *grid;
-  GtkWidget *contents;
-  GtkWidget *status;
-  GtkWidget *message;
-  GtkWidget *button;
-  GtkWidget *infobar;
-  GtkWidget *menutool;
-  GMenuModel *toolmenu;
-  GtkTextBuffer *buffer;
+  DemoApplicationWindow *window;
 
-  window = gtk_application_window_new (GTK_APPLICATION (app));
-  gtk_window_set_title (GTK_WINDOW (window), "Application Class");
-  gtk_window_set_icon_name (GTK_WINDOW (window), "document-open");
-  gtk_window_set_default_size (GTK_WINDOW (window), 200, 200);
+  window = (DemoApplicationWindow *)g_object_new (demo_application_window_get_type (),
+                                                  "application", app,
+                                                  NULL);
+  if (content)
+    gtk_text_buffer_set_text (window->buffer, content, -1);
 
-  g_action_map_add_action_entries (G_ACTION_MAP (window),
-                                   win_entries, G_N_ELEMENTS (win_entries),
-                                   window);
-
-  builder = gtk_builder_new ();
-  gtk_builder_add_from_resource (builder, "/application/application.ui", NULL);
-
-  grid = (GtkWidget *)gtk_builder_get_object (builder, "grid");
-  contents = (GtkWidget *)gtk_builder_get_object (builder, "contents");
-  status = (GtkWidget *)gtk_builder_get_object (builder, "status");
-  message = (GtkWidget *)gtk_builder_get_object (builder, "message");
-  button = (GtkWidget *)gtk_builder_get_object (builder, "button");
-  infobar = (GtkWidget *)gtk_builder_get_object (builder, "infobar");
-  menutool = (GtkWidget *)gtk_builder_get_object (builder, "menutool");
-  toolmenu = (GMenuModel *)gtk_builder_get_object (builder, "toolmenu");
-
-  g_object_set_data (G_OBJECT (window), "message", message);
-  g_object_set_data (G_OBJECT (window), "infobar", infobar);
-
-  gtk_container_add (GTK_CONTAINER (window), grid);
-
-  gtk_menu_tool_button_set_menu (GTK_MENU_TOOL_BUTTON (menutool),
-                                 gtk_menu_new_from_model (toolmenu));
-
-  gtk_widget_grab_focus (contents);
-  g_signal_connect (button, "clicked", G_CALLBACK (clicked_cb), infobar);
-
-  /* Show text widget info in the statusbar */
-  buffer = gtk_text_view_get_buffer (GTK_TEXT_VIEW (contents));
-  g_signal_connect_object (buffer, "changed",
-                           G_CALLBACK (update_statusbar), status, 0);
-  g_signal_connect_object (buffer, "mark-set",
-                           G_CALLBACK (mark_set_callback), status, 0);
-
-  update_statusbar (buffer, GTK_STATUSBAR (status));
-
-  gtk_widget_show_all (window);
-
-  g_object_unref (builder);
+  gtk_window_present (GTK_WINDOW (window));
 }
 
-int
-main (int argc, char *argv[])
+static void
+activate (GApplication *app)
 {
-  GtkApplication *app;
+  create_window (app, NULL);
+}
+
+static void
+demo_application_init (DemoApplication *app)
+{
   GSettings *settings;
   GAction *action;
 
-  gtk_init (NULL, NULL);
-
-  app = gtk_application_new ("org.gtk.Demo2", 0);
   settings = g_settings_new ("org.gtk.Demo");
 
   g_action_map_add_action_entries (G_ACTION_MAP (app),
@@ -349,97 +394,151 @@ main (int argc, char *argv[])
 
   g_action_map_add_action (G_ACTION_MAP (app), action);
 
-  g_signal_connect (app, "startup", G_CALLBACK (startup), NULL);
-  g_signal_connect (app, "activate", G_CALLBACK (activate), NULL);
-
-  g_application_run (G_APPLICATION (app), 0, NULL);
-
-  return 0;
-}
-
-#else /* !STANDALONE */
-
-static gboolean name_seen;
-static GtkWidget *placeholder;
-
-static void
-on_name_appeared (GDBusConnection *connection,
-                  const gchar     *name,
-                  const gchar     *name_owner,
-                  gpointer         user_data)
-{
-  name_seen = TRUE;
+  g_object_unref (settings);
 }
 
 static void
-on_name_vanished (GDBusConnection *connection,
-                  const gchar     *name,
-                  gpointer         user_data)
+demo_application_class_init (DemoApplicationClass *class)
 {
-  if (!name_seen)
-    return;
+  GApplicationClass *app_class = G_APPLICATION_CLASS (class);
 
-  if (placeholder)
-    {
-      gtk_widget_destroy (placeholder);
-      g_object_unref (placeholder);
-      placeholder = NULL;
-    }
+  app_class->startup = startup;
+  app_class->activate = activate;
 }
 
-#ifdef G_OS_WIN32
-#define APP_EXTENSION ".exe"
-#else
-#define APP_EXTENSION
-#endif
-
-GtkWidget *
-do_application (GtkWidget *toplevel)
+static void
+demo_application_window_store_state (DemoApplicationWindow *win)
 {
-  static guint watch = 0;
+  GSettings *settings;
 
-  if (watch == 0)
-    watch = g_bus_watch_name (G_BUS_TYPE_SESSION,
-                              "org.gtk.Demo2",
-                              0,
-                              on_name_appeared,
-                              on_name_vanished,
-                              NULL, NULL);
-
-  if (placeholder == NULL)
-    {
-      const gchar *command;
-      GError *error = NULL;
-
-      if (g_file_test ("./gtk3-demo-application" APP_EXTENSION, G_FILE_TEST_IS_EXECUTABLE))
-        command = "./gtk3-demo-application" APP_EXTENSION;
-      else
-        command = "gtk3-demo-application";
-
-      if (!g_spawn_command_line_async (command, &error))
-        {
-          g_warning ("%s", error->message);
-          g_error_free (error);
-        }
-
-      placeholder = gtk_label_new ("");
-      g_object_ref_sink (placeholder);
-    }
-  else
-    {
-      g_dbus_connection_call_sync (g_bus_get_sync (G_BUS_TYPE_SESSION, NULL, NULL),
-                              "org.gtk.Demo2",
-                              "/org/gtk/Demo2",
-                              "org.gtk.Actions",
-                              "Activate",
-                              g_variant_new ("(sava{sv})", "quit", NULL, NULL),
-                              NULL,
-                              0,
-                              G_MAXINT,
-                              NULL, NULL);
-    }
-
-  return placeholder;
+  settings = g_settings_new ("org.gtk.Demo");
+  g_settings_set (settings, "window-size", "(ii)", win->width, win->height);
+  g_settings_set_boolean (settings, "maximized", win->maximized);
+  g_settings_set_boolean (settings, "fullscreen", win->fullscreen);
+  g_object_unref (settings);
 }
 
-#endif
+static void
+demo_application_window_load_state (DemoApplicationWindow *win)
+{
+  GSettings *settings;
+
+  settings = g_settings_new ("org.gtk.Demo");
+  g_settings_get (settings, "window-size", "(ii)", &win->width, &win->height);
+  win->maximized = g_settings_get_boolean (settings, "maximized");
+  win->fullscreen = g_settings_get_boolean (settings, "fullscreen");
+  g_object_unref (settings);
+}
+
+static void
+demo_application_window_init (DemoApplicationWindow *window)
+{
+  GtkWidget *menu;
+
+  window->width = -1;
+  window->height = -1;
+  window->maximized = FALSE;
+  window->fullscreen = FALSE;
+
+  gtk_widget_init_template (GTK_WIDGET (window));
+
+  menu = gtk_menu_new_from_model (window->toolmenu);
+  gtk_menu_tool_button_set_menu (GTK_MENU_TOOL_BUTTON (window->menutool), menu);
+
+  g_action_map_add_action_entries (G_ACTION_MAP (window),
+                                   win_entries, G_N_ELEMENTS (win_entries),
+                                   window);
+}
+
+static void
+demo_application_window_constructed (GObject *object)
+{
+  DemoApplicationWindow *window = (DemoApplicationWindow *)object;
+
+  demo_application_window_load_state (window);
+
+  gtk_window_set_default_size (GTK_WINDOW (window), window->width, window->height);
+
+  if (window->maximized)
+    gtk_window_maximize (GTK_WINDOW (window));
+
+  if (window->fullscreen)
+    gtk_window_fullscreen (GTK_WINDOW (window));
+
+  G_OBJECT_CLASS (demo_application_window_parent_class)->constructed (object);
+}
+
+static void
+demo_application_window_size_allocate (GtkWidget     *widget,
+                                       GtkAllocation *allocation)
+{
+  DemoApplicationWindow *window = (DemoApplicationWindow *)widget;
+
+  GTK_WIDGET_CLASS (demo_application_window_parent_class)->size_allocate (widget, allocation);
+
+  if (!window->maximized && !window->fullscreen)
+    gtk_window_get_size (GTK_WINDOW (window), &window->width, &window->height);
+}
+
+static gboolean
+demo_application_window_state_event (GtkWidget           *widget,
+                                     GdkEventWindowState *event)
+{
+  DemoApplicationWindow *window = (DemoApplicationWindow *)widget;
+  gboolean res = GDK_EVENT_PROPAGATE;
+
+  if (GTK_WIDGET_CLASS (demo_application_window_parent_class)->window_state_event)
+    res = GTK_WIDGET_CLASS (demo_application_window_parent_class)->window_state_event (widget, event);
+
+  window->maximized = (event->new_window_state & GDK_WINDOW_STATE_MAXIMIZED) != 0;
+  window->fullscreen = (event->new_window_state & GDK_WINDOW_STATE_FULLSCREEN) != 0;
+
+  return res;
+}
+
+static void
+demo_application_window_destroy (GtkWidget *widget)
+{
+  DemoApplicationWindow *window = (DemoApplicationWindow *)widget;
+
+  demo_application_window_store_state (window);
+
+  GTK_WIDGET_CLASS (demo_application_window_parent_class)->destroy (widget);
+}
+
+static void
+demo_application_window_class_init (DemoApplicationWindowClass *class)
+{
+  GObjectClass *object_class = G_OBJECT_CLASS (class);
+  GtkWidgetClass *widget_class = GTK_WIDGET_CLASS (class);
+
+  object_class->constructed = demo_application_window_constructed;
+
+  widget_class->size_allocate = demo_application_window_size_allocate;
+  widget_class->window_state_event = demo_application_window_state_event;
+  widget_class->destroy = demo_application_window_destroy;
+
+  gtk_widget_class_set_template_from_resource (widget_class, "/application_demo/application.ui");
+  gtk_widget_class_bind_template_child (widget_class, DemoApplicationWindow, message);
+  gtk_widget_class_bind_template_child (widget_class, DemoApplicationWindow, infobar);
+  gtk_widget_class_bind_template_child (widget_class, DemoApplicationWindow, status);
+  gtk_widget_class_bind_template_child (widget_class, DemoApplicationWindow, buffer);
+  gtk_widget_class_bind_template_child (widget_class, DemoApplicationWindow, menutool);
+  gtk_widget_class_bind_template_child (widget_class, DemoApplicationWindow, toolmenu);
+  gtk_widget_class_bind_template_callback (widget_class, clicked_cb);
+  gtk_widget_class_bind_template_callback (widget_class, update_statusbar);
+  gtk_widget_class_bind_template_callback (widget_class, mark_set_callback);
+}
+
+int
+main (int argc, char *argv[])
+{
+  GtkApplication *app;
+
+  app = GTK_APPLICATION (g_object_new (demo_application_get_type (),
+                                       "application-id", "org.gtk.Demo2",
+                                       "flags", G_APPLICATION_HANDLES_OPEN,
+                                       NULL));
+
+  return g_application_run (G_APPLICATION (app), 0, NULL);
+}

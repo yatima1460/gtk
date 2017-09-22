@@ -159,8 +159,7 @@ free_startup_timeout (void *data)
 
   std = data;
 
-  g_slist_foreach (std->contexts, (GFunc) free_startup_notification_data, NULL);
-  g_slist_free (std->contexts);
+  g_slist_free_full (std->contexts, free_startup_notification_data);
 
   if (std->timeout_id != 0)
     {
@@ -347,7 +346,7 @@ gdk_x11_app_launch_context_get_startup_notify_id (GAppLaunchContext *context,
   if (timestamp == GDK_CURRENT_TIME)
     timestamp = gdk_x11_display_get_user_time (display);
 
-  screen_str = g_strdup_printf ("%d", gdk_screen_get_number (screen));
+  screen_str = g_strdup_printf ("%d", gdk_x11_screen_get_number (screen));
   if (ctx->workspace > -1)
     workspace_str = g_strdup_printf ("%d", ctx->workspace);
   else
@@ -464,10 +463,16 @@ GdkAppLaunchContext *
 _gdk_x11_display_get_app_launch_context (GdkDisplay *display)
 {
   GdkAppLaunchContext *ctx;
+  const gchar *display_name;
 
   ctx = g_object_new (GDK_TYPE_X11_APP_LAUNCH_CONTEXT,
                       "display", display,
                       NULL);
+
+  display_name = gdk_display_get_name (display);
+  if (display_name)
+    g_app_launch_context_setenv (G_APP_LAUNCH_CONTEXT (ctx),
+                                 "DISPLAY", display_name);
 
   return ctx;
 }

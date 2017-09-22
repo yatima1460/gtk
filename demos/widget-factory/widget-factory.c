@@ -22,9 +22,6 @@
 
 #include <glib/gi18n.h>
 #include <gtk/gtk.h>
-#ifdef HAVE_LIBCANBERRA
-#include <canberra-gtk.h>
-#endif
 
 static void
 change_theme_state (GSimpleAction *action,
@@ -41,6 +38,63 @@ change_theme_state (GSimpleAction *action,
   g_simple_action_set_state (action, state);
 }
 
+static GtkWidget *page_stack;
+
+static void
+change_transition_state (GSimpleAction *action,
+                         GVariant      *state,
+                         gpointer       user_data)
+{
+  GtkStackTransitionType transition;
+
+  if (g_variant_get_boolean (state))
+    transition = GTK_STACK_TRANSITION_TYPE_SLIDE_LEFT_RIGHT;
+  else
+    transition = GTK_STACK_TRANSITION_TYPE_NONE;
+
+  gtk_stack_set_transition_type (GTK_STACK (page_stack), transition);
+
+  g_simple_action_set_state (action, state);
+}
+
+static gboolean
+get_idle (gpointer data)
+{
+  GtkWidget *window = data;
+  GtkApplication *app = gtk_window_get_application (GTK_WINDOW (window));
+
+  gtk_widget_set_sensitive (window, TRUE);
+  gdk_window_set_cursor (gtk_widget_get_window (window), NULL);
+  g_application_unmark_busy (G_APPLICATION (app));
+
+  return G_SOURCE_REMOVE;
+}
+
+static void
+get_busy (GSimpleAction *action,
+          GVariant      *parameter,
+          gpointer       user_data)
+{
+  GtkWidget *window = user_data;
+  GdkCursor *cursor;
+  GtkApplication *app = gtk_window_get_application (GTK_WINDOW (window));
+
+  g_application_mark_busy (G_APPLICATION (app));
+  cursor = gdk_cursor_new_from_name (gtk_widget_get_display (window), "wait");
+  gdk_window_set_cursor (gtk_widget_get_window (window), cursor);
+  g_object_unref (cursor);
+  g_timeout_add (5000, get_idle, window);
+
+  gtk_widget_set_sensitive (window, FALSE);
+}
+
+static gint current_page = 0;
+static gboolean
+on_page (gint i)
+{
+  return current_page == i;
+}
+
 static void
 activate_search (GSimpleAction *action,
                  GVariant      *parameter,
@@ -48,6 +102,9 @@ activate_search (GSimpleAction *action,
 {
   GtkWidget *window = user_data;
   GtkWidget *searchbar;
+
+  if (!on_page (2))
+    return;
 
   searchbar = GTK_WIDGET (g_object_get_data (G_OBJECT (window), "searchbar"));
   gtk_search_bar_set_search_mode (GTK_SEARCH_BAR (searchbar), TRUE);
@@ -61,8 +118,77 @@ activate_delete (GSimpleAction *action,
   GtkWidget *window = user_data;
   GtkWidget *infobar;
 
+  if (!on_page (2))
+    return;
+
   infobar = GTK_WIDGET (g_object_get_data (G_OBJECT (window), "infobar"));
   gtk_widget_show (infobar);
+}
+
+static void populate_flowbox (GtkWidget *flowbox);
+
+static void
+activate_background (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
+{
+  GtkWidget *window = user_data;
+  GtkWidget *dialog;
+  GtkWidget *flowbox;
+
+  if (!on_page (2))
+    return;
+
+  dialog = GTK_WIDGET (g_object_get_data (G_OBJECT (window), "selection_dialog"));
+  flowbox = GTK_WIDGET (g_object_get_data (G_OBJECT (window), "selection_flowbox"));
+
+  gtk_widget_show (dialog);
+  populate_flowbox (flowbox);
+}
+
+static void
+activate_open (GSimpleAction *action,
+               GVariant      *parameter,
+               gpointer       user_data)
+{
+  GtkWidget *window = user_data;
+  GtkWidget *button;
+
+  if (!on_page (3))
+    return;
+
+  button = GTK_WIDGET (g_object_get_data (G_OBJECT (window), "open_menubutton"));
+  gtk_button_clicked (GTK_BUTTON (button));
+}
+
+static void
+activate_record (GSimpleAction *action,
+                 GVariant      *parameter,
+                 gpointer       user_data)
+{
+  GtkWidget *window = user_data;
+  GtkWidget *button;
+
+  if (!on_page (3))
+    return;
+
+  button = GTK_WIDGET (g_object_get_data (G_OBJECT (window), "record_button"));
+  gtk_button_clicked (GTK_BUTTON (button));
+}
+
+static void
+activate_lock (GSimpleAction *action,
+               GVariant      *parameter,
+               gpointer       user_data)
+{
+  GtkWidget *window = user_data;
+  GtkWidget *button;
+
+  if (!on_page (3))
+    return;
+
+  button = GTK_WIDGET (g_object_get_data (G_OBJECT (window), "lockbutton"));
+  gtk_button_clicked (GTK_BUTTON (button));
 }
 
 static void
@@ -441,14 +567,26 @@ static void
 page_changed_cb (GtkWidget *stack, GParamSpec *pspec, gpointer data)
 {
   const gchar *name;
+  GtkWidget *window;
   GtkWidget *page;
 
   if (gtk_widget_in_destruction (stack))
     return;
 
   name = gtk_stack_get_visible_child_name (GTK_STACK (stack));
+
+  window = gtk_widget_get_ancestor (stack, GTK_TYPE_APPLICATION_WINDOW);
+  g_object_set (gtk_application_window_get_help_overlay (GTK_APPLICATION_WINDOW (window)),
+                "view-name", name,
+                NULL);
+
+  if (g_str_equal (name, "page1"))
+    current_page = 1;
+  else if (g_str_equal (name, "page2"))
+    current_page = 2;
   if (g_str_equal (name, "page3"))
     {
+      current_page = 3;
       page = gtk_stack_get_visible_child (GTK_STACK (stack));
       set_needs_attention (GTK_WIDGET (page), FALSE);
     }
@@ -627,11 +765,6 @@ overshot (GtkScrolledWindow *sw, GtkPositionType pos, GtkWidget *widget)
           g_object_set_data (G_OBJECT (widget), "Gold", NULL);
         }
 
-#ifdef HAVE_LIBCANBERRA
-      if (silver || gold)
-        ca_gtk_play_for_widget (widget, 0, "event.id", "message", NULL); 
-#endif
-
       return;
     }
 
@@ -672,13 +805,39 @@ overshot (GtkScrolledWindow *sw, GtkPositionType pos, GtkWidget *widget)
   row = gtk_widget_get_parent (row);
   gtk_list_box_row_set_activatable (GTK_LIST_BOX_ROW (row), FALSE);
   g_object_set_data (G_OBJECT (widget), color, row);
-#ifdef HAVE_LIBCANBERRA
-  ca_gtk_play_for_widget (widget, 0, "event.id", "complete", NULL); 
-#endif
+  g_object_set_data (G_OBJECT (row), "color", (gpointer)color);
 }
 
 static void
-populate_colors (GtkWidget *widget)
+rgba_changed (GtkColorChooser *chooser, GParamSpec *pspec, GtkListBox *box)
+{
+  gtk_list_box_select_row (box, NULL);
+}
+
+static void
+set_color (GtkListBox *box, GtkListBoxRow *row, GtkColorChooser *chooser)
+{
+  const char *color;
+  GdkRGBA rgba;
+
+  if (!row)
+    return;
+
+  color = (const char *)g_object_get_data (G_OBJECT (row), "color");
+
+  if (!color)
+    return;
+
+  if (gdk_rgba_parse (&rgba, color))
+    {
+      g_signal_handlers_block_by_func (chooser, rgba_changed, box);
+      gtk_color_chooser_set_rgba (chooser, &rgba);
+      g_signal_handlers_unblock_by_func (chooser, rgba_changed, box);
+    }
+}
+
+static void
+populate_colors (GtkWidget *widget, GtkWidget *chooser)
 {
   struct { const gchar *name; const gchar *color; const gchar *title; } colors[] = {
     { "2.5", "#C8828C", "Red" },
@@ -756,9 +915,12 @@ populate_colors (GtkWidget *widget)
       gtk_list_box_insert (GTK_LIST_BOX (widget), row, -1);
       row = gtk_widget_get_parent (row);
       gtk_list_box_row_set_activatable (GTK_LIST_BOX_ROW (row), FALSE);
+      g_object_set_data (G_OBJECT (row), "color", (gpointer)colors[i].color);
       if (colors[i].title)
         g_object_set_data (G_OBJECT (row), "title", (gpointer)colors[i].title);
     }
+
+  g_signal_connect (widget, "row-selected", G_CALLBACK (set_color), chooser);
 
   gtk_list_box_invalidate_headers (GTK_LIST_BOX (widget));
 
@@ -798,7 +960,7 @@ background_loaded_cb (GObject      *source,
 }
 
 static void
-populate_flowbox (GtkWidget *button, GtkWidget *flowbox)
+populate_flowbox (GtkWidget *flowbox)
 {
   const gchar *location;
   GDir *dir;
@@ -811,7 +973,10 @@ populate_flowbox (GtkWidget *button, GtkWidget *flowbox)
   GdkPixbuf *pixbuf;
   GtkWidget *child;
 
-  g_signal_handlers_disconnect_by_func (button, populate_flowbox, flowbox);
+  if (GPOINTER_TO_UINT (g_object_get_data (G_OBJECT (flowbox), "populated")))
+    return;
+
+  g_object_set_data (G_OBJECT (flowbox), "populated", GUINT_TO_POINTER (1));
 
   pixbuf = gdk_pixbuf_new (GDK_COLORSPACE_RGB, FALSE, 8, 110, 70);
   gdk_pixbuf_fill (pixbuf, 0xffffffff);
@@ -920,7 +1085,7 @@ my_tv_draw_layer (GtkTextView      *widget,
 {
   MyTextView *tv = (MyTextView *)widget;
 
-  if (layer == GTK_TEXT_VIEW_LAYER_BELOW && tv->surface)
+  if (layer == GTK_TEXT_VIEW_LAYER_BELOW_TEXT && tv->surface)
     {
       cairo_save (cr);
       cairo_set_source_surface (cr, tv->surface, 0.0, 0.0);
@@ -1125,6 +1290,364 @@ page_combo_separator_func (GtkTreeModel *model,
 }
 
 static void
+activate_item (GtkWidget *item, GtkTextView *tv)
+{
+  const gchar *tag;
+  GtkTextIter start, end;
+  gboolean active;
+
+  g_object_get (item, "active", &active, NULL);
+  tag = (const gchar *)g_object_get_data (G_OBJECT (item), "tag");
+  gtk_text_buffer_get_selection_bounds (gtk_text_view_get_buffer (tv), &start, &end);
+  if (active)
+    gtk_text_buffer_apply_tag_by_name (gtk_text_view_get_buffer (tv), tag, &start, &end);
+  else
+    gtk_text_buffer_remove_tag_by_name (gtk_text_view_get_buffer (tv), tag, &start, &end);
+}
+
+static void
+add_item (GtkTextView *tv,
+          GtkWidget   *popup,
+          const gchar *text,
+          const gchar *tag,
+          gboolean     set)
+{
+  GtkWidget *item, *label;
+
+  if (GTK_IS_MENU (popup))
+    {
+      item = gtk_check_menu_item_new ();
+      gtk_check_menu_item_set_active (GTK_CHECK_MENU_ITEM (item), set);
+      g_signal_connect (item, "toggled", G_CALLBACK (activate_item), tv);
+    }
+  else
+    {
+      item = gtk_check_button_new ();
+      gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON (item), set);
+      gtk_widget_set_focus_on_click (item, FALSE);
+      g_signal_connect (item, "clicked", G_CALLBACK (activate_item), tv);
+    }
+
+  label = gtk_label_new ("");
+  gtk_label_set_xalign (GTK_LABEL (label), 0);
+  gtk_label_set_markup (GTK_LABEL (label), text);
+  gtk_widget_show (label);
+  gtk_container_add (GTK_CONTAINER (item), label);
+  g_object_set_data (G_OBJECT (item), "tag", (gpointer)tag);
+  gtk_widget_show (item);
+  gtk_container_add (GTK_CONTAINER (popup), item);
+}
+
+static void
+populate_popup (GtkTextView *tv,
+                GtkWidget   *popup)
+{
+  gboolean has_selection;
+  GtkWidget *item;
+  GtkTextIter start, end, iter;
+  GtkTextTagTable *tags;
+  GtkTextTag *bold, *italic, *underline;
+  gboolean all_bold, all_italic, all_underline;
+
+  has_selection = gtk_text_buffer_get_selection_bounds (gtk_text_view_get_buffer (tv), &start, &end);
+
+  if (!has_selection)
+    return;
+
+  tags = gtk_text_buffer_get_tag_table (gtk_text_view_get_buffer (tv));
+  bold = gtk_text_tag_table_lookup (tags, "bold");
+  italic = gtk_text_tag_table_lookup (tags, "italic");
+  underline = gtk_text_tag_table_lookup (tags, "underline");
+  all_bold = TRUE;
+  all_italic = TRUE;
+  all_underline = TRUE;
+  gtk_text_iter_assign (&iter, &start);
+  while (!gtk_text_iter_equal (&iter, &end))
+    {
+      all_bold &= gtk_text_iter_has_tag (&iter, bold);
+      all_italic &= gtk_text_iter_has_tag (&iter, italic);
+      all_underline &= gtk_text_iter_has_tag (&iter, underline);
+      gtk_text_iter_forward_char (&iter);
+    }
+
+  if (GTK_IS_MENU (popup))
+    {
+      item = gtk_separator_menu_item_new ();
+      gtk_widget_show (item);
+      gtk_container_add (GTK_CONTAINER (popup), item);
+    }
+
+  add_item (tv, popup, "<b>Bold</b>", "bold", all_bold);
+  add_item (tv, popup, "<i>Italics</i>", "italic", all_italic);
+  add_item (tv, popup, "<u>Underline</u>", "underline", all_underline);
+}
+
+static void
+open_popover_text_changed (GtkEntry *entry, GParamSpec *pspec, GtkWidget *button)
+{
+  const gchar *text;
+
+  text = gtk_entry_get_text (entry);
+  gtk_widget_set_sensitive (button, strlen (text) > 0);
+}
+
+static gboolean
+show_page_again (gpointer data)
+{
+  gtk_widget_show (GTK_WIDGET (data));
+  return G_SOURCE_REMOVE;
+}
+
+static void
+tab_close_cb (GtkWidget *page)
+{
+  gtk_widget_hide (page);
+  g_timeout_add (2500, show_page_again, page);
+}
+
+typedef struct _GTestPermission GTestPermission;
+typedef struct _GTestPermissionClass GTestPermissionClass;
+
+struct _GTestPermission
+{
+  GPermission parent;
+};
+
+struct _GTestPermissionClass
+{
+  GPermissionClass parent_class;
+};
+
+G_DEFINE_TYPE (GTestPermission, g_test_permission, G_TYPE_PERMISSION)
+
+static void
+g_test_permission_init (GTestPermission *test)
+{
+  g_permission_impl_update (G_PERMISSION (test), TRUE, TRUE, TRUE);
+}
+
+static gboolean
+update_allowed (GPermission *permission,
+                gboolean     allowed)
+{
+  g_permission_impl_update (permission, allowed, TRUE, TRUE);
+
+  return TRUE;
+}
+
+static gboolean
+acquire (GPermission   *permission,
+         GCancellable  *cancellable,
+         GError       **error)
+{
+  return update_allowed (permission, TRUE);
+}
+
+static void
+acquire_async (GPermission         *permission,
+               GCancellable        *cancellable,
+               GAsyncReadyCallback  callback,
+               gpointer             user_data)
+{
+  GTask *task;
+
+  task = g_task_new ((GObject*)permission, NULL, callback, user_data);
+  g_task_return_boolean (task, update_allowed (permission, TRUE));
+  g_object_unref (task);
+}
+
+gboolean
+acquire_finish (GPermission   *permission,
+                GAsyncResult  *res,
+                GError       **error)
+{
+  return g_task_propagate_boolean (G_TASK (res), error);
+}
+
+static gboolean
+release (GPermission   *permission,
+         GCancellable  *cancellable,
+         GError       **error)
+{
+  return update_allowed (permission, FALSE);
+}
+
+static void
+release_async (GPermission         *permission,
+               GCancellable        *cancellable,
+               GAsyncReadyCallback  callback,
+               gpointer             user_data)
+{
+  GTask *task;
+
+  task = g_task_new ((GObject*)permission, NULL, callback, user_data);
+  g_task_return_boolean (task, update_allowed (permission, FALSE));
+  g_object_unref (task);
+}
+
+gboolean
+release_finish (GPermission   *permission,
+                GAsyncResult  *result,
+                GError       **error)
+{
+  return g_task_propagate_boolean (G_TASK (result), error);
+}
+
+static void
+g_test_permission_class_init (GTestPermissionClass *class)
+{
+  GPermissionClass *permission_class = G_PERMISSION_CLASS (class);
+
+  permission_class->acquire = acquire;
+  permission_class->acquire_async = acquire_async;
+  permission_class->acquire_finish = acquire_finish;
+
+  permission_class->release = release;
+  permission_class->release_async = release_async;
+  permission_class->release_finish = release_finish;
+}
+
+static int icon_sizes[5];
+
+static void
+register_icon_sizes (void)
+{
+  static gboolean registered;
+
+  if (registered)
+    return;
+
+  registered = TRUE;
+
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+  icon_sizes[0] = gtk_icon_size_register ("a", 16, 16);
+  icon_sizes[1] = gtk_icon_size_register ("b", 24, 24);
+  icon_sizes[2] = gtk_icon_size_register ("c", 32, 32);
+  icon_sizes[3] = gtk_icon_size_register ("d", 48, 48);
+  icon_sizes[4] = gtk_icon_size_register ("e", 64, 64);
+G_GNUC_END_IGNORE_DEPRECATIONS
+}
+
+static int
+find_icon_size (GtkIconSize size)
+{
+  gint w, h, w2, h2;
+  gint i;
+
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+  gtk_icon_size_lookup (size, &w, &h);
+  for (i = 0; i < G_N_ELEMENTS (icon_sizes); i++)
+    {
+      gtk_icon_size_lookup (icon_sizes[i], &w2, &h2);
+      if (w == w2)
+        return i;
+    }
+G_GNUC_END_IGNORE_DEPRECATIONS
+
+  return 2;
+}
+
+static void
+update_buttons (GtkWidget *iv, int pos)
+{
+  GtkWidget *button;
+
+  button = GTK_WIDGET (g_object_get_data (G_OBJECT (iv), "increase_button"));
+  gtk_widget_set_sensitive (button, pos + 1 < G_N_ELEMENTS (icon_sizes));
+  button = GTK_WIDGET (g_object_get_data (G_OBJECT (iv), "decrease_button"));
+  gtk_widget_set_sensitive (button, pos > 0);
+}
+
+static void
+increase_icon_size (GtkWidget *iv)
+{
+  GList *cells;
+  GtkCellRendererPixbuf *cell;
+  GtkIconSize size;
+  int i;
+
+  cells = gtk_cell_layout_get_cells (GTK_CELL_LAYOUT (iv));
+  cell = cells->data;
+  g_list_free (cells);
+
+  g_object_get (cell, "stock-size", &size, NULL);
+
+  i = find_icon_size (size);
+  i = CLAMP (i + 1, 0, G_N_ELEMENTS (icon_sizes) - 1);
+  size = icon_sizes[i];
+
+  g_object_set (cell, "stock-size", size, NULL);
+
+  update_buttons (iv, i);
+
+  gtk_widget_queue_resize (iv);
+}
+
+static void
+decrease_icon_size (GtkWidget *iv)
+{
+  GList *cells;
+  GtkCellRendererPixbuf *cell;
+  GtkIconSize size;
+  int i;
+
+  cells = gtk_cell_layout_get_cells (GTK_CELL_LAYOUT (iv));
+  cell = cells->data;
+  g_list_free (cells);
+
+  g_object_get (cell, "stock-size", &size, NULL);
+
+  i = find_icon_size (size);
+  i = CLAMP (i - 1, 0, G_N_ELEMENTS (icon_sizes) - 1);
+  size = icon_sizes[i];
+
+  g_object_set (cell, "stock-size", size, NULL);
+
+  update_buttons (iv, i);
+
+  gtk_widget_queue_resize (iv);
+}
+
+static void
+reset_icon_size (GtkWidget *iv)
+{
+  GList *cells;
+  GtkCellRendererPixbuf *cell;
+
+  cells = gtk_cell_layout_get_cells (GTK_CELL_LAYOUT (iv));
+  cell = cells->data;
+  g_list_free (cells);
+
+  g_object_set (cell, "stock-size", icon_sizes[2], NULL);
+
+  update_buttons (iv, 2);
+
+  gtk_widget_queue_resize (iv);
+}
+
+static gchar *
+scale_format_value_blank (GtkScale *scale, gdouble value)
+{
+  return g_strdup (" ");
+}
+
+static gchar *
+scale_format_value (GtkScale *scale, gdouble value)
+{
+  return g_strdup_printf ("%0.*f", 1, value);
+}
+
+static void
+adjustment3_value_changed (GtkAdjustment *adj, GtkProgressBar *pbar)
+{
+  double fraction;
+
+  fraction = gtk_adjustment_get_value (adj) / (gtk_adjustment_get_upper (adj) - gtk_adjustment_get_lower (adj));
+
+  gtk_progress_bar_set_fraction (pbar, fraction);
+}
+
+static void
 activate (GApplication *app)
 {
   GtkBuilder *builder;
@@ -1139,8 +1662,14 @@ activate (GApplication *app)
   GtkCssProvider *provider;
   static GActionEntry win_entries[] = {
     { "dark", NULL, NULL, "false", change_theme_state },
+    { "transition", NULL, NULL, "false", change_transition_state },
     { "search", activate_search, NULL, NULL, NULL },
-    { "delete", activate_delete, NULL, NULL, NULL }
+    { "delete", activate_delete, NULL, NULL, NULL },
+    { "busy", get_busy, NULL, NULL, NULL },
+    { "background", activate_background, NULL, NULL, NULL },
+    { "open", activate_open, NULL, NULL, NULL },
+    { "record", activate_record, NULL, NULL, NULL },
+    { "lock", activate_lock, NULL, NULL, NULL },
   };
   struct {
     const gchar *action_and_target;
@@ -1150,11 +1679,18 @@ activate (GApplication *app)
     { "app.quit", { "<Primary>q", NULL } },
     { "win.dark", { "<Primary>d", NULL } },
     { "win.search", { "<Primary>s", NULL } },
-    { "win.delete", { "Delete", NULL } }
+    { "win.delete", { "Delete", NULL } },
+    { "win.background", { "<Primary>b", NULL } },
+    { "win.open", { "<Primary>o", NULL } },
+    { "win.record", { "<Primary>r", NULL } },
+    { "win.lock", { "<Primary>l", NULL } },
   };
   gint i;
+  GPermission *permission;
+  GAction *action;
 
   g_type_ensure (my_text_view_get_type ());
+  register_icon_sizes ();
 
   provider = gtk_css_provider_new ();
   gtk_css_provider_load_from_resource (provider, "/org/gtk/WidgetFactory/widget-factory.css");
@@ -1172,6 +1708,12 @@ activate (GApplication *app)
   gtk_builder_add_callback_symbol (builder, "on_range_from_changed", (GCallback)on_range_from_changed);
   gtk_builder_add_callback_symbol (builder, "on_range_to_changed", (GCallback)on_range_to_changed);
   gtk_builder_add_callback_symbol (builder, "osd_frame_button_press", (GCallback)osd_frame_button_press);
+  gtk_builder_add_callback_symbol (builder, "tab_close_cb", (GCallback)tab_close_cb);
+  gtk_builder_add_callback_symbol (builder, "increase_icon_size", (GCallback)increase_icon_size);
+  gtk_builder_add_callback_symbol (builder, "decrease_icon_size", (GCallback)decrease_icon_size);
+  gtk_builder_add_callback_symbol (builder, "reset_icon_size", (GCallback)reset_icon_size);
+  gtk_builder_add_callback_symbol (builder, "scale_format_value", (GCallback)scale_format_value);
+  gtk_builder_add_callback_symbol (builder, "scale_format_value_blank", (GCallback)scale_format_value_blank);
 
   gtk_builder_connect_signals (builder, NULL);
 
@@ -1257,27 +1799,38 @@ activate (GApplication *app)
   stack = (GtkWidget *)gtk_builder_get_object (builder, "toplevel_stack");
   g_signal_connect (widget, "clicked", G_CALLBACK (action_dialog_button_clicked), stack);
   g_signal_connect (stack, "notify::visible-child-name", G_CALLBACK (page_changed_cb), NULL);
+  page_changed_cb (stack, NULL, NULL);
+
+  page_stack = stack;
 
   dialog = (GtkWidget *)gtk_builder_get_object (builder, "preference_dialog");
   g_signal_connect (dialog, "response", G_CALLBACK (close_dialog), NULL);
   widget = (GtkWidget *)gtk_builder_get_object (builder, "preference_dialog_button");
   g_signal_connect (widget, "clicked", G_CALLBACK (show_dialog), dialog);
+  widget = (GtkWidget *)gtk_builder_get_object (builder, "circular_button");
+  g_signal_connect (widget, "clicked", G_CALLBACK (show_dialog), dialog);
 
   dialog = (GtkWidget *)gtk_builder_get_object (builder, "selection_dialog");
+  g_object_set_data (G_OBJECT (window), "selection_dialog", dialog);
   widget = (GtkWidget *)gtk_builder_get_object (builder, "text3");
   g_signal_connect (dialog, "response", G_CALLBACK (close_selection_dialog), widget);
   widget = (GtkWidget *)gtk_builder_get_object (builder, "selection_dialog_button");
   g_signal_connect (widget, "clicked", G_CALLBACK (show_dialog), dialog);
 
   widget2 = (GtkWidget *)gtk_builder_get_object (builder, "selection_flowbox");
-  g_signal_connect (widget, "clicked", G_CALLBACK (populate_flowbox), widget2);
+  g_object_set_data (G_OBJECT (window), "selection_flowbox", widget2);
+  g_signal_connect_swapped (widget, "clicked", G_CALLBACK (populate_flowbox), widget2);
 
   widget = (GtkWidget *)gtk_builder_get_object (builder, "charletree");
   populate_model ((GtkTreeStore *)gtk_tree_view_get_model (GTK_TREE_VIEW (widget)));
   gtk_tree_view_set_row_separator_func (GTK_TREE_VIEW (widget), row_separator_func, NULL, NULL);
   gtk_tree_view_expand_all (GTK_TREE_VIEW (widget));
 
-  populate_colors ((GtkWidget *)gtk_builder_get_object (builder, "munsell"));
+  widget = GTK_WIDGET (gtk_builder_get_object (builder, "munsell"));
+  widget2 = GTK_WIDGET (gtk_builder_get_object (builder, "cchooser"));
+
+  populate_colors (widget, widget2);
+  g_signal_connect (widget2, "notify::rgba", G_CALLBACK (rgba_changed), widget);
 
   widget = (GtkWidget *)gtk_builder_get_object (builder, "page_combo");
   gtk_combo_box_set_row_separator_func (GTK_COMBO_BOX (widget), page_combo_separator_func, NULL, NULL);
@@ -1295,6 +1848,7 @@ activate (GApplication *app)
   set_accel (GTK_APPLICATION (app), GTK_WIDGET (gtk_builder_get_object (builder, "searchmenuitem")));
   set_accel (GTK_APPLICATION (app), GTK_WIDGET (gtk_builder_get_object (builder, "darkmenuitem")));
   set_accel (GTK_APPLICATION (app), GTK_WIDGET (gtk_builder_get_object (builder, "aboutmenuitem")));
+  set_accel (GTK_APPLICATION (app), GTK_WIDGET (gtk_builder_get_object (builder, "bgmenuitem")));
 
   widget2 = (GtkWidget *)gtk_builder_get_object (builder, "tooltextview");
 
@@ -1320,16 +1874,88 @@ activate (GApplication *app)
                     G_CALLBACK (textbuffer_notify_selection), widget);
   widget = (GtkWidget *)gtk_builder_get_object (builder, "pastebutton");
   g_signal_connect (widget, "clicked", G_CALLBACK (handle_cutcopypaste), widget2);
-  g_signal_connect (gtk_widget_get_clipboard (widget2, GDK_SELECTION_CLIPBOARD), "owner-change",
-                    G_CALLBACK (clipboard_owner_change), widget);
+  g_signal_connect_object (gtk_widget_get_clipboard (widget2, GDK_SELECTION_CLIPBOARD), "owner-change",
+                           G_CALLBACK (clipboard_owner_change), widget, 0);
 
   widget = (GtkWidget *)gtk_builder_get_object (builder, "osd_frame");
   widget2 = (GtkWidget *)gtk_builder_get_object (builder, "totem_like_osd");
   g_object_set_data (G_OBJECT (widget), "osd", widget2);
 
+  widget = (GtkWidget *)gtk_builder_get_object (builder, "textview1");
+  g_signal_connect (widget, "populate-popup",
+                    G_CALLBACK (populate_popup), NULL);
+
+  widget = (GtkWidget *)gtk_builder_get_object (builder, "open_popover");
+  widget2 = (GtkWidget *)gtk_builder_get_object (builder, "open_popover_entry");
+  widget3 = (GtkWidget *)gtk_builder_get_object (builder, "open_popover_button");
+  gtk_popover_set_default_widget (GTK_POPOVER (widget), widget3);
+  g_signal_connect (widget2, "notify::text", G_CALLBACK (open_popover_text_changed), widget3);
+  g_signal_connect_swapped (widget3, "clicked", G_CALLBACK (gtk_widget_hide), widget);
+  widget = (GtkWidget *)gtk_builder_get_object (builder, "open_menubutton");
+  g_object_set_data (G_OBJECT (window), "open_menubutton", widget);
+  widget = (GtkWidget *)gtk_builder_get_object (builder, "record_button");
+  g_object_set_data (G_OBJECT (window), "record_button", widget);
+
+  widget = (GtkWidget *)gtk_builder_get_object (builder, "lockbox");
+  widget2 = (GtkWidget *)gtk_builder_get_object (builder, "lockbutton");
+  g_object_set_data (G_OBJECT (window), "lockbutton", widget2);
+  permission = g_object_new (g_test_permission_get_type (), NULL);
+  g_object_bind_property (permission, "allowed",
+                          widget, "sensitive",
+                          G_BINDING_SYNC_CREATE);
+  action = g_action_map_lookup_action (G_ACTION_MAP (window), "open");
+  g_object_bind_property (permission, "allowed",
+                          action, "enabled",
+                          G_BINDING_SYNC_CREATE);
+  action = g_action_map_lookup_action (G_ACTION_MAP (window), "record");
+  g_object_bind_property (permission, "allowed",
+                          action, "enabled",
+                          G_BINDING_SYNC_CREATE);
+  gtk_lock_button_set_permission (GTK_LOCK_BUTTON (widget2), permission);
+  g_object_unref (permission);
+
+  widget = (GtkWidget *)gtk_builder_get_object (builder, "iconview1");
+  widget2 = (GtkWidget *)gtk_builder_get_object (builder, "increase_button");
+  g_object_set_data (G_OBJECT (widget), "increase_button", widget2);
+  widget2 = (GtkWidget *)gtk_builder_get_object (builder, "decrease_button");
+  g_object_set_data (G_OBJECT (widget), "decrease_button", widget2);
+
+  adj = (GtkAdjustment *)gtk_builder_get_object (builder, "adjustment3");
+  widget = (GtkWidget *)gtk_builder_get_object (builder, "progressbar1");
+  widget2 = (GtkWidget *)gtk_builder_get_object (builder, "progressbar2");
+  g_signal_connect (adj, "value-changed", G_CALLBACK (adjustment3_value_changed), widget);
+  g_signal_connect (adj, "value-changed", G_CALLBACK (adjustment3_value_changed), widget2);
+
   gtk_widget_show_all (GTK_WIDGET (window));
 
   g_object_unref (builder);
+}
+
+static void
+print_version (void)
+{
+  g_print ("gtk3-widget-factory %d.%d.%d\n",
+           gtk_get_major_version (),
+           gtk_get_minor_version (),
+           gtk_get_micro_version ());
+}
+
+static int
+local_options (GApplication *app,
+               GVariantDict *options,
+               gpointer      data)
+{
+  gboolean version = FALSE;
+
+  g_variant_dict_lookup (options, "version", "b", &version);
+
+  if (version)
+    {
+      print_version ();
+      return 0;
+    }
+
+  return -1;
 }
 
 int
@@ -1359,6 +1985,9 @@ main (int argc, char *argv[])
 
   g_signal_connect (app, "activate", G_CALLBACK (activate), NULL);
 
+  g_application_add_main_option (G_APPLICATION (app), "version", 0, 0, G_OPTION_ARG_NONE, "Show program version", NULL);
+
+  g_signal_connect (app, "handle-local-options", G_CALLBACK (local_options), NULL);
   status = g_application_run (G_APPLICATION (app), argc, argv);
   g_object_unref (app);
 

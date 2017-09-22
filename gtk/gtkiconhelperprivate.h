@@ -20,13 +20,15 @@
 #ifndef __GTK_ICON_HELPER_H__
 #define __GTK_ICON_HELPER_H__
 
-#include <glib-object.h>
+#include "gtk/gtkimage.h"
+#include "gtk/gtktypes.h"
 
-#include <gtk/gtk.h>
+#include "gtkcssgadgetprivate.h"
+#include "gtkimagedefinitionprivate.h"
 
 G_BEGIN_DECLS
 
-#define GTK_TYPE_ICON_HELPER _gtk_icon_helper_get_type()
+#define GTK_TYPE_ICON_HELPER gtk_icon_helper_get_type()
 
 #define GTK_ICON_HELPER(obj) \
   (G_TYPE_CHECK_INSTANCE_CAST ((obj), \
@@ -54,27 +56,29 @@ typedef struct _GtkIconHelperPrivate GtkIconHelperPrivate;
 
 struct _GtkIconHelper
 {
-  GObject parent;
+  GtkCssGadget parent;
 
   GtkIconHelperPrivate *priv;
 };
 
 struct _GtkIconHelperClass
 {
-  GObjectClass parent_class;
+  GtkCssGadgetClass parent_class;
 };
 
-GType _gtk_icon_helper_get_type (void) G_GNUC_CONST;
+GType gtk_icon_helper_get_type (void) G_GNUC_CONST;
 
-GtkIconHelper *_gtk_icon_helper_new (void);
+GtkIconHelper *gtk_icon_helper_new (GtkCssNode *node,
+                                    GtkWidget  *owner);
+GtkCssGadget *gtk_icon_helper_new_named (const char *name,
+                                          GtkWidget  *owner);
 
 void _gtk_icon_helper_clear (GtkIconHelper *self);
-void _gtk_icon_helper_invalidate (GtkIconHelper *self);
-void _gtk_icon_helper_set_window (GtkIconHelper *self,
-				  GdkWindow *window);
 
 gboolean _gtk_icon_helper_get_is_empty (GtkIconHelper *self);
 
+void _gtk_icon_helper_set_definition (GtkIconHelper *self,
+                                      GtkImageDefinition *def);
 void _gtk_icon_helper_set_gicon (GtkIconHelper *self,
                                  GIcon *gicon,
                                  GtkIconSize icon_size);
@@ -82,7 +86,6 @@ void _gtk_icon_helper_set_pixbuf (GtkIconHelper *self,
 				  GdkPixbuf *pixbuf);
 void _gtk_icon_helper_set_pixbuf_scale (GtkIconHelper *self,
 					int scale);
-int  _gtk_icon_helper_get_pixbuf_scale (GtkIconHelper *self);
 void _gtk_icon_helper_set_animation (GtkIconHelper *self,
                                      GdkPixbufAnimation *animation);
 void _gtk_icon_helper_set_icon_set (GtkIconHelper *self,
@@ -116,20 +119,17 @@ GtkIconSet *_gtk_icon_helper_peek_icon_set (GtkIconHelper *self);
 GdkPixbufAnimation *_gtk_icon_helper_peek_animation (GtkIconHelper *self);
 cairo_surface_t *_gtk_icon_helper_peek_surface (GtkIconHelper *self);
 
+GtkImageDefinition *gtk_icon_helper_get_definition (GtkIconHelper *self);
 const gchar *_gtk_icon_helper_get_stock_id (GtkIconHelper *self);
 const gchar *_gtk_icon_helper_get_icon_name (GtkIconHelper *self);
 
-cairo_surface_t *_gtk_icon_helper_ensure_surface (GtkIconHelper *self,
-						  GtkStyleContext *context);
-GdkPixbuf *_gtk_icon_helper_ensure_pixbuf (GtkIconHelper *self,
-                                           GtkStyleContext *context);
+cairo_surface_t *gtk_icon_helper_load_surface (GtkIconHelper *self,
+                                               int              scale);
 void _gtk_icon_helper_get_size (GtkIconHelper *self,
-                                GtkStyleContext *context,
                                 gint *width_out,
                                 gint *height_out);
 
 void _gtk_icon_helper_draw (GtkIconHelper *self,
-                            GtkStyleContext *context,
                             cairo_t *cr,
                             gdouble x,
                             gdouble y);
@@ -138,6 +138,8 @@ gboolean _gtk_icon_helper_get_force_scale_pixbuf (GtkIconHelper *self);
 void     _gtk_icon_helper_set_force_scale_pixbuf (GtkIconHelper *self,
                                                   gboolean       force_scale);
 
+void      gtk_icon_helper_invalidate_for_change (GtkIconHelper     *self,
+                                                 GtkCssStyleChange *change);
 
 G_END_DECLS
 

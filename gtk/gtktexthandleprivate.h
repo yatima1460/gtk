@@ -79,11 +79,11 @@ void            _gtk_text_handle_set_visible  (GtkTextHandle         *handle,
                                                GtkTextHandlePosition  pos,
                                                gboolean               visible);
 
-void            _gtk_text_handle_set_relative_to (GtkTextHandle *handle,
-                                                  GdkWindow     *window);
-
 gboolean        _gtk_text_handle_get_is_dragged (GtkTextHandle         *handle,
                                                  GtkTextHandlePosition  pos);
+void            _gtk_text_handle_set_direction (GtkTextHandle         *handle,
+                                                GtkTextHandlePosition  pos,
+                                                GtkTextDirection       dir);
 
 G_END_DECLS
 

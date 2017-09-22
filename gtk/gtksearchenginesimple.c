@@ -21,13 +21,12 @@
 
 #include "config.h"
 
-#ifdef HAVE_FTW_H
-#include <ftw.h>
-#endif
+#include <gio/gio.h>
 
 #include <gdk/gdk.h>
 
 #include "gtksearchenginesimple.h"
+#include "gtkfilesystem.h"
 #include "gtkprivate.h"
 
 #include <string.h>
@@ -37,53 +36,66 @@
 typedef struct
 {
   GtkSearchEngineSimple *engine;
+  GCancellable *cancellable;
 
-  gchar *path;
-  gchar **words;
-  GList *found_list;
+  GQueue *directories;
 
   gint n_processed_files;
-  GList *uri_hits;
+  GList *hits;
 
-  /* accessed on both threads: */
-  volatile gboolean cancelled;
+  GtkQuery *query;
+  gboolean recursive;
 } SearchThreadData;
 
 
-struct _GtkSearchEngineSimplePrivate
+struct _GtkSearchEngineSimple
 {
+  GtkSearchEngine parent;
+
   GtkQuery *query;
 
   SearchThreadData *active_search;
 
   gboolean query_finished;
+
+  GtkSearchEngineSimpleIsIndexed is_indexed_callback;
+  gpointer                       is_indexed_data;
+  GDestroyNotify                 is_indexed_data_destroy;
 };
 
+struct _GtkSearchEngineSimpleClass
+{
+  GtkSearchEngineClass parent_class;
+};
 
-G_DEFINE_TYPE_WITH_PRIVATE (GtkSearchEngineSimple, _gtk_search_engine_simple, GTK_TYPE_SEARCH_ENGINE)
+G_DEFINE_TYPE (GtkSearchEngineSimple, _gtk_search_engine_simple, GTK_TYPE_SEARCH_ENGINE)
 
 static void
 gtk_search_engine_simple_dispose (GObject *object)
 {
-  GtkSearchEngineSimple *simple;
-  GtkSearchEngineSimplePrivate *priv;
+  GtkSearchEngineSimple *simple = GTK_SEARCH_ENGINE_SIMPLE (object);
 
-  simple = GTK_SEARCH_ENGINE_SIMPLE (object);
-  priv = simple->priv;
+  g_clear_object (&simple->query);
 
-  if (priv->query)
+  if (simple->active_search)
     {
-      g_object_unref (priv->query);
-      priv->query = NULL;
+      g_cancellable_cancel (simple->active_search->cancellable);
+      simple->active_search = NULL;
     }
 
-  if (priv->active_search)
-    {
-      priv->active_search->cancelled = TRUE;
-      priv->active_search = NULL;
-    }
+  _gtk_search_engine_simple_set_indexed_cb (simple, NULL, NULL, NULL);
 
   G_OBJECT_CLASS (_gtk_search_engine_simple_parent_class)->dispose (object);
+}
+
+static void
+queue_if_local (SearchThreadData *data,
+                GFile            *file)
+{
+  if (file &&
+      !_gtk_file_consider_as_remote (file) &&
+      !g_file_has_uri_scheme (file, "recent"))
+    g_queue_push_tail (data->directories, g_object_ref (file));
 }
 
 static SearchThreadData *
@@ -91,36 +103,29 @@ search_thread_data_new (GtkSearchEngineSimple *engine,
 			GtkQuery              *query)
 {
   SearchThreadData *data;
-  char *text, *lower, *uri;
 
   data = g_new0 (SearchThreadData, 1);
 
   data->engine = g_object_ref (engine);
-  uri = _gtk_query_get_location (query);
-  if (uri != NULL)
-    {
-      data->path = g_filename_from_uri (uri, NULL, NULL);
-      g_free (uri);
-    }
-  if (data->path == NULL)
-    data->path = g_strdup (g_get_home_dir ());
+  data->directories = g_queue_new ();
+  data->query = g_object_ref (query);
+  data->recursive = _gtk_search_engine_get_recursive (GTK_SEARCH_ENGINE (engine));
+  queue_if_local (data, gtk_query_get_location (query));
 
-  text = _gtk_query_get_text (query);
-  lower = g_ascii_strdown (text, -1);
-  data->words = g_strsplit (lower, " ", -1);
-  g_free (text);
-  g_free (lower);
+  data->cancellable = g_cancellable_new ();
 
   return data;
 }
 
-#ifdef HAVE_FTW_H
 static void
 search_thread_data_free (SearchThreadData *data)
 {
+  g_queue_foreach (data->directories, (GFunc)g_object_unref, NULL);
+  g_queue_free (data->directories);
+  g_object_unref (data->cancellable);
+  g_object_unref (data->query);
   g_object_unref (data->engine);
-  g_free (data->path);
-  g_strfreev (data->words);
+
   g_free (data);
 }
 
@@ -131,10 +136,10 @@ search_thread_done_idle (gpointer user_data)
 
   data = user_data;
 
-  if (!data->cancelled)
+  if (!g_cancellable_is_cancelled (data->cancellable))
     _gtk_search_engine_finished (GTK_SEARCH_ENGINE (data->engine));
 
-  data->engine->priv->active_search = NULL;
+  data->engine->active_search = NULL;
   search_thread_data_free (data);
 
   return FALSE;
@@ -142,25 +147,20 @@ search_thread_done_idle (gpointer user_data)
 
 typedef struct
 {
-  GList *uris;
+  GList *hits;
   SearchThreadData *thread_data;
-} SearchHits;
+} Batch;
 
 static gboolean
 search_thread_add_hits_idle (gpointer user_data)
 {
-  SearchHits *hits;
+  Batch *batch = user_data;
 
-  hits = user_data;
+  if (!g_cancellable_is_cancelled (batch->thread_data->cancellable))
+    _gtk_search_engine_hits_added (GTK_SEARCH_ENGINE (batch->thread_data->engine), batch->hits);
 
-  if (!hits->thread_data->cancelled)
-    {
-      _gtk_search_engine_hits_added (GTK_SEARCH_ENGINE (hits->thread_data->engine),
-				    hits->uris);
-    }
-
-  g_list_free_full (hits->uris, g_free);
-  g_free (hits);
+  g_list_free_full (batch->hits, (GDestroyNotify)_gtk_search_hit_free);
+  g_free (batch);
 
   return FALSE;
 }
@@ -168,120 +168,127 @@ search_thread_add_hits_idle (gpointer user_data)
 static void
 send_batch (SearchThreadData *data)
 {
-  SearchHits *hits;
+  Batch *batch;
 
   data->n_processed_files = 0;
 
-  if (data->uri_hits)
+  if (data->hits)
     {
       guint id;
 
-      hits = g_new (SearchHits, 1);
-      hits->uris = data->uri_hits;
-      hits->thread_data = data;
+      batch = g_new (Batch, 1);
+      batch->hits = data->hits;
+      batch->thread_data = data;
 
-      id = gdk_threads_add_idle (search_thread_add_hits_idle, hits);
+      id = gdk_threads_add_idle (search_thread_add_hits_idle, batch);
       g_source_set_name_by_id (id, "[gtk+] search_thread_add_hits_idle");
     }
 
-  data->uri_hits = NULL;
+  data->hits = NULL;
 }
 
-static GPrivate search_thread_data;
-
-static int
-search_visit_func (const char        *fpath,
-		   const struct stat *sb,
-		   int                typeflag,
-		   struct FTW        *ftwbuf)
+static gboolean
+is_indexed (GtkSearchEngineSimple *engine,
+            GFile                 *location)
 {
-  SearchThreadData *data;
-  gint i;
-  const gchar *name;
-  gchar *lower_name;
-  gchar *uri;
-  gboolean hit;
-  gboolean is_hidden;
-
-  data = (SearchThreadData*)g_private_get (&search_thread_data);
-
-  if (data->cancelled)
-#ifdef HAVE_GNU_FTW
-    return FTW_STOP;
-#else
-    return 1;
-#endif /* HAVE_GNU_FTW */
-
-  name = strrchr (fpath, '/');
-  if (name)
-    name++;
-  else
-    name = fpath;
-
-  is_hidden = *name == '.';
-
-  hit = FALSE;
-
-  if (!is_hidden)
+  if (engine->is_indexed_callback)
     {
-      lower_name = g_ascii_strdown (name, -1);
+      if (engine->is_indexed_callback (location, engine->is_indexed_data))
+        {
+          gchar *uri = g_file_get_uri (location);
+          g_debug ("Simple search engine: Skipping indexed location: %s\n", uri);
+          g_free (uri);
 
-      hit = TRUE;
-      for (i = 0; data->words[i] != NULL; i++)
-	{
-	  if (strstr (lower_name, data->words[i]) == NULL)
-	    {
-	      hit = FALSE;
-	      break;
-	    }
-	}
-      g_free (lower_name);
+          return TRUE;
+        }
     }
 
-  if (hit)
-    {
-      uri = g_filename_to_uri (fpath, NULL, NULL);
-      data->uri_hits = g_list_prepend (data->uri_hits, uri);
-    }
-
-  data->n_processed_files++;
-
-  if (data->n_processed_files > BATCH_SIZE)
-    send_batch (data);
-
-#ifdef HAVE_GNU_FTW
-  if (is_hidden)
-    return FTW_SKIP_SUBTREE;
-  else
-    return FTW_CONTINUE;
-#else
-  return 0;
-#endif /* HAVE_GNU_FTW */
+  return FALSE;
 }
-#endif /* HAVE_FTW_H */
+
+static void
+visit_directory (GFile *dir, SearchThreadData *data)
+{
+  GFileEnumerator *enumerator;
+  GFileInfo *info;
+  GFile *child;
+  const gchar *display_name;
+
+  enumerator = g_file_enumerate_children (dir,
+                                          G_FILE_ATTRIBUTE_STANDARD_NAME ","
+                                          G_FILE_ATTRIBUTE_STANDARD_DISPLAY_NAME ","
+                                          G_FILE_ATTRIBUTE_STANDARD_TYPE ","
+                                          G_FILE_ATTRIBUTE_STANDARD_IS_HIDDEN ","
+                                          G_FILE_ATTRIBUTE_STANDARD_IS_BACKUP ","
+                                          G_FILE_ATTRIBUTE_STANDARD_SIZE ","
+                                          G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE ","
+                                          G_FILE_ATTRIBUTE_STANDARD_TARGET_URI ","
+                                          G_FILE_ATTRIBUTE_TIME_MODIFIED ","
+                                          G_FILE_ATTRIBUTE_TIME_ACCESS ","
+                                          G_FILE_ATTRIBUTE_ACCESS_CAN_RENAME ","
+                                          G_FILE_ATTRIBUTE_ACCESS_CAN_TRASH ","
+                                          G_FILE_ATTRIBUTE_ACCESS_CAN_DELETE,
+                                          G_FILE_QUERY_INFO_NOFOLLOW_SYMLINKS,
+                                          data->cancellable, NULL);
+  if (enumerator == NULL)
+    return;
+
+  while (g_file_enumerator_iterate (enumerator, &info, &child, data->cancellable, NULL))
+    {
+      if (info == NULL)
+        break;
+
+      display_name = g_file_info_get_display_name (info);
+      if (display_name == NULL)
+        continue;
+
+      if (g_file_info_get_is_hidden (info))
+        continue;
+
+      if (gtk_query_matches_string (data->query, display_name))
+        {
+          GtkSearchHit *hit;
+
+          hit = g_new (GtkSearchHit, 1);
+          hit->file = g_object_ref (child);
+          hit->info = g_object_ref (info);
+          data->hits = g_list_prepend (data->hits, hit);
+        }
+
+      data->n_processed_files++;
+      if (data->n_processed_files > BATCH_SIZE)
+        send_batch (data);
+
+      if (data->recursive &&
+          g_file_info_get_file_type (info) == G_FILE_TYPE_DIRECTORY &&
+          !is_indexed (data->engine, child))
+        queue_if_local (data, child);
+    }
+
+  g_object_unref (enumerator);
+}
 
 static gpointer
 search_thread_func (gpointer user_data)
 {
-#ifdef HAVE_FTW_H
-  guint id;
   SearchThreadData *data;
+  GFile *dir;
+  guint id;
 
   data = user_data;
 
-  g_private_set (&search_thread_data, data);
+  while (!g_cancellable_is_cancelled (data->cancellable) &&
+         (dir = g_queue_pop_head (data->directories)) != NULL)
+    {
+      visit_directory (dir, data);
+      g_object_unref (dir);
+    }
 
-  nftw (data->path, search_visit_func, 20,
-#ifdef HAVE_GNU_FTW
-        FTW_ACTIONRETVAL |
-#endif
-        FTW_PHYS);
-
-  send_batch (data);
+  if (!g_cancellable_is_cancelled (data->cancellable))
+    send_batch (data);
 
   id = gdk_threads_add_idle (search_thread_done_idle, data);
   g_source_set_name_by_id (id, "[gtk+] search_thread_done_idle");
-#endif /* HAVE_FTW_H */
 
   return NULL;
 }
@@ -294,17 +301,17 @@ gtk_search_engine_simple_start (GtkSearchEngine *engine)
 
   simple = GTK_SEARCH_ENGINE_SIMPLE (engine);
 
-  if (simple->priv->active_search != NULL)
+  if (simple->active_search != NULL)
     return;
 
-  if (simple->priv->query == NULL)
+  if (simple->query == NULL)
     return;
 
-  data = search_thread_data_new (simple, simple->priv->query);
+  data = search_thread_data_new (simple, simple->query);
 
   g_thread_unref (g_thread_new ("file-search", search_thread_func, data));
 
-  simple->priv->active_search = data;
+  simple->active_search = data;
 }
 
 static void
@@ -314,17 +321,11 @@ gtk_search_engine_simple_stop (GtkSearchEngine *engine)
 
   simple = GTK_SEARCH_ENGINE_SIMPLE (engine);
 
-  if (simple->priv->active_search != NULL)
+  if (simple->active_search != NULL)
     {
-      simple->priv->active_search->cancelled = TRUE;
-      simple->priv->active_search = NULL;
+      g_cancellable_cancel (simple->active_search->cancellable);
+      simple->active_search = NULL;
     }
-}
-
-static gboolean
-gtk_search_engine_simple_is_indexed (GtkSearchEngine *engine)
-{
-  return FALSE;
 }
 
 static void
@@ -338,10 +339,10 @@ gtk_search_engine_simple_set_query (GtkSearchEngine *engine,
   if (query)
     g_object_ref (query);
 
-  if (simple->priv->query)
-    g_object_unref (simple->priv->query);
+  if (simple->query)
+    g_object_unref (simple->query);
 
-  simple->priv->query = query;
+  simple->query = query;
 }
 
 static void
@@ -357,21 +358,29 @@ _gtk_search_engine_simple_class_init (GtkSearchEngineSimpleClass *class)
   engine_class->set_query = gtk_search_engine_simple_set_query;
   engine_class->start = gtk_search_engine_simple_start;
   engine_class->stop = gtk_search_engine_simple_stop;
-  engine_class->is_indexed = gtk_search_engine_simple_is_indexed;
 }
 
 static void
 _gtk_search_engine_simple_init (GtkSearchEngineSimple *engine)
 {
-  engine->priv = _gtk_search_engine_simple_get_instance_private (engine);
 }
 
 GtkSearchEngine *
 _gtk_search_engine_simple_new (void)
 {
-#ifdef HAVE_FTW_H
   return g_object_new (GTK_TYPE_SEARCH_ENGINE_SIMPLE, NULL);
-#else
-  return NULL;
-#endif
+}
+
+void
+_gtk_search_engine_simple_set_indexed_cb (GtkSearchEngineSimple          *engine,
+                                          GtkSearchEngineSimpleIsIndexed  callback,
+                                          gpointer                        data,
+                                          GDestroyNotify                  destroy)
+{
+  if (engine->is_indexed_data_destroy)
+    engine->is_indexed_data_destroy (engine->is_indexed_data);
+
+  engine->is_indexed_callback = callback;
+  engine->is_indexed_data = data;
+  engine->is_indexed_data_destroy = destroy;
 }

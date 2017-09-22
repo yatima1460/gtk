@@ -31,7 +31,8 @@ G_BEGIN_DECLS
 typedef struct _GtkFileChooserEntry      GtkFileChooserEntry;
 
 GType              _gtk_file_chooser_entry_get_type           (void) G_GNUC_CONST;
-GtkWidget *        _gtk_file_chooser_entry_new                (gboolean             eat_tab);
+GtkWidget *        _gtk_file_chooser_entry_new                (gboolean             eat_tab,
+                                                               gboolean             eat_escape);
 void               _gtk_file_chooser_entry_set_action         (GtkFileChooserEntry *chooser_entry,
 							       GtkFileChooserAction action);
 GtkFileChooserAction _gtk_file_chooser_entry_get_action       (GtkFileChooserEntry *chooser_entry);
@@ -45,6 +46,8 @@ void               _gtk_file_chooser_entry_select_filename    (GtkFileChooserEnt
 void               _gtk_file_chooser_entry_set_local_only     (GtkFileChooserEntry *chooser_entry,
                                                                gboolean             local_only);
 gboolean           _gtk_file_chooser_entry_get_local_only     (GtkFileChooserEntry *chooser_entry);
+void               _gtk_file_chooser_entry_set_file_filter    (GtkFileChooserEntry *chooser_entry,
+                                                               GtkFileFilter       *filter);
 
 G_END_DECLS
 

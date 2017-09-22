@@ -140,11 +140,11 @@ additional environment variables.
   <variablelist>
     <varlistentry>
       <term>actions</term>
-      <listitem><para>Actions and menu models.</para></listitem>
+      <listitem><para>Actions and menu models</para></listitem>
     </varlistentry>
     <varlistentry>
       <term>baselines</term>
-      <listitem><para>Baselines.</para></listitem>
+      <listitem><para>Show baselines</para></listitem>
     </varlistentry>
     <varlistentry>
       <term>builder</term>
@@ -160,7 +160,7 @@ additional environment variables.
     </varlistentry>
     <varlistentry>
       <term>interactive</term>
-      <listitem><para>Open the <link linkend="interactive-debugging">interactive debugger</link>.</para></listitem>
+      <listitem><para>Open the <link linkend="interactive-debugging">interactive debugger</link></para></listitem>
     </varlistentry>
     <varlistentry>
       <term>keybindings</term>
@@ -176,11 +176,11 @@ additional environment variables.
     </varlistentry>
     <varlistentry>
       <term>no-css-cache</term>
-      <listitem><para>Bypass caching for CSS style properties.</para></listitem>
+      <listitem><para>Bypass caching for CSS style properties</para></listitem>
     </varlistentry>
     <varlistentry>
       <term>no-pixel-cache</term>
-      <listitem><para>Disable the pixel cache.</para></listitem>
+      <listitem><para>Disable the pixel cache</para></listitem>
     </varlistentry>
     <varlistentry>
       <term>plugsocket</term>
@@ -188,7 +188,7 @@ additional environment variables.
     </varlistentry>
     <varlistentry>
       <term>pixel-cache</term>
-      <listitem><para>Pixel cache.</para></listitem>
+      <listitem><para>Pixel cache</para></listitem>
     </varlistentry>
     <varlistentry>
       <term>printing</term>
@@ -214,7 +214,14 @@ additional environment variables.
       <term>updates</term>
       <listitem><para>Visual feedback about window updates</para></listitem>
     </varlistentry>
-
+    <varlistentry>
+      <term>resize</term>
+      <listitem><para>Highlight resizing widgets</para></listitem>
+    </varlistentry>
+    <varlistentry>
+      <term>layout</term>
+      <listitem><para>Show layout borders</para></listitem>
+    </varlistentry>
   </variablelist>
   The special value <literal>all</literal> can be used to turn on all
   debug options. The special value <literal>help</literal> can be used
@@ -473,7 +480,7 @@ nevertheless.
   <para>
     If set, selects the GDK backend to use. Selecting a backend requires that
     GTK+ is compiled with support for that backend. The following backends can
-    be selected:
+    be selected, provided they are included in the GDK libraries you are using:
     <variablelist>
 
       <varlistentry>
@@ -509,8 +516,24 @@ nevertheless.
     </variablelist>
     Since 3.10, this environment variable can contain a comma-separated list
     of backend names, which are tried in order. The list may also contain
-    a *, which means: try all remaining backends.
+    a *, which means: try all remaining backends. The special value "help" can
+    be used to make GDK print out a list of all available backends.
     For more information about selecting backends, see the gdk_display_manager_get() function.
+  </para>
+</formalpara>
+
+<formalpara>
+  <title><envar>GTK_CSD</envar></title>
+
+  <para>
+    The default value of this environment variable is 1. If changed to 0, this
+    disables the default use of client-side decorations on GTK+ windows, thus
+    making the window manager responsible for drawing the decorations of
+    windows that do not have a custom titlebar widget.
+  </para>
+  <para>
+    CSD is always used for windows with a custom titlebar widget set, as the WM
+    should not draw another titlebar or other decorations around the custom one.
   </para>
 </formalpara>
 
@@ -520,9 +543,9 @@ nevertheless.
   <para>
     GTK+ uses these environment variables to locate icon themes
     and MIME information. For more information, see
-    <ulink url="http://freedesktop.org/Standards/icon-theme-spec">Icon Theme Specification</ulink>,
-    the <ulink url="http://freedesktop.org/Standards/shared-mime-info-spec">Shared MIME-info Database</ulink>
-    and the <ulink url="http://freedesktop.org/Standards/basedir-spec">Base Directory Specification</ulink>.
+    <ulink url="https://freedesktop.org/Standards/icon-theme-spec">Icon Theme Specification</ulink>,
+    the <ulink url="https://freedesktop.org/Standards/shared-mime-info-spec">Shared MIME-info Database</ulink>
+    and the <ulink url="https://freedesktop.org/Standards/basedir-spec">Base Directory Specification</ulink>.
   </para>
 </formalpara>
 
@@ -531,7 +554,7 @@ nevertheless.
 
   <para>
     GTK+ uses this environment variable to provide startup notification
-    according to the <ulink url="http://standards.freedesktop.org/startup-notification-spec/startup-notification-latest.txt">Startup Notification Spec</ulink>.
+    according to the <ulink url="https://standards.freedesktop.org/startup-notification-spec/startup-notification-latest.txt">Startup Notification Spec</ulink>.
     Following the specification, GTK+ unsets this variable after reading
     it (to keep it from leaking to child processes). So, if you need its
     value for your own purposes, you have to read it before calling

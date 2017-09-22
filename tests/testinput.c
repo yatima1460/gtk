@@ -52,7 +52,9 @@ update_cursor (GtkWidget *widget,  gdouble x, gdouble y)
 
   if (surface != NULL)
     {
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
       cairo_t *cr = gdk_cairo_create (gtk_widget_get_window (widget));
+G_GNUC_END_IGNORE_DEPRECATIONS
 
       if (cursor_present && (cursor_present != state ||
 			     x != cursor_x || y != cursor_y))
@@ -291,7 +293,6 @@ quit (void)
 int
 main (int argc, char *argv[])
 {
-  GdkDeviceManager *device_manager;
   GList *devices, *d;
   GdkEventMask event_mask;
   GtkWidget *window;
@@ -299,11 +300,12 @@ main (int argc, char *argv[])
   GtkWidget *vbox;
   GtkWidget *button;
   GdkWindow *gdk_win;
+  GdkSeat *seat;
 
   gtk_init (&argc, &argv);
 
-  device_manager = gdk_display_get_device_manager (gdk_display_get_default ());
-  current_device = gdk_device_manager_get_client_pointer (device_manager);
+  seat = gdk_display_get_default_seat (gdk_display_get_default ());
+  current_device = gdk_seat_get_pointer (seat);
 
   window = gtk_window_new (GTK_WINDOW_TOPLEVEL);
   gtk_widget_set_name (window, "Test Input");
@@ -353,7 +355,7 @@ main (int argc, char *argv[])
 
   gtk_widget_set_events (drawing_area, event_mask);
 
-  devices = gdk_device_manager_list_devices (device_manager, GDK_DEVICE_TYPE_FLOATING);
+  devices = gdk_seat_get_slaves (seat, GDK_SEAT_CAPABILITY_ALL_POINTING);
 
   for (d = devices; d; d = d->next)
     {

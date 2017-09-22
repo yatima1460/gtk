@@ -26,6 +26,10 @@ if USE_X11
 testsocket_programs = testsocket testsocket_child
 endif
 
+if OS_LINUX
+fontconfig_programs = testfontchooserdialog
+endif
+
 noinst_PROGRAMS =  $(TEST_PROGS)	\
 	overlayscroll			\
 	syncscroll			\
@@ -53,11 +57,13 @@ noinst_PROGRAMS =  $(TEST_PROGS)	\
 	testcalendar			\
 	testclipboard			\
 	testcolorchooser		\
+	testcolorchooser2		\
 	testcombo			\
 	testcombochange			\
 	testcellrenderertext		\
 	testdialog			\
 	testdnd				\
+	testdnd2			\
 	testellipsise			\
 	testemblems			\
 	testentrycompletion 		\
@@ -68,7 +74,8 @@ noinst_PROGRAMS =  $(TEST_PROGS)	\
 	testfontselection		\
 	testfontselectiondialog		\
 	testfontchooser			\
-	testfontchooserdialog 		\
+	testfontoptions			\
+	$(fontconfig_programs)		\
 	testframe			\
 	testfullscreen			\
 	testgeometry			\
@@ -116,6 +123,7 @@ noinst_PROGRAMS =  $(TEST_PROGS)	\
 	testtoolbar2			\
 	stresstest-toolbar		\
 	testtreechanging                \
+	testtreednd			\
 	testtreeedit			\
 	testtreemodel			\
 	testtreeview			\
@@ -155,32 +163,25 @@ noinst_PROGRAMS =  $(TEST_PROGS)	\
 	testlogout			\
 	teststack			\
 	testrevealer			\
+	testrevealer2			\
 	testtitlebar			\
 	testsplitheaders		\
+	teststackedheaders		\
 	testactionbar			\
 	testwindowsize			\
 	testpopover			\
 	gdkgears			\
+	listmodel			\
+	testpopup			\
+	testpopupat			\
 	$(NULL)
+
+if USE_WAYLAND
+noinst_PROGRAMS += testforeign
+endif
 
 if USE_X11
 noinst_PROGRAMS += testerrors
-endif
-
-if HAVE_CXX
-
-AM_CXXFLAGS = $(AM_CPPFLAGS)
-
-noinst_PROGRAMS += autotestkeywords
-TESTS = autotestkeywords
-
-autotestkeywords_SOURCES = autotestkeywords.cc
-autotestkeywords_CPPFLAGS = -I$(srcdir)/dummy-headers
-
-if HAVE_OBJC
-autotestkeywords_CPPFLAGS += -DHAVE_OBJC=1 -x objective-c++
-endif
-
 endif
 
 animated_resizing_DEPENDENCIES = $(TEST_DEPS)
@@ -205,10 +206,12 @@ testcairo_DEPENDENCIES = $(TEST_DEPS)
 testcalendar_DEPENDENCIES = $(TEST_DEPS)
 testclipboard_DEPENDENCIES = $(TEST_DEPS)
 testcolorchooser_DEPENDENCIES = $(TEST_DEPS)
+testcolorchooser2_DEPENDENCIES = $(TEST_DEPS)
 testcombo_DEPENDENCIES = $(TEST_DEPS)
 testcombochange_DEPENDENCIES = $(TEST_DEPS)
 testcellrenderertext_DEPENDENCIES = $(TEST_DEPS)
 testdnd_DEPENDENCIES = $(TEST_DEPS)
+testdnd2_DEPENDENCIES = $(TEST_DEPS)
 testellipsise_DEPENDENCIES = $(TEST_DEPS)
 testentrycompletion_DEPENDENCIES = $(TEST_DEPS)
 testentryicons_DEPENDENCIES = $(TEST_DEPS)
@@ -220,6 +223,7 @@ testfontselection_DEPENDENCIES = $(TEST_DEPS)
 testfontselectiondialog_DEPENDENCIES = $(TEST_DEPS)
 testfontchooser_DEPENDENCIES = $(TEST_DEPS)
 testfontchooserdialog_DEPENDENCIES = $(TEST_DEPS)
+testfontoptions_DEPENDENCIES = $(TEST_DEPS)
 testframe_DEPENDENCIES = $(TEST_DEPS)
 testgeometry_DEPENDENCIES = $(TEST_DEPS)
 testgiconpixbuf = $(TEST_DEPS)
@@ -258,6 +262,7 @@ testspinbutton_DEPENDENCIES = $(TEST_DEPS)
 teststatusicon_DEPENDENCIES = $(TEST_DEPS)
 teststockbuttonmenu_DEPENDENCIES = $(TEST_DEPS)
 testtreechanging_DEPENDENCIES =	$(DEPS)
+testtreednd_DEPENDENCIES = $(DEPS)
 testtreeedit_DEPENDENCIES = $(DEPS)
 testtreemodel_DEPENDENCIES = $(DEPS)
 testtreeview_DEPENDENCIES = $(DEPS)
@@ -296,8 +301,10 @@ testgmenu_DEPENDENCIES = $(TEST_DEPS)
 testlogout_DEPENDENCIES = $(TEST_DEPS)
 teststack_DEPENDENCIES = $(TEST_DEPS)
 testrevealer_DEPENDENCIES = $(TEST_DEPS)
+testrevealer2_DEPENDENCIES = $(TEST_DEPS)
 testtitlebar_DEPENDENCIES = $(TEST_DEPS)
 testwindowsize_DEPENDENCIES = $(TEST_DEPS)
+listmodel_DEPENDENCIES = $(TEST_DEPS)
 
 animated_resizing_SOURCES = 	\
 	animated-resizing.c	\
@@ -359,6 +366,12 @@ testfontchooser_SOURCES = \
 testfontchooserdialog_SOURCES = \
 	testfontchooserdialog.c
 
+testfontoptions_SOURCES = \
+	testfontoptions.c
+
+testforeign_SOURCES = \
+	testforeign.c
+
 testgrid_SOURCES =	\
 	testgrid.c
 
@@ -367,6 +380,9 @@ testgtk_SOURCES =	\
 
 testtreechanging_SOURCES =	\
 	testtreechanging.c
+
+testtreednd_SOURCES = 	\
+	testtreednd.c
 
 testtreeedit_SOURCES = 	\
 	testtreeedit.c
@@ -504,11 +520,15 @@ testpixbuf_save_SOURCES = testpixbuf-save.c
 
 testcolorchooser_SOURCES = testcolorchooser.c
 
+testcolorchooser2_SOURCES = testcolorchooser2.c
+
 testkineticscrolling_SOURCES = testkineticscrolling.c
 
 teststack_SOURCES = teststack.c
 
 testrevealer_SOURCES = testrevealer.c
+
+testrevealer2_SOURCES = testrevealer2.c
 
 testtitlebar_SOURCES = testtitlebar.c
 
@@ -523,6 +543,8 @@ testglblending_SOURCES =	\
 	testglblending.c	\
 	gtkgears.c	\
 	gtkgears.h
+
+listmodel_SOURCES = listmodel.c
 
 EXTRA_DIST += 			\
 	gradient1.png		\
@@ -544,15 +566,11 @@ EXTRA_DIST += 			\
 	merge-3.ui		\
 	gnome-textfile.png	\
 	testsplitheaders.ui	\
+	teststackedheaders.ui	\
 	makefile.msc		\
 	mydialog.ui		\
 	mydialog2.ui		\
 	popover.ui		\
 	selectionmode.ui
-
-CLEANFILES = 			\
-	autotestkeywords.log	\
-	autotestkeywords.trs	\
-	test-suite.log
 
 -include $(top_srcdir)/git.mk

@@ -22,7 +22,10 @@ TEST_PROGS += 				\
 	display				\
 	encoding			\
 	keysyms				\
+	rectangle			\
 	rgba				\
+	seat				\
+	visual				\
 	$(NULL)
 
 CLEANFILES = 			\
@@ -37,7 +40,8 @@ insttest_PROGRAMS = $(TEST_PROGS)
 %.test: %$(EXEEXT) Makefile
 	$(AM_V_GEN) (echo '[Test]' > $@.tmp; \
 	echo 'Type=session' >> $@.tmp; \
-	echo 'Exec=$(insttestdir)/$<' >> $@.tmp; \
+	echo 'Output=TAP' >> $@.tmp; \
+	echo 'Exec=$(insttestdir)/$< --tap' >> $@.tmp; \
 	mv $@.tmp $@)
 
 test_files = $(TEST_PROGRS:=.test)

@@ -53,7 +53,8 @@ gtk_inspector_gestures_init (GtkInspectorGestures *sl)
                 "orientation", GTK_ORIENTATION_VERTICAL,
                 "margin-start", 60,
                 "margin-end", 60,
-                "margin-bottom", 60,
+                "margin-top", 60,
+                "margin-bottom", 30,
                 "spacing", 10,
                 NULL);
 }
@@ -125,10 +126,10 @@ add_gesture (GtkInspectorGestures *sl,
   gtk_widget_set_valign (label, GTK_ALIGN_BASELINE);
 
   combo = gtk_combo_box_text_new ();
-  gtk_combo_box_text_insert_text (GTK_COMBO_BOX_TEXT (combo), GTK_PHASE_NONE, _("None"));
-  gtk_combo_box_text_insert_text (GTK_COMBO_BOX_TEXT (combo), GTK_PHASE_CAPTURE, _("Capture"));
-  gtk_combo_box_text_insert_text (GTK_COMBO_BOX_TEXT (combo), GTK_PHASE_BUBBLE, _("Bubble"));
-  gtk_combo_box_text_insert_text (GTK_COMBO_BOX_TEXT (combo), GTK_PHASE_TARGET, _("Target"));
+  gtk_combo_box_text_insert_text (GTK_COMBO_BOX_TEXT (combo), GTK_PHASE_NONE, C_("event phase", "None"));
+  gtk_combo_box_text_insert_text (GTK_COMBO_BOX_TEXT (combo), GTK_PHASE_CAPTURE, C_("event phase", "Capture"));
+  gtk_combo_box_text_insert_text (GTK_COMBO_BOX_TEXT (combo), GTK_PHASE_BUBBLE, C_("event phase", "Bubble"));
+  gtk_combo_box_text_insert_text (GTK_COMBO_BOX_TEXT (combo), GTK_PHASE_TARGET, C_("event phase", "Target"));
   gtk_combo_box_set_active (GTK_COMBO_BOX (combo), phase);
   gtk_container_add (GTK_CONTAINER (box), combo);
   gtk_widget_show (combo);
@@ -169,7 +170,7 @@ add_gesture_group (GtkInspectorGestures *sl,
       add_gesture (sl, object, listbox, g, phase);
       g_hash_table_remove (hash, g);
     }
-  g_list_free (list); 
+  g_list_free (list);
 
   gtk_container_add (GTK_CONTAINER (sl), frame);
 }
@@ -182,8 +183,6 @@ gtk_inspector_gestures_set_object (GtkInspectorGestures *sl,
   GHashTableIter iter;
   GList *list, *l;
   gint phase;
-  const gchar *title;
-  GtkWidget *label;
 
   clear_all (sl);
   gtk_widget_hide (GTK_WIDGET (sl));
@@ -191,25 +190,20 @@ gtk_inspector_gestures_set_object (GtkInspectorGestures *sl,
   if (!GTK_IS_WIDGET (object))
     return;
 
-  title = (const gchar *)g_object_get_data (object, "gtk-inspector-object-title");
-  label = gtk_label_new (title);
-
-  gtk_widget_set_halign (label, GTK_ALIGN_FILL);
-  gtk_widget_set_valign (label, GTK_ALIGN_CENTER);
-  gtk_widget_set_margin_top (label, 12);
-  gtk_widget_set_margin_bottom (label, 30);
-  gtk_widget_show (label);
-  gtk_container_add (GTK_CONTAINER (sl), label);
-
   hash = g_hash_table_new (g_direct_hash, g_direct_equal);
   for (phase = GTK_PHASE_NONE; phase <= GTK_PHASE_TARGET; phase++)
     {
       list = _gtk_widget_list_controllers (GTK_WIDGET (object), phase);
       for (l = list; l; l = l->next)
-        g_hash_table_insert (hash, l->data, GINT_TO_POINTER (phase));
+        {
+          GtkEventController *controller = l->data;
+
+          if (GTK_IS_GESTURE (controller))
+            g_hash_table_insert (hash, controller, GINT_TO_POINTER (phase));
+        }
       g_list_free (list);
     }
-      
+
   if (g_hash_table_size (hash))
     gtk_widget_show (GTK_WIDGET (sl));
 
@@ -218,7 +212,7 @@ gtk_inspector_gestures_set_object (GtkInspectorGestures *sl,
       gpointer key, value;
       GtkGesture *gesture;
       g_hash_table_iter_init (&iter, hash);
-      g_hash_table_iter_next (&iter, &key, &value);
+      (void)g_hash_table_iter_next (&iter, &key, &value);
       gesture = key;
       add_gesture_group (sl, object, gesture, hash);
     }

@@ -13,8 +13,6 @@
 #include <gtk/gtk.h>
 #include <string.h>
 
-static GtkWidget *window = NULL;
-
 void
 copy_button_clicked (GtkWidget *button,
                      gpointer   user_data)
@@ -107,12 +105,12 @@ drag_begin (GtkWidget      *widget,
 }
 
 void
-drag_data_get  (GtkWidget        *widget,
-                GdkDragContext   *context,
-                GtkSelectionData *selection_data,
-                guint             info,
-                guint             time,
-                gpointer          data)
+drag_data_get (GtkWidget        *widget,
+               GdkDragContext   *context,
+               GtkSelectionData *selection_data,
+               guint             info,
+               guint             time,
+               gpointer          data)
 {
   GdkPixbuf *pixbuf;
 
@@ -195,13 +193,15 @@ button_press (GtkWidget      *widget,
   gtk_widget_show (item);
   gtk_menu_shell_append (GTK_MENU_SHELL (menu), item);
 
-  gtk_menu_popup (GTK_MENU (menu), NULL, NULL, NULL, NULL, 3, button->time);
+  gtk_menu_popup_at_pointer (GTK_MENU (menu), (GdkEvent *) button);
   return TRUE;
 }
 
 GtkWidget *
 do_clipboard (GtkWidget *do_widget)
 {
+  static GtkWidget *window = NULL;
+
   if (!window)
     {
       GtkWidget *vbox, *hbox;
@@ -213,7 +213,7 @@ do_clipboard (GtkWidget *do_widget)
       window = gtk_window_new (GTK_WINDOW_TOPLEVEL);
       gtk_window_set_screen (GTK_WINDOW (window),
                              gtk_widget_get_screen (do_widget));
-      gtk_window_set_title (GTK_WINDOW (window), "Clipboard demo");
+      gtk_window_set_title (GTK_WINDOW (window), "Clipboard");
 
       g_signal_connect (window, "destroy",
                         G_CALLBACK (gtk_widget_destroyed), &window);
@@ -325,10 +325,7 @@ do_clipboard (GtkWidget *do_widget)
   if (!gtk_widget_get_visible (window))
     gtk_widget_show_all (window);
   else
-    {
-      gtk_widget_destroy (window);
-      window = NULL;
-    }
+    gtk_widget_destroy (window);
 
   return window;
 }

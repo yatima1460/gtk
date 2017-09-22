@@ -143,10 +143,16 @@ _gdk_offscreen_window_create_surface (GdkWindow *offscreen,
                                       gint       width,
                                       gint       height)
 {
+  GdkOffscreenWindow *impl;
+  GdkWindow *derived;
+
   g_return_val_if_fail (GDK_IS_OFFSCREEN_WINDOW (offscreen->impl), NULL);
 
-  return gdk_window_create_similar_surface (offscreen->parent,
-					    CAIRO_CONTENT_COLOR_ALPHA, 
+  impl = GDK_OFFSCREEN_WINDOW (offscreen->impl);
+  derived = impl->embedder ? impl->embedder : offscreen->parent;
+
+  return gdk_window_create_similar_surface (derived,
+					    CAIRO_CONTENT_COLOR_ALPHA,
 					    width, height);
 }
 
@@ -195,7 +201,7 @@ gdk_offscreen_window_reparent (GdkWindow *window,
   gdk_window_hide (window);
 
   if (window->parent)
-    window->parent->children = g_list_remove (window->parent->children, window);
+    window->parent->children = g_list_remove_link (window->parent->children, &window->children_list_node);
 
   old_parent = window->parent;
   window->parent = new_parent;
@@ -203,7 +209,7 @@ gdk_offscreen_window_reparent (GdkWindow *window,
   window->y = y;
 
   if (new_parent)
-    window->parent->children = g_list_prepend (window->parent->children, window);
+    window->parent->children = g_list_concat (&window->children_list_node, window->parent->children);
 
   _gdk_synthesize_crossing_events_for_geometry_change (window);
   if (old_parent)
@@ -657,9 +663,14 @@ gdk_offscreen_window_get_frame_extents (GdkWindow    *window,
 static gint
 gdk_offscreen_window_get_scale_factor (GdkWindow *window)
 {
+  GdkOffscreenWindow *offscreen;
 
   if (GDK_WINDOW_DESTROYED (window))
     return 1;
+
+  offscreen = GDK_OFFSCREEN_WINDOW (window->impl);
+  if (offscreen->embedder)
+    return gdk_window_get_scale_factor (offscreen->embedder);
 
   return gdk_window_get_scale_factor (window->parent);
 }
@@ -667,6 +678,12 @@ gdk_offscreen_window_get_scale_factor (GdkWindow *window)
 static void
 gdk_offscreen_window_set_opacity (GdkWindow *window, gdouble opacity)
 {
+}
+
+static gboolean
+gdk_offscreen_window_beep (GdkWindow *window)
+{
+  return FALSE;
 }
 
 static void
@@ -701,7 +718,7 @@ gdk_offscreen_window_class_init (GdkOffscreenWindowClass *klass)
   impl_class->destroy_foreign = NULL;
   impl_class->get_shape = NULL;
   impl_class->get_input_shape = NULL;
-  impl_class->beep = NULL;
+  impl_class->beep = gdk_offscreen_window_beep;
 
   impl_class->focus = NULL;
   impl_class->set_type_hint = NULL;

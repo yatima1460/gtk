@@ -70,8 +70,7 @@ _gtk_icon_cache_unref (GtkIconCache *cache)
 
   if (cache->ref_count == 0)
     {
-      GTK_NOTE (ICONTHEME, 
-		g_print ("unmapping icon cache\n"));
+      GTK_NOTE (ICONTHEME, g_message ("unmapping icon cache"));
 
       if (cache->map)
 	g_mapped_file_unref (cache->map);
@@ -93,8 +92,7 @@ _gtk_icon_cache_new_for_path (const gchar *path)
    /* Check if we have a cache file */
   cache_filename = g_build_filename (path, "icon-theme.cache", NULL);
 
-  GTK_NOTE (ICONTHEME, 
-	    g_print ("look for cache in %s\n", path));
+  GTK_NOTE (ICONTHEME, g_message ("look for icon cache in %s", path));
 
   if (g_stat (path, &path_st) < 0)
     goto done;
@@ -110,7 +108,7 @@ _gtk_icon_cache_new_for_path (const gchar *path)
 /* Bug 660730: _fstat32 is only defined in msvcrt80.dll+/VS 2005+ */
 /*             or possibly in the msvcrt.dll linked to by the Windows DDK */
 /*             (will need to check on the Windows DDK part later) */
-#if (_MSC_VER >= 1400 || __MSVCRT_VERSION__ >= 0x0800)
+#if ((_MSC_VER >= 1400 || __MSVCRT_VERSION__ >= 0x0800) || defined (__MINGW64_VERSION_MAJOR)) && !defined(_WIN64)
 #undef fstat /* Just in case */
 #define fstat _fstat32  
 #endif
@@ -122,8 +120,7 @@ _gtk_icon_cache_new_for_path (const gchar *path)
   /* Verify cache is uptodate */
   if (st.st_mtime < path_st.st_mtime)
     {
-      GTK_NOTE (ICONTHEME, 
-		g_print ("cache outdated\n"));
+      GTK_NOTE (ICONTHEME, g_message ("icon cache outdated"));
       goto done; 
     }
 
@@ -133,7 +130,7 @@ _gtk_icon_cache_new_for_path (const gchar *path)
     goto done;
 
 #ifdef G_ENABLE_DEBUG
-  if (gtk_get_debug_flags () & GTK_DEBUG_ICONTHEME)
+  if (GTK_DEBUG_CHECK (ICONTHEME))
     {
       CacheInfo info;
 
@@ -145,14 +142,14 @@ _gtk_icon_cache_new_for_path (const gchar *path)
       if (!_gtk_icon_cache_validate (&info))
         {
           g_mapped_file_unref (map);
-          g_warning ("Icon cache '%s' is invalid\n", cache_filename);
+          g_warning ("Icon cache '%s' is invalid", cache_filename);
 
           goto done;
         }
     }
 #endif 
 
-  GTK_NOTE (ICONTHEME, g_print ("found cache for %s\n", path));
+  GTK_NOTE (ICONTHEME, g_message ("found icon cache for %s", path));
 
   cache = g_new0 (GtkIconCache, 1);
   cache->ref_count = 1;
@@ -503,8 +500,7 @@ _gtk_icon_cache_get_icon (GtkIconCache *cache,
 
   if (type != 0)
     {
-      GTK_NOTE (ICONTHEME,
-		g_print ("invalid pixel data type %u\n", type));
+      GTK_NOTE (ICONTHEME, g_message ("invalid pixel data type %u", type));
       return NULL;
     }
 
@@ -515,8 +511,7 @@ G_GNUC_BEGIN_IGNORE_DEPRECATIONS
 				(guchar *)(cache->buffer + pixel_data_offset + 8),
 				&error))
     {
-      GTK_NOTE (ICONTHEME,
-		g_print ("could not deserialize data: %s\n", error->message));
+      GTK_NOTE (ICONTHEME, g_message ("could not deserialize data: %s", error->message));
       g_error_free (error);
 
       return NULL;
@@ -530,8 +525,7 @@ G_GNUC_END_IGNORE_DEPRECATIONS
 				     cache);
   if (!pixbuf)
     {
-      GTK_NOTE (ICONTHEME,
-		g_print ("could not convert pixdata to pixbuf: %s\n", error->message));
+      GTK_NOTE (ICONTHEME, g_message ("could not convert pixdata to pixbuf: %s", error->message));
       g_error_free (error);
 
       return NULL;
@@ -540,87 +534,5 @@ G_GNUC_END_IGNORE_DEPRECATIONS
   _gtk_icon_cache_ref (cache);
 
   return pixbuf;
-}
-
-GtkIconData  *
-_gtk_icon_cache_get_icon_data  (GtkIconCache *cache,
-				const gchar  *icon_name,
-				gint          directory_index)
-{
-  guint32 offset, image_data_offset, meta_data_offset;
-  GtkIconData *data;
-  int i;
-
-  offset = find_image_offset (cache, icon_name, directory_index);
-  if (!offset)
-    return NULL;
-
-  image_data_offset = GET_UINT32 (cache->buffer, offset + 4);
-  if (!image_data_offset)
-    return NULL;
-
-  meta_data_offset = GET_UINT32 (cache->buffer, image_data_offset + 4);
-  
-  if (!meta_data_offset)
-    return NULL;
-
-  data = g_slice_new0 (GtkIconData);
-  data->ref = 1;
-
-  offset = GET_UINT32 (cache->buffer, meta_data_offset);
-  if (offset)
-    {
-      data->has_embedded_rect = TRUE;
-      data->x0 = GET_UINT16 (cache->buffer, offset);
-      data->y0 = GET_UINT16 (cache->buffer, offset + 2);
-      data->x1 = GET_UINT16 (cache->buffer, offset + 4);
-      data->y1 = GET_UINT16 (cache->buffer, offset + 6);
-    }
-
-  offset = GET_UINT32 (cache->buffer, meta_data_offset + 4);
-  if (offset)
-    {
-      data->n_attach_points = GET_UINT32 (cache->buffer, offset);
-      data->attach_points = g_new (GdkPoint, data->n_attach_points);
-      for (i = 0; i < data->n_attach_points; i++)
-	{
-	  data->attach_points[i].x = GET_UINT16 (cache->buffer, offset + 4 + 4 * i); 
-	  data->attach_points[i].y = GET_UINT16 (cache->buffer, offset + 4 + 4 * i + 2); 
-	}
-    }
-
-  offset = GET_UINT32 (cache->buffer, meta_data_offset + 8);
-  if (offset)
-    {
-      gint n_names;
-      gchar *lang, *name;
-      gchar **langs;
-      GHashTable *table = g_hash_table_new (g_str_hash, g_str_equal);
-
-      n_names = GET_UINT32 (cache->buffer, offset);
-      
-      for (i = 0; i < n_names; i++)
-	{
-	  lang = cache->buffer + GET_UINT32 (cache->buffer, offset + 4 + 8 * i);
-	  name = cache->buffer + GET_UINT32 (cache->buffer, offset + 4 + 8 * i + 4);
-	  
-	  g_hash_table_insert (table, lang, name);
-	}
-      
-      langs = (gchar **)g_get_language_names ();
-      for (i = 0; langs[i]; i++)
-	{
-	  name = g_hash_table_lookup (table, langs[i]);
-	  if (name)
-	    {
-	      data->display_name = g_strdup (name);
-	      break;
-	    }
-	}
-
-      g_hash_table_destroy (table);
-    }
-
-  return data;
 }
 

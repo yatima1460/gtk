@@ -8,14 +8,6 @@
 
 #include <gtk/gtk.h>
 
-static GtkWidget *window = NULL;
-
-static void
-search_entry_destroyed (GtkWidget  *widget)
-{
-  window = NULL;
-}
-
 static void
 search_changed_cb (GtkSearchEntry *entry,
                    GtkLabel       *result_label)
@@ -73,6 +65,7 @@ stop_search (GtkSearchEntry *entry,
 GtkWidget *
 do_search_entry2 (GtkWidget *do_widget)
 {
+  static GtkWidget *window = NULL;
   GtkWidget *vbox;
   GtkWidget *hbox;
   GtkWidget *label;
@@ -84,13 +77,13 @@ do_search_entry2 (GtkWidget *do_widget)
   if (!window)
     {
       window = gtk_window_new (GTK_WINDOW_TOPLEVEL);
-      gtk_window_set_title (GTK_WINDOW (window), "Search Entry #2");
+      gtk_window_set_title (GTK_WINDOW (window), "Delayed Search Entry");
       gtk_window_set_transient_for (GTK_WINDOW (window), GTK_WINDOW (do_widget));
       gtk_window_set_resizable (GTK_WINDOW (window), TRUE);
       gtk_widget_set_size_request (window, 200, -1);
 
       g_signal_connect (window, "destroy",
-                        G_CALLBACK (search_entry_destroyed), &window);
+                        G_CALLBACK (gtk_widget_destroyed), &window);
 
       vbox = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
       gtk_container_add (GTK_CONTAINER (window), vbox);
@@ -164,10 +157,7 @@ do_search_entry2 (GtkWidget *do_widget)
   if (!gtk_widget_get_visible (window))
     gtk_widget_show_all (window);
   else
-    {
-      gtk_widget_destroy (window);
-      window = NULL;
-    }
+    gtk_widget_destroy (window);
 
   return window;
 }

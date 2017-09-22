@@ -131,8 +131,8 @@ output_result (GtkIMContext *context,
   gboolean retval = FALSE;
   gchar *fixed_str, *marked_str;
 
-  fixed_str = g_object_get_data (G_OBJECT (win), TIC_INSERT_TEXT);
-  marked_str = g_object_get_data (G_OBJECT (win), TIC_MARKED_TEXT);
+  fixed_str = g_strdup (g_object_get_data (G_OBJECT (win), TIC_INSERT_TEXT));
+  marked_str = g_strdup (g_object_get_data (G_OBJECT (win), TIC_MARKED_TEXT));
   if (fixed_str)
     {
       GTK_NOTE (MISC, g_print ("tic-insert-text: %s\n", fixed_str));
@@ -171,7 +171,8 @@ output_result (GtkIMContext *context,
       if (qc->preedit_str && strlen (qc->preedit_str) > 0)
         retval = TRUE;
     }
-
+  g_free (fixed_str);
+  g_free (marked_str);
   return retval;
 }
 
@@ -186,15 +187,11 @@ quartz_filter_keypress (GtkIMContext *context,
 
   GTK_NOTE (MISC, g_print ("quartz_filter_keypress\n"));
 
-  if (!qc->client_window)
+  if (!GDK_IS_QUARTZ_WINDOW (qc->client_window))
     return FALSE;
 
   nsview = gdk_quartz_window_get_nsview (qc->client_window);
-  if (GDK_IS_WINDOW (nsview))
-       /* it gets GDK_WINDOW in some cases */
-    return gtk_im_context_filter_keypress (qc->slave, event);
-  else
-    win = (GdkWindow *)[ (GdkQuartzView *)nsview gdkWindow];
+  win = (GdkWindow *)[ (GdkQuartzView *)nsview gdkWindow];
   GTK_NOTE (MISC, g_print ("client_window: %p, win: %p, nsview: %p\n",
 			   qc->client_window, win, nsview));
 
@@ -242,11 +239,11 @@ discard_preedit (GtkIMContext *context)
   if (!qc->client_window)
     return;
 
-  NSView *nsview = gdk_quartz_window_get_nsview (qc->client_window);
-  if (!nsview)
+  if (!GDK_IS_QUARTZ_WINDOW (qc->client_window))
     return;
 
-  if (GDK_IS_WINDOW (nsview))
+  NSView *nsview = gdk_quartz_window_get_nsview (qc->client_window);
+  if (!nsview)
     return;
 
   /* reset any partial input for this NSView */
@@ -328,11 +325,10 @@ quartz_set_cursor_location (GtkIMContext *context, GdkRectangle *area)
   qc->cursor_rect->x = area->x + x;
   qc->cursor_rect->y = area->y + y;
 
-  nsview = gdk_quartz_window_get_nsview (qc->client_window);
-  if (GDK_IS_WINDOW (nsview))
-    /* it returns GDK_WINDOW in some cases */
+  if (!GDK_IS_QUARTZ_WINDOW (qc->client_window))
     return;
 
+  nsview = gdk_quartz_window_get_nsview (qc->client_window);
   win = (GdkWindow *)[ (GdkQuartzView*)nsview gdkWindow];
   g_object_set_data (G_OBJECT (win), GIC_CURSOR_RECT, qc->cursor_rect);
 }

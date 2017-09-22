@@ -270,7 +270,7 @@ typedef enum
  * @GTK_MESSAGE_WARNING: Non-fatal warning message
  * @GTK_MESSAGE_QUESTION: Question requiring a choice
  * @GTK_MESSAGE_ERROR: Fatal error message
- * @GTK_MESSAGE_OTHER: None of the above, doesn’t get an icon
+ * @GTK_MESSAGE_OTHER: None of the above
  *
  * The type of message being displayed in the dialog.
  */
@@ -857,6 +857,7 @@ typedef enum
  * @GTK_STATE_FLAG_LINK: Widget is a link. Since 3.12
  * @GTK_STATE_FLAG_VISITED: The location the widget points to has already been visited. Since 3.12
  * @GTK_STATE_FLAG_CHECKED: Widget is checked. Since 3.14
+ * @GTK_STATE_FLAG_DROP_ACTIVE: Widget is highlighted as a drop target for DND. Since 3.20
  *
  * Describes a widget state. Widget states are used to match the widget
  * against CSS pseudo-classes. Note that GTK extends the regular CSS
@@ -876,7 +877,8 @@ typedef enum
   GTK_STATE_FLAG_DIR_RTL      = 1 << 8,
   GTK_STATE_FLAG_LINK         = 1 << 9,
   GTK_STATE_FLAG_VISITED      = 1 << 10,
-  GTK_STATE_FLAG_CHECKED      = 1 << 11
+  GTK_STATE_FLAG_CHECKED      = 1 << 11,
+  GTK_STATE_FLAG_DROP_ACTIVE  = 1 << 12
 } GtkStateFlags;
 
 /**
@@ -1033,6 +1035,9 @@ typedef enum
  *     first word of each sentence
  * @GTK_INPUT_HINT_INHIBIT_OSK: Suggest to not show an onscreen keyboard
  *     (e.g for a calculator that already has all the keys).
+ * @GTK_INPUT_HINT_VERTICAL_WRITING: The text is vertical. Since 3.18
+ * @GTK_INPUT_HINT_EMOJI: Suggest offering Emoji support. Since 3.22.20
+ * @GTK_INPUT_HINT_NO_EMOJI: Suggest not offering Emoji support. Since 3.22.20
  *
  * Describes hints that might be taken into account by input methods
  * or applications. Note that input methods may already tailor their
@@ -1056,7 +1061,10 @@ typedef enum
   GTK_INPUT_HINT_UPPERCASE_CHARS     = 1 << 4,
   GTK_INPUT_HINT_UPPERCASE_WORDS     = 1 << 5,
   GTK_INPUT_HINT_UPPERCASE_SENTENCES = 1 << 6,
-  GTK_INPUT_HINT_INHIBIT_OSK         = 1 << 7
+  GTK_INPUT_HINT_INHIBIT_OSK         = 1 << 7,
+  GTK_INPUT_HINT_VERTICAL_WRITING    = 1 << 8,
+  GTK_INPUT_HINT_EMOJI               = 1 << 9,
+  GTK_INPUT_HINT_NO_EMOJI            = 1 << 10
 } GtkInputHints;
 
 /**
@@ -1123,5 +1131,24 @@ typedef enum
   GTK_PAN_DIRECTION_UP,
   GTK_PAN_DIRECTION_DOWN
 } GtkPanDirection;
+
+/**
+ * GtkPopoverConstraint:
+ * @GTK_POPOVER_CONSTRAINT_NONE: Don't constrain the popover position
+ *   beyond what is imposed by the implementation
+ * @GTK_POPOVER_CONSTRAINT_WINDOW: Constrain the popover to the boundaries
+ *   of the window that it is attached to
+ *
+ * Describes constraints to positioning of popovers. More values
+ * may be added to this enumeration in the future.
+ *
+ * Since: 3.20
+ */
+typedef enum
+{
+  GTK_POPOVER_CONSTRAINT_NONE,
+  GTK_POPOVER_CONSTRAINT_WINDOW
+} GtkPopoverConstraint;
+
 
 #endif /* __GTK_ENUMS_H__ */

@@ -32,7 +32,6 @@
 
 #include <gtk/gtkwidget.h>
 
-
 G_BEGIN_DECLS
 
 #define GTK_TYPE_CONTAINER              (gtk_container_get_type ())
@@ -218,6 +217,10 @@ GDK_AVAILABLE_IN_ALL
 void         gtk_container_class_install_child_property (GtkContainerClass *cclass,
 							 guint		    property_id,
 							 GParamSpec	   *pspec);
+GDK_AVAILABLE_IN_3_18
+void         gtk_container_class_install_child_properties (GtkContainerClass *cclass,
+                                                           guint              n_pspecs,
+                                                           GParamSpec       **pspecs);
 GDK_AVAILABLE_IN_ALL
 GParamSpec*  gtk_container_class_find_child_property	(GObjectClass	   *cclass,
 							 const gchar	   *property_name);
@@ -265,6 +268,11 @@ void gtk_container_child_notify (GtkContainer *container,
                                  GtkWidget    *child,
                                  const gchar  *child_property);
 
+GDK_AVAILABLE_IN_3_18
+void gtk_container_child_notify_by_pspec (GtkContainer *container,
+                                          GtkWidget    *child,
+                                          GParamSpec   *pspec);
+
 /**
  * GTK_CONTAINER_WARN_INVALID_CHILD_PROPERTY_ID:
  * @object: the #GObject on which set_child_property() or get_child_property()
@@ -290,6 +298,8 @@ void    gtk_container_class_handle_border_width (GtkContainerClass *klass);
 GDK_AVAILABLE_IN_ALL
 GtkWidgetPath * gtk_container_get_path_for_child (GtkContainer      *container,
                                                   GtkWidget         *child);
+
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(GtkContainer, g_object_unref)
 
 G_END_DECLS
 

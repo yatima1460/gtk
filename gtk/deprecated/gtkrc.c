@@ -704,89 +704,6 @@ static const GScannerConfig gtk_rc_scanner_config =
   TRUE			/* symbol_2_token */,
   FALSE			/* scope_0_fallback */,
 };
- 
-static const gchar symbol_names[] = 
-  "include\0"
-  "NORMAL\0"
-  "ACTIVE\0"
-  "PRELIGHT\0"
-  "SELECTED\0"
-  "INSENSITIVE\0"
-  "fg\0"
-  "bg\0"
-  "text\0"
-  "base\0"
-  "xthickness\0"
-  "ythickness\0"
-  "font\0"
-  "fontset\0"
-  "font_name\0"
-  "bg_pixmap\0"
-  "pixmap_path\0"
-  "style\0"
-  "binding\0"
-  "bind\0"
-  "widget\0"
-  "widget_class\0"
-  "class\0"
-  "lowest\0"
-  "gtk\0"
-  "application\0"
-  "theme\0"
-  "rc\0"
-  "highest\0"
-  "engine\0"
-  "module_path\0"
-  "stock\0"
-  "im_module_file\0"
-  "LTR\0"
-  "RTL\0"
-  "color\0"
-  "unbind\0";
-
-static const struct
-{
-  guint name_offset;
-  guint token;
-} symbols[] = {
-  {   0, GTK_RC_TOKEN_INCLUDE },
-  {   8, GTK_RC_TOKEN_NORMAL },
-  {  15, GTK_RC_TOKEN_ACTIVE },
-  {  22, GTK_RC_TOKEN_PRELIGHT },
-  {  31, GTK_RC_TOKEN_SELECTED },
-  {  40, GTK_RC_TOKEN_INSENSITIVE },
-  {  52, GTK_RC_TOKEN_FG },
-  {  55, GTK_RC_TOKEN_BG },
-  {  58, GTK_RC_TOKEN_TEXT },
-  {  63, GTK_RC_TOKEN_BASE },
-  {  68, GTK_RC_TOKEN_XTHICKNESS },
-  {  79, GTK_RC_TOKEN_YTHICKNESS },
-  {  90, GTK_RC_TOKEN_FONT },
-  {  95, GTK_RC_TOKEN_FONTSET },
-  { 103, GTK_RC_TOKEN_FONT_NAME },
-  { 113, GTK_RC_TOKEN_BG_PIXMAP },
-  { 123, GTK_RC_TOKEN_PIXMAP_PATH },
-  { 135, GTK_RC_TOKEN_STYLE },
-  { 141, GTK_RC_TOKEN_BINDING },
-  { 149, GTK_RC_TOKEN_BIND },
-  { 154, GTK_RC_TOKEN_WIDGET },
-  { 161, GTK_RC_TOKEN_WIDGET_CLASS },
-  { 174, GTK_RC_TOKEN_CLASS },
-  { 180, GTK_RC_TOKEN_LOWEST },
-  { 187, GTK_RC_TOKEN_GTK },
-  { 191, GTK_RC_TOKEN_APPLICATION },
-  { 203, GTK_RC_TOKEN_THEME },
-  { 209, GTK_RC_TOKEN_RC },
-  { 212, GTK_RC_TOKEN_HIGHEST },
-  { 220, GTK_RC_TOKEN_ENGINE },
-  { 227, GTK_RC_TOKEN_MODULE_PATH },
-  { 239, GTK_RC_TOKEN_STOCK },
-  { 245, GTK_RC_TOKEN_IM_MODULE_FILE },
-  { 260, GTK_RC_TOKEN_LTR },
-  { 264, GTK_RC_TOKEN_RTL },
-  { 268, GTK_RC_TOKEN_COLOR },
-  { 274, GTK_RC_TOKEN_UNBIND }
-};
 
 static GHashTable *realized_style_ht = NULL;
 
@@ -1090,8 +1007,6 @@ gtk_rc_style_finalize (GObject *object)
 
   if (rc_style->rc_properties)
     {
-      guint i;
-
       for (i = 0; i < rc_style->rc_properties->len; i++)
 	{
 	  GtkRcProperty *node = &g_array_index (rc_style->rc_properties, GtkRcProperty, i);
@@ -1103,11 +1018,8 @@ gtk_rc_style_finalize (GObject *object)
       rc_style->rc_properties = NULL;
     }
 
-  g_slist_foreach (rc_style->icon_factories, (GFunc) g_object_unref, NULL);
-  g_slist_free (rc_style->icon_factories);
-
-  g_slist_foreach (rc_priv->color_hashes, (GFunc) g_hash_table_unref, NULL);
-  g_slist_free (rc_priv->color_hashes);
+  g_slist_free_full (rc_style->icon_factories, g_object_unref);
+  g_slist_free_full (rc_priv->color_hashes, (GDestroyNotify)g_hash_table_unref);
 
   G_OBJECT_CLASS (gtk_rc_style_parent_class)->finalize (object);
 }
@@ -1280,8 +1192,6 @@ gtk_rc_style_real_merge (GtkRcStyle *dest,
 
   if (src->rc_properties)
     {
-      guint i;
-
       for (i = 0; i < src->rc_properties->len; i++)
 	insert_rc_property (dest,
 			    &g_array_index (src->rc_properties, GtkRcProperty, i),

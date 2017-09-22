@@ -59,6 +59,11 @@
  *
  * To simply switch the state of a toggle button, use gtk_toggle_button_toggled().
  *
+ * # CSS nodes
+ *
+ * GtkToggleButton has a single CSS node with name button. To differentiate
+ * it from a plain #GtkButton, it gets the .toggle style class.
+ *
  * ## Creating two #GtkToggleButton widgets.
  *
  * |[<!-- language="C" -->
@@ -119,9 +124,11 @@ enum {
   PROP_0,
   PROP_ACTIVE,
   PROP_INCONSISTENT,
-  PROP_DRAW_INDICATOR
+  PROP_DRAW_INDICATOR,
+  NUM_PROPERTIES
 };
 
+static GParamSpec *toggle_button_props[NUM_PROPERTIES] = { NULL, };
 
 static gboolean gtk_toggle_button_mnemonic_activate  (GtkWidget            *widget,
                                                       gboolean              group_cycling);
@@ -173,29 +180,28 @@ gtk_toggle_button_class_init (GtkToggleButtonClass *class)
 
   class->toggled = NULL;
 
-  g_object_class_install_property (gobject_class,
-                                   PROP_ACTIVE,
-                                   g_param_spec_boolean ("active",
-							 P_("Active"),
-							 P_("If the toggle button should be pressed in"),
-							 FALSE,
-							 GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
+  toggle_button_props[PROP_ACTIVE] =
+      g_param_spec_boolean ("active",
+                            P_("Active"),
+                            P_("If the toggle button should be pressed in"),
+                            FALSE,
+                            GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
-  g_object_class_install_property (gobject_class,
-                                   PROP_INCONSISTENT,
-                                   g_param_spec_boolean ("inconsistent",
-							 P_("Inconsistent"),
-							 P_("If the toggle button is in an \"in between\" state"),
-							 FALSE,
-							 GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
+  toggle_button_props[PROP_INCONSISTENT] =
+      g_param_spec_boolean ("inconsistent",
+                            P_("Inconsistent"),
+                            P_("If the toggle button is in an \"in between\" state"),
+                            FALSE,
+                            GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
-  g_object_class_install_property (gobject_class,
-                                   PROP_DRAW_INDICATOR,
-                                   g_param_spec_boolean ("draw-indicator",
-							 P_("Draw Indicator"),
-							 P_("If the toggle part of the button is displayed"),
-							 FALSE,
-							 GTK_PARAM_READWRITE));
+  toggle_button_props[PROP_DRAW_INDICATOR] =
+      g_param_spec_boolean ("draw-indicator",
+                            P_("Draw Indicator"),
+                            P_("If the toggle part of the button is displayed"),
+                            FALSE,
+                            GTK_PARAM_READWRITE);
+
+  g_object_class_install_properties (gobject_class, NUM_PROPERTIES, toggle_button_props);
 
   /**
    * GtkToggleButton::toggled:
@@ -210,18 +216,24 @@ gtk_toggle_button_class_init (GtkToggleButtonClass *class)
 		  G_SIGNAL_RUN_FIRST,
 		  G_STRUCT_OFFSET (GtkToggleButtonClass, toggled),
 		  NULL, NULL,
-		  _gtk_marshal_VOID__VOID,
+		  NULL,
 		  G_TYPE_NONE, 0);
 
   gtk_widget_class_set_accessible_type (widget_class, GTK_TYPE_TOGGLE_BUTTON_ACCESSIBLE);
+  gtk_widget_class_set_css_name (widget_class, "button");
 }
 
 static void
 gtk_toggle_button_init (GtkToggleButton *toggle_button)
 {
+  GtkStyleContext *context;
+
   toggle_button->priv = gtk_toggle_button_get_instance_private (toggle_button);
   toggle_button->priv->active = FALSE;
   toggle_button->priv->draw_indicator = FALSE;
+
+  context = gtk_widget_get_style_context (GTK_WIDGET (toggle_button));
+  gtk_style_context_add_class (context, "toggle");
 }
 
 static void
@@ -387,7 +399,10 @@ gtk_toggle_button_get_property (GObject      *object,
  *
  * Sets whether the button is displayed as a separate indicator and label.
  * You can call this function on a checkbutton or a radiobutton with
- * @draw_indicator = %FALSE to make the button look like a normal button
+ * @draw_indicator = %FALSE to make the button look like a normal button.
+ *
+ * This can be used to create linked strip of buttons that work like
+ * a #GtkStackSwitcher.
  *
  * This function only affects instances of classes like #GtkCheckButton
  * and #GtkRadioButton that derive from #GtkToggleButton,
@@ -407,24 +422,12 @@ gtk_toggle_button_set_mode (GtkToggleButton *toggle_button,
 
   if (priv->draw_indicator != draw_indicator)
     {
-      GtkStyleContext *context;
-
       priv->draw_indicator = draw_indicator;
 
       if (gtk_widget_get_visible (GTK_WIDGET (toggle_button)))
 	gtk_widget_queue_resize (GTK_WIDGET (toggle_button));
 
-      g_object_notify (G_OBJECT (toggle_button), "draw-indicator");
-
-      /* Make toggle buttons conditionally have the "button"
-       * class depending on draw_indicator.
-       */
-      context = gtk_widget_get_style_context (GTK_WIDGET (toggle_button));
-
-      if (draw_indicator)
-        gtk_style_context_remove_class (context, GTK_STYLE_CLASS_BUTTON);
-      else
-        gtk_style_context_add_class (context, GTK_STYLE_CLASS_BUTTON);
+      g_object_notify_by_pspec (G_OBJECT (toggle_button), toggle_button_props[PROP_DRAW_INDICATOR]);
     }
 }
 
@@ -471,7 +474,7 @@ gtk_toggle_button_set_active (GtkToggleButton *toggle_button,
   if (priv->active != is_active)
     {
       gtk_button_clicked (GTK_BUTTON (toggle_button));
-      g_object_notify (G_OBJECT (toggle_button), "active");
+      g_object_notify_by_pspec (G_OBJECT (toggle_button), toggle_button_props[PROP_ACTIVE]);
     }
 }
 
@@ -557,7 +560,7 @@ gtk_toggle_button_set_inconsistent (GtkToggleButton *toggle_button,
       else
         gtk_widget_unset_state_flags (GTK_WIDGET (toggle_button), GTK_STATE_FLAG_INCONSISTENT);
 
-      g_object_notify (G_OBJECT (toggle_button), "inconsistent");      
+      g_object_notify_by_pspec (G_OBJECT (toggle_button), toggle_button_props[PROP_INCONSISTENT]);
     }
 }
 
@@ -605,7 +608,7 @@ gtk_toggle_button_clicked (GtkButton *button)
 
   gtk_toggle_button_toggled (toggle_button);
 
-  g_object_notify (G_OBJECT (toggle_button), "active");
+  g_object_notify_by_pspec (G_OBJECT (toggle_button), toggle_button_props[PROP_ACTIVE]);
 
   if (GTK_BUTTON_CLASS (gtk_toggle_button_parent_class)->clicked)
     GTK_BUTTON_CLASS (gtk_toggle_button_parent_class)->clicked (button);

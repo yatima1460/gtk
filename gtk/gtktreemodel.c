@@ -446,7 +446,7 @@ gtk_tree_model_base_init (gpointer g_class)
                        G_SIGNAL_RUN_FIRST,
                        closure,
                        NULL, NULL,
-                       _gtk_marshal_VOID__BOXED,
+                       NULL,
                        G_TYPE_NONE, 1,
                        row_deleted_params);
 
@@ -1222,7 +1222,7 @@ gtk_tree_model_get_n_columns (GtkTreeModel *tree_model)
  *
  * Returns the type of the column.
  *
- * Returns: (transfer none): the type of the column
+ * Returns: the type of the column
  */
 GType
 gtk_tree_model_get_column_type (GtkTreeModel *tree_model,
@@ -1520,7 +1520,7 @@ gtk_tree_model_iter_previous (GtkTreeModel *tree_model,
  * If @parent is %NULL returns the first node, equivalent to
  * `gtk_tree_model_get_iter_first (tree_model, iter);`
  *
- * Returns: %TRUE, if @child has been set to the first child
+ * Returns: %TRUE, if @iter has been set to the first child
  */
 gboolean
 gtk_tree_model_iter_children (GtkTreeModel *tree_model,
@@ -1639,6 +1639,9 @@ gtk_tree_model_iter_nth_child (GtkTreeModel *tree_model,
  * @iter is set to an invalid iterator and %FALSE is returned.
  * @child will remain a valid node after this function has been
  * called.
+ *
+ * @iter will be initialized before the lookup is performed, so @child
+ * and @iter cannot point to the same memory location.
  *
  * Returns: %TRUE, if @iter is set to the parent of @child
  */
@@ -2073,7 +2076,7 @@ release_row_references (gpointer data)
 
       /* we don't free the reference, users are responsible for that. */
 
-      tmp_list = g_slist_next (tmp_list);
+      tmp_list = tmp_list->next;
     }
 
   g_slist_free (refs->list);
@@ -2128,7 +2131,7 @@ gtk_tree_row_ref_inserted (RowRefList  *refs,
             reference->path->indices[path->depth-1] += 1;
         }
     done:
-      tmp_list = g_slist_next (tmp_list);
+      tmp_list = tmp_list->next;
     }
 }
 
@@ -2187,7 +2190,7 @@ gtk_tree_row_ref_deleted (RowRefList  *refs,
         }
 
 next:
-      tmp_list = g_slist_next (tmp_list);
+      tmp_list = tmp_list->next;
     }
 }
 
@@ -2236,7 +2239,7 @@ gtk_tree_row_ref_reordered (RowRefList  *refs,
             }
         }
 
-      tmp_list = g_slist_next (tmp_list);
+      tmp_list = tmp_list->next;
     }
 }
 

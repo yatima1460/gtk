@@ -34,7 +34,9 @@
 #include "gtksizerequest.h"
 #include "gtkplug.h"
 #include "gtkprivate.h"
+#include "gtkrender.h"
 #include "gtkdnd.h"
+#include "gtkdragdest.h"
 #include "gtkdebug.h"
 #include "gtkintl.h"
 #include "gtkmain.h"
@@ -100,16 +102,14 @@
  *
  * The communication between a #GtkSocket and a #GtkPlug follows the
  * [XEmbed Protocol](http://www.freedesktop.org/Standards/xembed-spec).
- * This protocol has also been implemented in other toolkits,
- * e.g. Qt, allowing the same level of
- * integration when embedding a Qt widget
+ * This protocol has also been implemented in other toolkits, e.g. Qt,
+ * allowing the same level of integration when embedding a Qt widget
  * in GTK or vice versa.
  *
  * The #GtkPlug and #GtkSocket widgets are only available when GTK+
  * is compiled for the X11 platform and %GDK_WINDOWING_X11 is defined.
  * They can only be used on a #GdkX11Display. To use #GtkPlug and
- * #GtkSocket, you need to include the `gtk/gtkx.h`
- * header.
+ * #GtkSocket, you need to include the `gtk/gtkx.h` header.
  */
 
 /* Forward declararations */
@@ -185,6 +185,18 @@ gtk_socket_finalize (GObject *object)
   G_OBJECT_CLASS (gtk_socket_parent_class)->finalize (object);
 }
 
+static gboolean
+gtk_socket_draw (GtkWidget *widget,
+                 cairo_t   *cr)
+{
+  gtk_render_background (gtk_widget_get_style_context (widget), cr,
+                         0, 0,
+                         gtk_widget_get_allocated_width (widget),
+                         gtk_widget_get_allocated_height (widget));
+
+  return GTK_WIDGET_CLASS (gtk_socket_parent_class)->draw (widget, cr);
+}
+
 static void
 gtk_socket_class_init (GtkSocketClass *class)
 {
@@ -209,6 +221,7 @@ gtk_socket_class_init (GtkSocketClass *class)
   widget_class->key_press_event = gtk_socket_key_event;
   widget_class->key_release_event = gtk_socket_key_event;
   widget_class->focus = gtk_socket_focus;
+  widget_class->draw = gtk_socket_draw;
 
   /* We don't want to show_all the in-process plug, if any.
    */
@@ -230,7 +243,7 @@ gtk_socket_class_init (GtkSocketClass *class)
 		  G_SIGNAL_RUN_LAST,
 		  G_STRUCT_OFFSET (GtkSocketClass, plug_added),
 		  NULL, NULL,
-		  _gtk_marshal_VOID__VOID,
+		  NULL,
 		  G_TYPE_NONE, 0);
 
   /**
@@ -357,7 +370,8 @@ gtk_socket_get_id (GtkSocket *socket)
  * Retrieves the window of the plug. Use this to check if the plug has
  * been created inside of the socket.
  *
- * Returns: (transfer none): the window of the plug if available, or %NULL
+ * Returns: (nullable) (transfer none): the window of the plug if
+ * available, or %NULL
  *
  * Since:  2.14
  **/
@@ -377,8 +391,13 @@ gtk_socket_realize (GtkWidget *widget)
   GdkWindowAttr attributes;
   XWindowAttributes xattrs;
   gint attributes_mask;
+  GdkScreen *screen;
 
   gtk_widget_set_realized (widget, TRUE);
+
+  screen = gtk_widget_get_screen (widget);
+  if (!GDK_IS_X11_SCREEN (screen))
+    g_warning ("GtkSocket: only works under X11");
 
   gtk_widget_get_allocation (widget, &allocation);
 
@@ -397,9 +416,6 @@ gtk_socket_realize (GtkWidget *widget)
                            &attributes, attributes_mask);
   gtk_widget_set_window (widget, window);
   gtk_widget_register_window (widget, window);
-
-  gtk_style_context_set_background (gtk_widget_get_style_context (widget),
-                                    window);
 
   XGetWindowAttributes (GDK_WINDOW_XDISPLAY (window),
 			GDK_WINDOW_XID (window),
@@ -746,7 +762,7 @@ gtk_socket_add_grabbed_key (GtkSocket       *socket,
 			    find_accel_key,
 			    &grabbed_key))
     {
-      g_warning ("GtkSocket: request to add already present grabbed key %u,%#x\n",
+      g_warning ("GtkSocket: request to add already present grabbed key %u,%#x",
 		 keyval, modifiers);
       g_free (grabbed_key);
       return;
@@ -773,7 +789,7 @@ gtk_socket_remove_grabbed_key (GtkSocket      *socket,
 			       GdkModifierType modifiers)
 {
   if (!gtk_accel_group_disconnect_key (socket->priv->accel_group, keyval, modifiers))
-    g_warning ("GtkSocket: request to remove non-present grabbed key %u,%#x\n",
+    g_warning ("GtkSocket: request to remove non-present grabbed key %u,%#x",
 	       keyval, modifiers);
 }
 
@@ -1100,10 +1116,12 @@ gtk_socket_add_window (GtkSocket       *socket,
 
       private->need_map = private->is_mapped;
 
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
       protocol = gdk_window_get_drag_protocol (private->plug_window, NULL);
       if (protocol)
 	gtk_drag_dest_set_proxy (GTK_WIDGET (socket), private->plug_window,
 				 protocol, TRUE);
+G_GNUC_END_IGNORE_DEPRECATIONS
 
       gdk_error_trap_pop_ignored ();
 
@@ -1277,13 +1295,13 @@ xembed_get_info (GdkWindow     *window,
 
   if (type != xembed_info_atom)
     {
-      g_warning ("_XEMBED_INFO property has wrong type\n");
+      g_warning ("_XEMBED_INFO property has wrong type");
       return FALSE;
     }
   
   if (nitems < 2)
     {
-      g_warning ("_XEMBED_INFO too short\n");
+      g_warning ("_XEMBED_INFO too short");
       XFree (data);
       return FALSE;
     }
@@ -1510,11 +1528,13 @@ gtk_socket_filter_func (GdkXEvent *gdk_xevent,
 	      (xevent->xproperty.atom == gdk_x11_get_xatom_by_name_for_display (display, "_MOTIF_DRAG_RECEIVER_INFO")))
 	    {
 	      gdk_error_trap_push ();
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
               protocol = gdk_window_get_drag_protocol (private->plug_window, NULL);
               if (protocol)
 		gtk_drag_dest_set_proxy (GTK_WIDGET (socket),
 					 private->plug_window,
 					 protocol, TRUE);
+G_GNUC_END_IGNORE_DEPRECATIONS
 
 	      gdk_error_trap_pop_ignored ();
 	      return_val = GDK_FILTER_REMOVE;

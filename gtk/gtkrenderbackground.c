@@ -25,6 +25,7 @@
 
 #include "gtkcssarrayvalueprivate.h"
 #include "gtkcssbgsizevalueprivate.h"
+#include "gtkcsscornervalueprivate.h"
 #include "gtkcssenumvalueprivate.h"
 #include "gtkcssimagevalueprivate.h"
 #include "gtkcssnumbervalueprivate.h"
@@ -71,10 +72,36 @@ _gtk_theming_background_paint_color (GtkThemingBackground *bg,
   cairo_fill (cr);
 }
 
+static gboolean
+_gtk_theming_background_needs_push_group (GtkCssStyle *style)
+{
+  GtkCssValue *blend_modes;
+  gint i;
+
+  blend_modes = gtk_css_style_get_value (style, GTK_CSS_PROPERTY_BACKGROUND_BLEND_MODE);
+
+  /*
+   * If we have any blend mode different than NORMAL, we'll need to
+   * push a group in order to correctly apply the blend modes.
+   */
+  for (i = _gtk_css_array_value_get_n_values (blend_modes); i > 0; i--)
+    {
+      GtkCssBlendMode blend_mode;
+
+      blend_mode = _gtk_css_blend_mode_value_get (_gtk_css_array_value_get_nth (blend_modes, i - 1));
+
+      if (blend_mode != GTK_CSS_BLEND_MODE_NORMAL)
+        return TRUE;
+    }
+
+  return FALSE;
+}
+
 static void
 _gtk_theming_background_paint_layer (GtkThemingBackground *bg,
                                      guint                 idx,
-                                     cairo_t              *cr)
+                                     cairo_t              *cr,
+                                     GtkCssBlendMode       blend_mode)
 {
   GtkCssRepeatStyle hrepeat, vrepeat;
   const GtkCssValue *pos, *repeat;
@@ -132,6 +159,13 @@ _gtk_theming_background_paint_layer (GtkThemingBackground *bg,
 
 
   cairo_translate (cr, origin->box.x, origin->box.y);
+
+  /*
+   * Apply the blend mode, if any.
+   */
+  if (G_UNLIKELY (_gtk_css_blend_mode_get_operator (blend_mode) != cairo_get_operator (cr)))
+    cairo_set_operator (cr, _gtk_css_blend_mode_get_operator (blend_mode));
+
 
   if (hrepeat == GTK_CSS_REPEAT_STYLE_NO_REPEAT && vrepeat == GTK_CSS_REPEAT_STYLE_NO_REPEAT)
     {
@@ -248,6 +282,12 @@ _gtk_theming_background_paint_layer (GtkThemingBackground *bg,
       cairo_fill (cr);
     }
 
+  /*
+   * Since this cairo_t can be shared with other widgets,
+   * we must reset the operator after all the backgrounds
+   * are properly rendered.
+   */
+  cairo_set_operator (cr, CAIRO_OPERATOR_OVER);
 
   cairo_restore (cr);
 }
@@ -303,10 +343,14 @@ gtk_css_style_render_background (GtkCssStyle      *style,
   GtkThemingBackground bg;
   gint idx;
   GtkCssValue *background_image;
+  GtkCssValue *blend_modes;
   GtkCssValue *box_shadow;
   const GdkRGBA *bg_color;
+  gboolean needs_push_group;
+  gint number_of_layers;
 
   background_image = gtk_css_style_get_value (style, GTK_CSS_PROPERTY_BACKGROUND_IMAGE);
+  blend_modes = gtk_css_style_get_value (style, GTK_CSS_PROPERTY_BACKGROUND_BLEND_MODE);
   bg_color = _gtk_css_rgba_value_get_rgba (gtk_css_style_get_value (style, GTK_CSS_PROPERTY_BACKGROUND_COLOR));
   box_shadow = gtk_css_style_get_value (style, GTK_CSS_PROPERTY_BOX_SHADOW);
 
@@ -329,11 +373,41 @@ gtk_css_style_render_background (GtkCssStyle      *style,
                                     &bg.boxes[GTK_CSS_AREA_BORDER_BOX],
                                     FALSE);
 
+  /*
+   * When we have a blend mode set for the background, we cannot blend the current
+   * widget's drawing with whatever the content that the Cairo context may have.
+   * Because of that, push the drawing to a new group before drawing the background
+   * layers, and paint the resulting image back after.
+   */
+  needs_push_group = _gtk_theming_background_needs_push_group (style);
+
+  if (needs_push_group)
+    {
+      cairo_save (cr);
+      cairo_rectangle (cr, 0, 0, width, height);
+      cairo_clip (cr);
+      cairo_push_group (cr);
+    }
+
   _gtk_theming_background_paint_color (&bg, cr, bg_color, background_image);
 
-  for (idx = _gtk_css_array_value_get_n_values (background_image) - 1; idx >= 0; idx--)
+  number_of_layers = _gtk_css_array_value_get_n_values (background_image);
+
+  for (idx = number_of_layers - 1; idx >= 0; idx--)
     {
-      _gtk_theming_background_paint_layer (&bg, idx, cr);
+      GtkCssBlendMode blend_mode;
+
+      blend_mode = _gtk_css_blend_mode_value_get (_gtk_css_array_value_get_nth (blend_modes, idx));
+
+      _gtk_theming_background_paint_layer (&bg, idx, cr, blend_mode);
+    }
+
+  /* Paint back the resulting surface */
+  if (needs_push_group)
+    {
+      cairo_pop_group_to_source (cr);
+      cairo_paint (cr);
+      cairo_restore (cr);
     }
 
   /* Inset shadows */
@@ -343,4 +417,25 @@ gtk_css_style_render_background (GtkCssStyle      *style,
                                     TRUE);
 
   cairo_restore (cr);
+}
+
+static gboolean
+corner_value_is_right_angle (GtkCssValue *value)
+{
+  return _gtk_css_corner_value_get_x (value, 100) <= 0.0 &&
+         _gtk_css_corner_value_get_y (value, 100) <= 0.0;
+}
+
+gboolean
+gtk_css_style_render_background_is_opaque (GtkCssStyle *style)
+{
+  const GdkRGBA *color;
+
+  color = _gtk_css_rgba_value_get_rgba (gtk_css_style_get_value (style, GTK_CSS_PROPERTY_BACKGROUND_COLOR));
+
+  return color->alpha >= 1.0
+      && corner_value_is_right_angle (gtk_css_style_get_value (style, GTK_CSS_PROPERTY_BORDER_TOP_LEFT_RADIUS))
+      && corner_value_is_right_angle (gtk_css_style_get_value (style, GTK_CSS_PROPERTY_BORDER_TOP_RIGHT_RADIUS))
+      && corner_value_is_right_angle (gtk_css_style_get_value (style, GTK_CSS_PROPERTY_BORDER_BOTTOM_RIGHT_RADIUS))
+      && corner_value_is_right_angle (gtk_css_style_get_value (style, GTK_CSS_PROPERTY_BORDER_BOTTOM_LEFT_RADIUS));
 }

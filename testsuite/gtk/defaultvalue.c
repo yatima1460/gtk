@@ -77,11 +77,13 @@ test_type (gconstpointer data)
   /* These can't be freely constructed/destroyed */
   if (g_type_is_a (type, GTK_TYPE_APPLICATION) ||
       g_type_is_a (type, GDK_TYPE_PIXBUF_LOADER) ||
+      g_type_is_a (type, GDK_TYPE_DRAWING_CONTEXT) ||
 #ifdef G_OS_UNIX
       g_type_is_a (type, GTK_TYPE_PRINT_JOB) ||
 #endif
       g_type_is_a (type, gdk_pixbuf_simple_anim_iter_get_type ()) ||
       g_str_equal (g_type_name (type), "GdkX11DeviceManagerXI2") ||
+      g_str_equal (g_type_name (type), "GdkX11DeviceManagerCore") ||
       g_str_equal (g_type_name (type), "GdkX11Display") ||
       g_str_equal (g_type_name (type), "GdkX11DisplayManager") ||
       g_str_equal (g_type_name (type), "GdkX11Screen") ||
@@ -149,6 +151,11 @@ test_type (gconstpointer data)
       if (g_type_is_a (type, GDK_TYPE_DISPLAY_MANAGER) &&
 	  (strcmp (pspec->name, "default-display") == 0))
 	continue;
+
+      if (g_type_is_a (type, GDK_TYPE_MONITOR) &&
+          (strcmp (pspec->name, "geometry") == 0 ||
+           strcmp (pspec->name, "workarea") == 0))
+        continue;
 
       if (g_type_is_a (type, GTK_TYPE_ABOUT_DIALOG) &&
 	  (strcmp (pspec->name, "program-name") == 0))
@@ -411,6 +418,7 @@ main (int argc, char **argv)
   guint i;
   gchar *schema_dir;
   GTestDBus *bus;
+  GMainLoop *loop;
   gint result;
 
   /* These must be set before before gtk_test_init */
@@ -436,6 +444,9 @@ main (int argc, char **argv)
     {
       gchar *testname;
 
+      if (otypes[i] == GTK_TYPE_FILE_CHOOSER_NATIVE)
+        continue;
+
       testname = g_strdup_printf ("/Default Values/%s",
 				  g_type_name (otypes[i]));
       g_test_add_data_func (testname,
@@ -445,6 +456,14 @@ main (int argc, char **argv)
     }
 
   result = g_test_run();
+
+  /* Work around the annoying issue that g_test_dbus_down is giving
+   * us an "Error while sending AddMatch" that comes out of an idle
+   */
+  loop = g_main_loop_new (NULL, FALSE);
+  g_timeout_add (1000, (GSourceFunc)g_main_loop_quit, loop);
+  g_main_loop_run (loop);
+  g_main_loop_unref (loop);
 
   g_test_dbus_down (bus);
   g_object_unref (bus);

@@ -21,6 +21,8 @@
 #include <gtk/gtkmenuitem.h>
 #include <gtk/deprecated/gtkaction.h>
 #include <gtk/gtkactionhelper.h>
+#include <gtk/gtkcssgadgetprivate.h>
+#include <gtk/gtkcssnodeprivate.h>
 
 G_BEGIN_DECLS
 
@@ -39,16 +41,18 @@ struct _GtkMenuItemPrivate
   GtkAction *action;
   GtkActionHelper *action_helper;
 
-  guint show_submenu_indicator : 1;
+  GtkCssGadget *gadget;
+  GtkCssGadget *arrow_gadget;
+
   guint submenu_placement      : 1;
   guint submenu_direction      : 1;
   guint right_justify          : 1;
-  guint timer_from_keypress    : 1;
   guint from_menubar           : 1;
   guint use_action_appearance  : 1;
   guint reserve_indicator      : 1;
 };
 
+GtkCssGadget * _gtk_menu_item_get_gadget     (GtkMenuItem   *menu_item);
 void     _gtk_menu_item_refresh_accel_path   (GtkMenuItem   *menu_item,
                                               const gchar   *prefix,
                                               GtkAccelGroup *accel_group,

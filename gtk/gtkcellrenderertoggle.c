@@ -21,6 +21,7 @@
 #include "gtkintl.h"
 #include "gtkmarshalers.h"
 #include "gtkprivate.h"
+#include "gtkstylecontextprivate.h"
 #include "gtktreeprivate.h"
 #include "a11y/gtkbooleancellaccessible.h"
 
@@ -114,7 +115,7 @@ gtk_cell_renderer_toggle_init (GtkCellRendererToggle *celltoggle)
   g_object_set (celltoggle, "mode", GTK_CELL_RENDERER_MODE_ACTIVATABLE, NULL);
   gtk_cell_renderer_set_padding (GTK_CELL_RENDERER (celltoggle), 2, 2);
 
-  priv->indicator_size = TOGGLE_WIDTH;
+  priv->indicator_size = 0;
   priv->inconsistent = FALSE;
 }
 
@@ -170,8 +171,8 @@ gtk_cell_renderer_toggle_class_init (GtkCellRendererToggleClass *class)
 						     P_("Size of check or radio indicator"),
 						     0,
 						     G_MAXINT,
-						     TOGGLE_WIDTH,
-						     GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
+						     0,
+						     GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY|G_PARAM_DEPRECATED));
 
   
   /**
@@ -192,7 +193,7 @@ gtk_cell_renderer_toggle_class_init (GtkCellRendererToggleClass *class)
 		  G_SIGNAL_RUN_LAST,
 		  G_STRUCT_OFFSET (GtkCellRendererToggleClass, toggled),
 		  NULL, NULL,
-		  _gtk_marshal_VOID__STRING,
+		  NULL,
 		  G_TYPE_NONE, 1,
 		  G_TYPE_STRING);
 
@@ -303,6 +304,47 @@ gtk_cell_renderer_toggle_new (void)
   return g_object_new (GTK_TYPE_CELL_RENDERER_TOGGLE, NULL);
 }
 
+static GtkStyleContext *
+gtk_cell_renderer_toggle_save_context (GtkCellRenderer *cell,
+				       GtkWidget       *widget)
+{
+  GtkCellRendererTogglePrivate *priv = GTK_CELL_RENDERER_TOGGLE (cell)->priv;
+
+  GtkStyleContext *context;
+
+  context = gtk_widget_get_style_context (widget);
+
+  if (priv->radio)
+    gtk_style_context_save_named (context, "radio");
+  else
+    gtk_style_context_save_named (context, "check");
+
+  return context;
+}
+ 
+static void
+calc_indicator_size (GtkStyleContext *context,
+                     gint             indicator_size,
+                     gint            *width,
+                     gint            *height)
+{
+  if (indicator_size != 0)
+    {
+      *width = *height = indicator_size;
+      return;
+    }
+
+  gtk_style_context_get (context, gtk_style_context_get_state (context),
+                         "min-width", width,
+                         "min-height", height,
+                         NULL);
+
+  if (*width == 0)
+    *width = TOGGLE_WIDTH;
+  if (*height == 0)
+    *height = TOGGLE_WIDTH;
+}
+
 static void
 gtk_cell_renderer_toggle_get_size (GtkCellRenderer    *cell,
 				   GtkWidget          *widget,
@@ -316,12 +358,22 @@ gtk_cell_renderer_toggle_get_size (GtkCellRenderer    *cell,
   gint calc_width;
   gint calc_height;
   gint xpad, ypad;
+  GtkStyleContext *context;
+  GtkBorder border, padding;
 
   priv = GTK_CELL_RENDERER_TOGGLE (cell)->priv;
 
   gtk_cell_renderer_get_padding (cell, &xpad, &ypad);
-  calc_width = xpad * 2 + priv->indicator_size;
-  calc_height = ypad * 2 + priv->indicator_size;
+
+  context = gtk_cell_renderer_toggle_save_context (cell, widget);
+  gtk_style_context_get_padding (context, gtk_style_context_get_state (context), &padding);
+  gtk_style_context_get_border (context, gtk_style_context_get_state (context), &border);
+
+  calc_indicator_size (context, priv->indicator_size, &calc_width, &calc_height);
+  calc_width += xpad * 2 + padding.left + padding.right + border.left + border.right;
+  calc_height += ypad * 2 + padding.top + padding.bottom + border.top + border.bottom;
+
+  gtk_style_context_restore (context);
 
   if (width)
     *width = calc_width;
@@ -369,6 +421,7 @@ gtk_cell_renderer_toggle_render (GtkCellRenderer      *cell,
   gint x_offset, y_offset;
   gint xpad, ypad;
   GtkStateFlags state;
+  GtkBorder padding, border;
 
   context = gtk_widget_get_style_context (widget);
   gtk_cell_renderer_toggle_get_size (cell, widget, cell_area,
@@ -399,24 +452,36 @@ gtk_cell_renderer_toggle_render (GtkCellRenderer      *cell,
   gdk_cairo_rectangle (cr, cell_area);
   cairo_clip (cr);
 
-  gtk_style_context_save (context);
+  context = gtk_cell_renderer_toggle_save_context (cell, widget);
   gtk_style_context_set_state (context, state);
 
-  if (priv->radio)
-    {
-      gtk_style_context_add_class (context, GTK_STYLE_CLASS_RADIO);
-      gtk_render_option (context, cr,
+  gtk_render_background (context, cr,
                          cell_area->x + x_offset + xpad,
                          cell_area->y + y_offset + ypad,
                          width, height);
+  gtk_render_frame (context, cr,
+                    cell_area->x + x_offset + xpad,
+                    cell_area->y + y_offset + ypad,
+                    width, height);
+
+  gtk_style_context_get_padding (context, gtk_style_context_get_state (context), &padding);
+  gtk_style_context_get_border (context, gtk_style_context_get_state (context), &border);
+
+  if (priv->radio)
+    {
+      gtk_render_option (context, cr,
+                         cell_area->x + x_offset + xpad + padding.left + border.left,
+                         cell_area->y + y_offset + ypad + padding.top + border.top,
+                         width - padding.left - padding.right - border.left - border.right,
+                         height - padding.top - padding.bottom - border.top - border.bottom);
     }
   else
     {
-      gtk_style_context_add_class (context, GTK_STYLE_CLASS_CHECK);
       gtk_render_check (context, cr,
-                        cell_area->x + x_offset + xpad,
-                        cell_area->y + y_offset + ypad,
-                        width, height);
+                        cell_area->x + x_offset + xpad + padding.left + border.left,
+                        cell_area->y + y_offset + ypad + padding.top + border.top,
+                        width - padding.left - padding.right - border.left - border.right,
+                        height - padding.top - padding.bottom - border.top - border.bottom);
     }
 
   gtk_style_context_restore (context);

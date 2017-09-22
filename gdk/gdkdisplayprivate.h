@@ -21,6 +21,7 @@
 #include "gdkdisplay.h"
 #include "gdkwindow.h"
 #include "gdkcursor.h"
+#include "gdkmonitor.h"
 #include "gdkinternals.h"
 
 G_BEGIN_DECLS
@@ -88,6 +89,7 @@ typedef struct
   gint button_number[2];        /* last 2 buttons to be pressed */
   gint button_x[2];             /* last 2 button click positions */
   gint button_y[2];
+  GdkDevice *last_slave;
 } GdkMultipleClickInfo;
 
 struct _GdkDisplay
@@ -101,7 +103,6 @@ struct _GdkDisplay
    * is part of a double-click or triple-click
    */
   GHashTable *multiple_click_info;
-  GdkDevice *core_pointer;  /* Core pointer device */
 
   guint event_pause_count;       /* How many times events are blocked */
 
@@ -111,6 +112,7 @@ struct _GdkDisplay
   GHashTable *device_grabs;
   GHashTable *motion_hint_info;
   GdkDeviceManager *device_manager;
+  GList *input_devices; /* Deprecated, only used to keep gdk_display_list_devices working */
 
   GHashTable *pointers_info;  /* GdkPointerWindowInfo for each device */
   guint32 last_event_time;    /* Last reported event time from server */
@@ -125,6 +127,8 @@ struct _GdkDisplay
   guint debug_updates_set : 1;
 
   GdkRenderingMode rendering_mode;
+
+  GList *seats;
 };
 
 struct _GdkDisplayClass
@@ -173,7 +177,6 @@ struct _GdkDisplayClass
                                                          gdouble          x,
                                                          gdouble          y);
 
-  GList *                    (*list_devices)       (GdkDisplay *display);
   GdkAppLaunchContext *      (*get_app_launch_context) (GdkDisplay *display);
 
   void                       (*before_process_all_updates) (GdkDisplay *display);
@@ -237,6 +240,15 @@ struct _GdkDisplayClass
   gboolean               (*make_gl_context_current)    (GdkDisplay        *display,
                                                         GdkGLContext      *context);
 
+  GdkSeat *              (*get_default_seat)           (GdkDisplay     *display);
+
+  int                    (*get_n_monitors)             (GdkDisplay     *display);
+  GdkMonitor *           (*get_monitor)                (GdkDisplay     *display,
+                                                        int             index);
+  GdkMonitor *           (*get_primary_monitor)        (GdkDisplay     *display);
+  GdkMonitor *           (*get_monitor_at_window)      (GdkDisplay     *display,
+                                                        GdkWindow      *window);
+
   /* Signals */
   void                   (*opened)                     (GdkDisplay     *display);
   void (*closed) (GdkDisplay *display,
@@ -249,6 +261,8 @@ typedef void (* GdkDisplayPointerInfoForeach) (GdkDisplay           *display,
                                                GdkPointerWindowInfo *device_info,
                                                gpointer              user_data);
 
+void                _gdk_display_update_last_event    (GdkDisplay     *display,
+                                                       const GdkEvent *event);
 void                _gdk_display_device_grab_update   (GdkDisplay *display,
                                                        GdkDevice  *device,
                                                        GdkDevice  *source_device,
@@ -317,6 +331,15 @@ GdkWindow *         _gdk_display_create_window        (GdkDisplay       *display
 
 gboolean            gdk_display_make_gl_context_current  (GdkDisplay        *display,
                                                           GdkGLContext      *context);
+
+void                gdk_display_add_seat              (GdkDisplay       *display,
+                                                       GdkSeat          *seat);
+void                gdk_display_remove_seat           (GdkDisplay       *display,
+                                                       GdkSeat          *seat);
+void                gdk_display_monitor_added         (GdkDisplay       *display,
+                                                       GdkMonitor       *monitor);
+void                gdk_display_monitor_removed       (GdkDisplay       *display,
+                                                       GdkMonitor       *monitor);
 
 G_END_DECLS
 

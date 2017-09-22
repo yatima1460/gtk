@@ -1,12 +1,10 @@
-/* CSS Theming/Animated Backgrounds
+/* Theming/Animated Backgrounds
  *
  * This demo is done in honour of the Pixbufs demo further down.
  * It is done exclusively with CSS as the background of the window.
  */
 
 #include <gtk/gtk.h>
-
-static GtkWidget *window = NULL;
 
 static void
 show_parsing_error (GtkCssProvider *provider,
@@ -33,7 +31,7 @@ show_parsing_error (GtkCssProvider *provider,
 
   gtk_text_buffer_apply_tag_by_name (buffer, tag_name, &start, &end);
 }
-                    
+
 static void
 css_text_changed (GtkTextBuffer  *buffer,
                   GtkCssProvider *provider)
@@ -63,14 +61,17 @@ apply_css (GtkWidget *widget, GtkStyleProvider *provider)
 GtkWidget *
 do_css_pixbufs (GtkWidget *do_widget)
 {
+  static GtkWidget *window = NULL;
+
   if (!window)
     {
       GtkWidget *paned, *container, *child;
       GtkStyleProvider *provider;
       GtkTextBuffer *text;
       GBytes *bytes;
-      
+
       window = gtk_window_new (GTK_WINDOW_TOPLEVEL);
+      gtk_window_set_title (GTK_WINDOW (window), "Animated Backgrounds");
       gtk_window_set_transient_for (GTK_WINDOW (window), GTK_WINDOW (do_widget));
       gtk_window_set_default_size (GTK_WINDOW (window), 400, 300);
       g_signal_connect (window, "destroy",
@@ -94,15 +95,13 @@ do_css_pixbufs (GtkWidget *do_widget)
                                   NULL);
 
       provider = GTK_STYLE_PROVIDER (gtk_css_provider_new ());
-      
+
       container = gtk_scrolled_window_new (NULL, NULL);
       gtk_container_add (GTK_CONTAINER (paned), container);
       child = gtk_text_view_new_with_buffer (text);
       gtk_container_add (GTK_CONTAINER (container), child);
-      g_signal_connect (text,
-                        "changed",
-                        G_CALLBACK (css_text_changed),
-                        provider);
+      g_signal_connect (text, "changed",
+                        G_CALLBACK (css_text_changed), provider);
 
       bytes = g_resources_lookup_data ("/css_pixbufs/gtk.css", 0, NULL);
       gtk_text_buffer_set_text (text, g_bytes_get_data (bytes, NULL), g_bytes_get_size (bytes));
@@ -119,10 +118,7 @@ do_css_pixbufs (GtkWidget *do_widget)
   if (!gtk_widget_get_visible (window))
     gtk_widget_show_all (window);
   else
-    {
-      gtk_widget_destroy (window);
-      window = NULL;
-    }
+    gtk_widget_destroy (window);
 
   return window;
 }

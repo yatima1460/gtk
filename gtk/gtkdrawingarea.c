@@ -56,9 +56,10 @@
  * area to display a circle in the normal widget foreground
  * color.
  *
- * Note that GDK automatically clears the exposed area to the
- * background color before sending the expose event, and that
- * drawing is implicitly clipped to the exposed area.
+ * Note that GDK automatically clears the exposed area before sending
+ * the expose event, and that drawing is implicitly clipped to the exposed
+ * area. If you want to have a theme-provided background, you need
+ * to call gtk_render_background() in your ::draw method.
  *
  * ## Simple GtkDrawingArea usage
  *
@@ -68,16 +69,22 @@
  * {
  *   guint width, height;
  *   GdkRGBA color;
+ *   GtkStyleContext *context;
+ *
+ *   context = gtk_widget_get_style_context (widget);
  *
  *   width = gtk_widget_get_allocated_width (widget);
  *   height = gtk_widget_get_allocated_height (widget);
+ *
+ *   gtk_render_background (context, cr, 0, 0, width, height);
+ *
  *   cairo_arc (cr,
  *              width / 2.0, height / 2.0,
  *              MIN (width, height) / 2.0,
  *              0, 2 * G_PI);
  *
- *   gtk_style_context_get_color (gtk_widget_get_style_context (widget),
- *                                0,
+ *   gtk_style_context_get_color (context,
+ *                                gtk_style_context_get_state (context),
  *                                &color);
  *   gdk_cairo_set_source_rgba (cr, &color);
  *
@@ -113,6 +120,7 @@
  */
 
 static void gtk_drawing_area_realize       (GtkWidget           *widget);
+static void gtk_drawing_area_style_updated (GtkWidget           *widget);
 static void gtk_drawing_area_size_allocate (GtkWidget           *widget,
                                             GtkAllocation       *allocation);
 static void gtk_drawing_area_send_configure (GtkDrawingArea     *darea);
@@ -126,6 +134,7 @@ gtk_drawing_area_class_init (GtkDrawingAreaClass *class)
 
   widget_class->realize = gtk_drawing_area_realize;
   widget_class->size_allocate = gtk_drawing_area_size_allocate;
+  widget_class->style_updated = gtk_drawing_area_style_updated;
 
   gtk_widget_class_set_accessible_role (widget_class, ATK_ROLE_DRAWING_AREA);
 }
@@ -146,6 +155,33 @@ GtkWidget*
 gtk_drawing_area_new (void)
 {
   return g_object_new (GTK_TYPE_DRAWING_AREA, NULL);
+}
+
+static void
+set_background (GtkWidget *widget)
+{
+  if (gtk_widget_get_realized (widget) &&
+      gtk_widget_get_has_window (widget))
+    {
+      /* We still need to call gtk_style_context_set_background() here for
+       * GtkDrawingArea, since clients expect backgrounds set on it (e.g. through
+       * gtk_widget_override_background_color) to be available even when they
+       * don't chain up from draw().
+       * This should be revisited next time we have a major API break.
+       */
+      G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
+      gtk_style_context_set_background (gtk_widget_get_style_context (widget),
+                                        gtk_widget_get_window (widget));
+      G_GNUC_END_IGNORE_DEPRECATIONS;
+    }
+}
+
+static void
+gtk_drawing_area_style_updated (GtkWidget *widget)
+{
+  GTK_WIDGET_CLASS (gtk_drawing_area_parent_class)->style_updated (widget);
+
+  set_background (widget);
 }
 
 static void
@@ -182,8 +218,7 @@ gtk_drawing_area_realize (GtkWidget *widget)
       gtk_widget_register_window (widget, window);
       gtk_widget_set_window (widget, window);
 
-      gtk_style_context_set_background (gtk_widget_get_style_context (widget),
-                                        window);
+      set_background (widget);
     }
 
   gtk_drawing_area_send_configure (GTK_DRAWING_AREA (widget));

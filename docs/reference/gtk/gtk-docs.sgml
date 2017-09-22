@@ -12,9 +12,9 @@
     <releaseinfo>
       This document is for the GTK+ 3 library, version &version;.
       The latest versions can be found online at
-      <ulink role="online-location" url="http://developer.gnome.org/gtk3/">http://developer.gnome.org/gtk3/</ulink>.
+      <ulink role="online-location" url="https://developer.gnome.org/gtk3/">https://developer.gnome.org/gtk3/</ulink>.
       If you are looking for the older GTK+ 2 series of libraries,
-      see <ulink role="online-location" url="http://developer.gnome.org/gtk2/">http://developer.gnome.org/gtk2/</ulink>.
+      see <ulink role="online-location" url="https://developer.gnome.org/gtk2/">https://developer.gnome.org/gtk2/</ulink>.
     </releaseinfo>
   </bookinfo>
 
@@ -27,7 +27,6 @@
     <xi:include href="drawing-model.xml" />
     <xi:include href="xml/input-handling.xml" />
   </part>
-
 
   <part id="gtkobjects">
     <title>GTK+ Widgets and Objects</title>
@@ -203,6 +202,7 @@
       <xi:include href="xml/gtkcolorchooserdialog.xml" />
       <xi:include href="xml/gtkfilechooser.xml" />
       <xi:include href="xml/gtkfilechooserbutton.xml" />
+      <xi:include href="xml/gtkfilechoosernative.xml" />
       <xi:include href="xml/gtkfilechooserdialog.xml" />
       <xi:include href="xml/gtkfilechooserwidget.xml" />
       <xi:include href="xml/gtkfilefilter.xml" />
@@ -239,6 +239,14 @@
       <xi:include href="xml/gtkpagesetupunixdialog.xml" />
     </chapter>
 
+    <chapter id="ShortcutsOverview">
+      <title>Shortcuts Overview</title>
+      <xi:include href="xml/gtkshortcutswindow.xml" />
+      <xi:include href="xml/gtkshortcutssection.xml" />
+      <xi:include href="xml/gtkshortcutsgroup.xml" />
+      <xi:include href="xml/gtkshortcutsshortcut.xml" />
+    </chapter>
+
     <chapter id="MiscObjects">
       <title>Miscellaneous</title>
       <xi:include href="xml/gtkadjustment.xml" />
@@ -263,6 +271,7 @@
       <xi:include href="xml/gtkmenushell.xml" />
       <xi:include href="xml/gtkrange.xml" />
       <xi:include href="xml/gtkimcontext.xml" />
+      <xi:include href="xml/gtknativedialog.xml" />
     </chapter>
 
     <chapter id="PlugSocket">
@@ -290,7 +299,7 @@
     </chapter>
 
     <chapter id="Gestures">
-      <title>Gestures</title>
+      <title>Gestures and event handling</title>
       <xi:include href="xml/gtkeventcontroller.xml" />
       <xi:include href="xml/gtkgesture.xml" />
       <xi:include href="xml/gtkgesturesingle.xml" />
@@ -301,6 +310,7 @@
       <xi:include href="xml/gtkgestureswipe.xml" />
       <xi:include href="xml/gtkgesturerotate.xml" />
       <xi:include href="xml/gtkgesturezoom.xml" />
+      <xi:include href="xml/gtkpadcontroller.xml" />
     </chapter>
 
     <chapter id="DeprecatedObjects">
@@ -366,6 +376,8 @@
 
   <part id="theming">
     <title>Theming in GTK+</title>
+    <xi:include href="css-overview.xml" />
+    <xi:include href="css-properties.xml" />
     <xi:include href="xml/gtkstylecontext.xml" />
     <xi:include href="xml/gtkcssprovider.xml" />
     <xi:include href="xml/gtkstyleprovider.xml" />
@@ -393,6 +405,7 @@
     <xi:include href="xml/migrating-smclient-GtkApplication.xml" />
     <xi:include href="xml/migrating-GtkGrid.xml" />
     <xi:include href="xml/migrating-checklist.sgml" />
+    <xi:include href="xml/migrating-3xtoy.xml" />
   </part>
 
   <part>
@@ -404,7 +417,9 @@
     <xi:include href="gtk-query-immodules-3.0.xml" />
     <xi:include href="gtk-update-icon-cache.xml" />
     <xi:include href="gtk-encode-symbolic-svg.xml" />
+    <xi:include href="gtk-builder-tool.xml" />
     <xi:include href="gtk-launch.xml" />
+    <xi:include href="gtk-query-settings.xml" />
     <xi:include href="broadwayd.xml" />
   </part>
 
@@ -470,6 +485,14 @@
   <index id="api-index-3-18" role="3.18">
     <title>Index of new symbols in 3.18</title>
     <xi:include href="xml/api-index-3.18.xml"><xi:fallback /></xi:include>
+  </index>
+  <index id="api-index-3-20" role="3.20">
+    <title>Index of new symbols in 3.20</title>
+    <xi:include href="xml/api-index-3.20.xml"><xi:fallback /></xi:include>
+  </index>
+  <index id="api-index-3-22" role="3.22">
+    <title>Index of new symbols in 3.22</title>
+    <xi:include href="xml/api-index-3.22.xml"><xi:fallback /></xi:include>
   </index>
 
   <xi:include href="xml/annotation-glossary.xml"><xi:fallback /></xi:include>

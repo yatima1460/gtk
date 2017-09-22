@@ -73,7 +73,7 @@ create_shader (int         type,
       buffer = g_malloc (log_len + 1);
       glGetShaderInfoLog (shader, log_len, NULL, buffer);
 
-      g_warning ("Compile failure in %s shader:\n%s\n", get_vertex_type_name (type), buffer);
+      g_warning ("Compile failure in %s shader:\n%s", get_vertex_type_name (type), buffer);
       g_free (buffer);
 
       glDeleteShader (shader);
@@ -86,17 +86,24 @@ create_shader (int         type,
 
 static void
 make_program (GdkGLContextProgram *program,
-              const char          *vertex_shader_code,
-              const char          *fragment_shader_code)
+              const char          *vertex_shader_path,
+              const char          *fragment_shader_path)
 {
   guint vertex_shader, fragment_shader;
+  GBytes *source;
   int status;
 
-  vertex_shader = create_shader (GL_VERTEX_SHADER, vertex_shader_code);
+  source = g_resources_lookup_data (vertex_shader_path, 0, NULL);
+  g_assert (source != NULL);
+  vertex_shader = create_shader (GL_VERTEX_SHADER, g_bytes_get_data (source, NULL));
+  g_bytes_unref (source);
   if (vertex_shader == 0)
     return;
 
-  fragment_shader = create_shader (GL_FRAGMENT_SHADER, fragment_shader_code);
+  source = g_resources_lookup_data (fragment_shader_path, 0, NULL);
+  g_assert (source != NULL);
+  fragment_shader = create_shader (GL_FRAGMENT_SHADER, g_bytes_get_data (source, NULL));
+  g_bytes_unref (source);
   if (fragment_shader == 0)
     {
       glDeleteShader (vertex_shader);
@@ -131,6 +138,7 @@ make_program (GdkGLContextProgram *program,
   program->position_location = glGetAttribLocation (program->program, "position");
   program->uv_location = glGetAttribLocation (program->program, "uv");
   program->map_location = glGetUniformLocation (program->program, "map");
+  program->flip_location = glGetUniformLocation (program->program, "flipColors");
 }
 
 static void
@@ -145,28 +153,33 @@ bind_vao (GdkGLContextPaintData *paint_data)
 }
 
 static void
+use_texture_gles_program (GdkGLContextPaintData *paint_data)
+{
+  if (paint_data->texture_2d_quad_program.program == 0)
+    make_program (&paint_data->texture_2d_quad_program,
+                  "/org/gtk/libgdk/glsl/gles2-texture.vs.glsl",
+                  "/org/gtk/libgdk/glsl/gles2-texture.fs.glsl");
+
+  if (paint_data->current_program != &paint_data->texture_2d_quad_program)
+    {
+      paint_data->current_program = &paint_data->texture_2d_quad_program;
+      glUseProgram (paint_data->current_program->program);
+    }
+}
+
+static void
 use_texture_2d_program (GdkGLContextPaintData *paint_data)
 {
-  static const char *vertex_shader_code =
-    "#version 150\n"
-    "uniform sampler2D map;"
-    "attribute vec2 position;\n"
-    "attribute vec2 uv;\n"
-    "varying vec2 vUv;\n"
-    "void main() {\n"
-    "  gl_Position = vec4(position, 0, 1);\n"
-    "  vUv = uv;\n"
-    "}\n";
-  static const char *fragment_shader_code =
-    "#version 150\n"
-    "varying vec2 vUv;\n"
-    "uniform sampler2D map;\n"
-    "void main() {\n"
-    "  gl_FragColor = texture2D (map, vUv);\n"
-    "}\n";
+  const char *vertex_shader_path = paint_data->is_legacy
+    ? "/org/gtk/libgdk/glsl/gl2-texture-2d.vs.glsl"
+    : "/org/gtk/libgdk/glsl/gl3-texture-2d.vs.glsl";
+
+  const char *fragment_shader_path = paint_data->is_legacy
+    ? "/org/gtk/libgdk/glsl/gl2-texture-2d.fs.glsl"
+    : "/org/gtk/libgdk/glsl/gl3-texture-2d.fs.glsl";
 
   if (paint_data->texture_2d_quad_program.program == 0)
-    make_program (&paint_data->texture_2d_quad_program, vertex_shader_code, fragment_shader_code);
+    make_program (&paint_data->texture_2d_quad_program, vertex_shader_path, fragment_shader_path);
 
   if (paint_data->current_program != &paint_data->texture_2d_quad_program)
     {
@@ -178,26 +191,16 @@ use_texture_2d_program (GdkGLContextPaintData *paint_data)
 static void
 use_texture_rect_program (GdkGLContextPaintData *paint_data)
 {
-  static const char *vertex_shader_code =
-    "#version 150\n"
-    "uniform sampler2DRect map;"
-    "attribute vec2 position;\n"
-    "attribute vec2 uv;\n"
-    "varying vec2 vUv;\n"
-    "void main() {\n"
-    "  gl_Position = vec4(position, 0, 1);\n"
-    "  vUv = uv;\n"
-    "}\n";
-  static const char *fragment_shader_code =
-    "#version 150\n"
-    "varying vec2 vUv;\n"
-    "uniform sampler2DRect map;\n"
-    "void main() {\n"
-    "  gl_FragColor = texture2DRect (map, vUv);\n"
-    "}\n";
+  const char *vertex_shader_path = paint_data->is_legacy
+    ? "/org/gtk/libgdk/glsl/gl2-texture-rect.vs.glsl"
+    : "/org/gtk/libgdk/glsl/gl3-texture-rect.vs.glsl";
+
+  const char *fragment_shader_path = paint_data->is_legacy
+    ? "/org/gtk/libgdk/glsl/gl2-texture-rect.fs.glsl"
+    : "/org/gtk/libgdk/glsl/gl3-texture-rect.vs.glsl";
 
   if (paint_data->texture_rect_quad_program.program == 0)
-    make_program (&paint_data->texture_rect_quad_program, vertex_shader_code, fragment_shader_code);
+    make_program (&paint_data->texture_rect_quad_program, vertex_shader_path, fragment_shader_path);
 
   if (paint_data->current_program != &paint_data->texture_rect_quad_program)
     {
@@ -210,7 +213,8 @@ void
 gdk_gl_texture_quads (GdkGLContext *paint_context,
                       guint texture_target,
                       int n_quads,
-                      GdkTexturedQuad *quads)
+                      GdkTexturedQuad *quads,
+                      gboolean flip_colors)
 {
   GdkGLContextPaintData *paint_data  = gdk_gl_context_get_paint_data (paint_context);
   GdkGLContextProgram *program;
@@ -226,15 +230,25 @@ gdk_gl_texture_quads (GdkGLContext *paint_context,
   if (paint_data->tmp_vertex_buffer == 0)
     glGenBuffers(1, &paint_data->tmp_vertex_buffer);
 
-  if (texture_target == GL_TEXTURE_RECTANGLE_ARB)
-    use_texture_rect_program (paint_data);
+  if (paint_data->use_es)
+    use_texture_gles_program (paint_data);
   else
-    use_texture_2d_program (paint_data);
+    {
+      if (texture_target == GL_TEXTURE_RECTANGLE_ARB)
+        use_texture_rect_program (paint_data);
+      else
+        use_texture_2d_program (paint_data);
+    }
 
   program = paint_data->current_program;
 
+  /* Use texture unit 0 */
   glActiveTexture (GL_TEXTURE0);
-  glUniform1i(program->map_location, 0); /* Use texture unit 0 */
+  glUniform1i(program->map_location, 0);
+
+  /* Flip 'R' and 'B' colors on GLES, if necessary */
+  if (gdk_gl_context_get_use_es (paint_context))
+    glUniform1i (program->flip_location, flip_colors ? 1 : 0);
 
   glEnableVertexAttribArray (program->position_location);
   glEnableVertexAttribArray (program->uv_location);
@@ -363,7 +377,10 @@ gdk_cairo_draw_from_gl (cairo_t              *cr,
     {
       glBindTexture (GL_TEXTURE_2D, source);
 
-      glGetTexLevelParameteriv (GL_TEXTURE_2D, 0, GL_TEXTURE_ALPHA_SIZE,  &alpha_size);
+      if (gdk_gl_context_get_use_es (paint_context))
+        alpha_size = 1;
+      else
+        glGetTexLevelParameteriv (GL_TEXTURE_2D, 0, GL_TEXTURE_ALPHA_SIZE,  &alpha_size);
     }
   else
     {
@@ -392,6 +409,7 @@ gdk_cairo_draw_from_gl (cairo_t              *cr,
       alpha_size == 0 &&
       direct_window != NULL &&
       direct_window->current_paint.use_gl &&
+      gdk_gl_context_has_framebuffer_blit (paint_context) &&
       trivial_transform &&
       clip_region != NULL)
     {
@@ -412,7 +430,28 @@ gdk_cairo_draw_from_gl (cairo_t              *cr,
       glEnable (GL_SCISSOR_TEST);
 
       gdk_window_get_unscaled_size (impl_window, NULL, &unscaled_window_height);
-      glDrawBuffer (GL_BACK);
+
+      /* We can use glDrawBuffer on OpenGL only; on GLES 2.0 we are already
+       * double buffered so we don't need it...
+       */
+      if (!gdk_gl_context_get_use_es (paint_context))
+        glDrawBuffer (GL_BACK);
+      else
+        {
+          int maj, min;
+
+          gdk_gl_context_get_version (paint_context, &maj, &min);
+
+          /* ... but on GLES 3.0 we can use the vectorized glDrawBuffers
+           * call.
+           */
+          if ((maj * 100 + min) >= 300)
+            {
+              static const GLenum buffers[] = { GL_BACK };
+
+              glDrawBuffers (G_N_ELEMENTS (buffers), buffers);
+            }
+        }
 
 #define FLIP_Y(_y) (unscaled_window_height - (_y))
 
@@ -511,8 +550,16 @@ gdk_cairo_draw_from_gl (cairo_t              *cr,
 
       glBindTexture (GL_TEXTURE_2D, source);
 
-      glGetTexLevelParameteriv (GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH,  &texture_width);
-      glGetTexLevelParameteriv (GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT,  &texture_height);
+      if (gdk_gl_context_get_use_es (paint_context))
+        {
+          texture_width = width;
+          texture_height = height;
+        }
+      else
+        {
+          glGetTexLevelParameteriv (GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texture_width);
+          glGetTexLevelParameteriv (GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texture_height);
+        }
 
       glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
       glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
@@ -580,7 +627,7 @@ gdk_cairo_draw_from_gl (cairo_t              *cr,
         }
 
       if (n_quads > 0)
-        gdk_gl_texture_quads (paint_context, GL_TEXTURE_2D, n_quads, quads);
+        gdk_gl_texture_quads (paint_context, GL_TEXTURE_2D, n_quads, quads, FALSE);
 
       g_free (quads);
 
@@ -593,6 +640,17 @@ gdk_cairo_draw_from_gl (cairo_t              *cr,
   else
     {
       /* Software fallback */
+      int major, minor, version;
+
+      gdk_gl_context_get_version (paint_context, &major, &minor);
+      version = major * 100 + minor;
+
+      /* TODO: Use glTexSubImage2D() and do a row-by-row copy to replace
+       * the GL_UNPACK_ROW_LENGTH support
+       */
+      if (gdk_gl_context_get_use_es (paint_context) &&
+          !(version >= 300 || gdk_gl_context_has_unpack_subimage (paint_context)))
+        goto out;
 
       /* TODO: avoid reading back non-required data due to dest clip */
       image = cairo_surface_create_similar_image (cairo_get_target (cr),
@@ -620,8 +678,13 @@ gdk_cairo_draw_from_gl (cairo_t              *cr,
       glPixelStorei (GL_PACK_ALIGNMENT, 4);
       glPixelStorei (GL_PACK_ROW_LENGTH, cairo_image_surface_get_stride (image) / 4);
 
-      glReadPixels (x, y, width, height, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV,
-                    cairo_image_surface_get_data (image));
+      /* The implicit format conversion is going to make this path slower */
+      if (!gdk_gl_context_get_use_es (paint_context))
+        glReadPixels (x, y, width, height, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV,
+                      cairo_image_surface_get_data (image));
+      else
+        glReadPixels (x, y, width, height, GL_RGBA, GL_UNSIGNED_BYTE,
+                      cairo_image_surface_get_data (image));
 
       glPixelStorei (GL_PACK_ROW_LENGTH, 0);
 
@@ -640,6 +703,7 @@ gdk_cairo_draw_from_gl (cairo_t              *cr,
       cairo_surface_destroy (image);
     }
 
+out:
   if (clip_region)
     cairo_region_destroy (clip_region);
 
@@ -742,7 +806,7 @@ gdk_gl_texture_from_surface (cairo_surface_t *surface,
 
         /* We don't want to combine the quads here, because they have different textures.
          * And we don't want to upload the unused source areas to make it one texture. */
-        gdk_gl_texture_quads (paint_context, target, 1, &quad);
+        gdk_gl_texture_quads (paint_context, target, 1, &quad, TRUE);
       }
     }
 

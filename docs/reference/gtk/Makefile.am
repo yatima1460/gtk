@@ -27,6 +27,7 @@ IGNORE_HFILES = \
 	gtkadjustmentprivate.h		\
 	gtkallocatedbitmaskprivate.h	\
 	gtkappchooserprivate.h		\
+	gtkapplicationaccelsprivate.h	\
 	gtkapplicationprivate.h		\
 	gtkbindingsprivate.h		\
 	gtkbitmaskprivate.h		\
@@ -71,8 +72,10 @@ IGNORE_HFILES = \
 	gtkcsskeyframesprivate.h	\
 	gtkcsslookupprivate.h		\
 	gtkcssmatcherprivate.h		\
+	gtkcssnodeprivate.h		\
 	gtkcssnodedeclarationprivate.h	\
 	gtkcssnumbervalueprivate.h	\
+	gtkcsspathnodeprivate.h		\
 	gtkcssparserprivate.h		\
 	gtkcsspositionvalueprivate.h	\
 	gtkcssproviderprivate.h		\
@@ -89,15 +92,18 @@ IGNORE_HFILES = \
 	gtkcssstyleprivate.h		\
 	gtkcssstylepropertyprivate.h	\
 	gtkcsstransformvalueprivate.h	\
+	gtkcsstransientnodeprivate.h	\
 	gtkcsstransitionprivate.h	\
 	gtkcsstypedvalueprivate.h	\
 	gtkcsstypesprivate.h		\
 	gtkcssunsetvalueprivate.h	\
 	gtkcssvalueprivate.h		\
+	gtkcsswidgetnodeprivate.h	\
 	gtkdialogprivate.h		\
 	gtkentryprivate.h		\
 	gtkeventcontrollerprivate.h	\
 	gtkfilechooserprivate.h		\
+	gtkfilechooserwidgetprivate.h	\
 	gtkfontchooserprivate.h		\
 	gtkgesturedragprivate.h		\
 	gtkgesturelongpressprivate.h	\
@@ -125,6 +131,9 @@ IGNORE_HFILES = \
 	gtkmountoperationprivate.h	\
 	gtkorientableprivate.h		\
 	gtkpixelcacheprivate.h		\
+	gtkplacessidebarprivate.h	\
+	gtkplacesviewprivate.h		\
+	gtkplacesviewrowprivate.h	\
 	gtkpopoverprivate.h		\
 	gtkprinter-private.h		\
 	gtkprintoperation-private.h	\
@@ -137,9 +146,15 @@ IGNORE_HFILES = \
 	gtkrenderprivate.h		\
 	gtkroundedboxprivate.h		\
 	gtkscaleprivate.h		\
+	gtksearchengine.h		\
+	gtksearchenginemodel.h		\
+	gtksearchenginequartz.h		\
+	gtksearchenginesimple.h		\
+	gtksearchenginetracker.h	\
 	gtksearchentryprivate.h		\
 	gtkselectionprivate.h		\
 	gtksettingsprivate.h		\
+	gtksidebarrowprivate.h		\
 	gtksizegroup-private.h		\
 	gtksizerequestcacheprivate.h	\
 	gtksocketprivate.h		\
@@ -148,6 +163,7 @@ IGNORE_HFILES = \
 	gtkstylecontextprivate.h	\
 	gtkstylepropertyprivate.h	\
 	gtkstyleproviderprivate.h	\
+	gtktextattributesprivate.h	\
 	gtktextchildprivate.h		\
 	gtktexthandleprivate.h		\
 	gtktextiterprivate.h		\
@@ -157,6 +173,7 @@ IGNORE_HFILES = \
 	gtktoolbarprivate.h		\
 	gtktoolpaletteprivate.h		\
 	gtktooltipprivate.h		\
+	gtktooltipwindowprivate.h	\
 	gtktreeprivate.h		\
 	gtkwidgetprivate.h		\
 	gtkwin32themeprivate.h		\
@@ -263,41 +280,46 @@ MKDB_OPTIONS=--output-format=xml --name-space=gtk
 
 # Extra SGML files that are included by $(DOC_MAIN_SGML_FILE)
 content_files =					\
-	version.xml				\
-	running.sgml				\
+	broadway.xml				\
+	broadwayd.xml				\
 	building.sgml				\
 	compiling.sgml				\
+	css-overview.xml			\
+	css-properties.xml			\
 	drawing-model.xml			\
+	getting_started.xml			\
 	glossary.xml				\
-	migrating-2to3.xml			\
-	migrating-checklist.sgml		\
-	migrating-unique-GtkApplication.xml	\
-	migrating-smclient-GtkApplication.xml	\
-	migrating-GtkGrid.xml			\
-	migrating-GtkStyleContext.xml		\
-	osx.sgml				\
-	broadway.xml				\
-	wayland.xml				\
-	mir.xml					\
-	question_index.sgml			\
-	resources.sgml				\
-	text_widget.sgml			\
-	tree_widget.sgml			\
-	windows.sgml				\
-	x11.sgml				\
-	gtk3-demo.xml				\
 	gtk3-demo-application.xml		\
-	gtk3-widget-factory.xml			\
+	gtk3-demo.xml				\
 	gtk3-icon-browser.xml			\
-	gtk-query-immodules-3.0.xml		\
-	gtk-update-icon-cache.xml		\
+	gtk3-widget-factory.xml			\
+	gtk-builder-tool.xml			\
 	gtk-encode-symbolic-svg.xml		\
 	gtk-launch.xml				\
-	broadwayd.xml				\
+	gtk-query-immodules-3.0.xml		\
+	gtk-query-settings.xml			\
+	gtk-update-icon-cache.xml		\
 	input-handling.xml			\
+	migrating-2to3.xml			\
+	migrating-3xtoy.xml			\
+	migrating-checklist.sgml		\
+	migrating-GtkGrid.xml			\
+	migrating-GtkStyleContext.xml		\
+	migrating-smclient-GtkApplication.xml	\
+	migrating-unique-GtkApplication.xml	\
+	mir.xml					\
+	osx.sgml				\
+	overview.xml 				\
+	question_index.sgml			\
+	resources.sgml				\
+	running.sgml				\
+	text_widget.sgml			\
+	tree_widget.sgml			\
+	version.xml				\
 	visual_index.xml			\
-	getting_started.xml			\
-	overview.xml
+	wayland.xml				\
+	windows.sgml				\
+	x11.sgml
 
 expand_content_files = 				\
 	compiling.sgml				\
@@ -306,11 +328,12 @@ expand_content_files = 				\
 	glossary.xml				\
 	input-handling.xml			\
 	migrating-2to3.xml			\
+	migrating-3xtoy.xml			\
 	migrating-checklist.sgml		\
-	migrating-unique-GtkApplication.xml	\
-	migrating-smclient-GtkApplication.xml	\
 	migrating-GtkGrid.xml			\
 	migrating-GtkStyleContext.xml		\
+	migrating-smclient-GtkApplication.xml	\
+	migrating-unique-GtkApplication.xml	\
 	question_index.sgml			\
 	text_widget.sgml			\
 	tree_widget.sgml
@@ -362,6 +385,9 @@ HTML_IMAGES = \
 	$(srcdir)/images/panes.png					\
 	$(srcdir)/images/pagesetupdialog.png				\
 	$(srcdir)/images/placessidebar.png				\
+	$(srcdir)/images/popup-anchors.png				\
+	$(srcdir)/images/popup-flip.png					\
+	$(srcdir)/images/popup-slide.png				\
 	$(srcdir)/images/printdialog.png				\
 	$(srcdir)/images/progressbar.png				\
 	$(srcdir)/images/radio-group.png				\
@@ -451,7 +477,10 @@ HTML_IMAGES = \
 	$(srcdir)/images/getting-started-app10.png			\
 	$(srcdir)/images/exampleapp.png					\
 	$(srcdir)/images/flow-box.png					\
-	$(srcdir)/images/inspector.png
+	$(srcdir)/images/inspector.png					\
+	$(srcdir)/images/gedit-shortcuts.png				\
+	$(srcdir)/images/clocks-shortcuts.png				\
+	$(srcdir)/images/builder-shortcuts.png
 
 if ENABLE_DOC_CROSS_REFERENCES
 # Extra options to supply to gtkdoc-fixref
@@ -480,7 +509,9 @@ man_MANS = 				\
 	gtk3-demo-application.1		\
 	gtk3-widget-factory.1		\
 	gtk3-icon-browser.1		\
-	broadwayd.1
+	broadwayd.1			\
+	gtk-builder-tool.1 		\
+	gtk-query-settings.1
 
 if ENABLE_MAN
 

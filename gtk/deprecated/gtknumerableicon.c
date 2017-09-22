@@ -41,8 +41,10 @@
 #include "gtknumerableicon.h"
 #include "gtknumerableiconprivate.h"
 
+#include "gtkcssiconthemevalueprivate.h"
 #include "gtkicontheme.h"
 #include "gtkintl.h"
+#include "gtkstylepropertyprivate.h"
 #include "gtkwidget.h"
 #include "gtkwidgetpath.h"
 #include "gtkwindow.h"
@@ -192,15 +194,14 @@ static cairo_surface_t *
 draw_from_gicon (GtkNumerableIcon *self)
 {
   GtkIconTheme *theme;
-  GdkScreen *screen;
   GtkIconInfo *info;
   GdkPixbuf *pixbuf;
   cairo_surface_t *surface;
 
   if (self->priv->style != NULL)
     {
-      screen = gtk_style_context_get_screen (self->priv->style);
-      theme = gtk_icon_theme_get_for_screen (screen);
+      theme = gtk_css_icon_theme_value_get_icon_theme
+          (_gtk_style_context_peek_property (self->priv->style, GTK_CSS_PROPERTY_ICON_THEME));
     }
   else
     {
@@ -712,7 +713,7 @@ _gtk_numerable_icon_set_background_icon_size (GtkNumerableIcon *self,
  *
  * Returns the currently displayed label of the icon, or %NULL.
  *
- * Returns: the currently displayed label
+ * Returns: (nullable): the currently displayed label
  *
  * Since: 3.0
  *
@@ -824,7 +825,7 @@ gtk_numerable_icon_set_count (GtkNumerableIcon *self,
  * Returns the #GtkStyleContext used by the icon for theming,
  * or %NULL if there’s none.
  *
- * Returns: (transfer none): a #GtkStyleContext, or %NULL.
+ * Returns: (nullable) (transfer none): a #GtkStyleContext, or %NULL.
  *     This object is internal to GTK+ and should not be unreffed.
  *     Use g_object_ref() if you want to keep it around
  *
@@ -918,7 +919,7 @@ gtk_numerable_icon_set_background_gicon (GtkNumerableIcon *self,
  * %NULL if there’s none. The caller of this function does not own
  * a reference to the returned #GIcon.
  *
- * Returns: (transfer none): a #GIcon, or %NULL
+ * Returns: (nullable) (transfer none): a #GIcon, or %NULL
  *
  * Since: 3.0
  *
@@ -991,7 +992,7 @@ gtk_numerable_icon_set_background_icon_name (GtkNumerableIcon *self,
  * Returns the icon name used as the base background image,
  * or %NULL if there’s none.
  *
- * Returns: an icon name, or %NULL
+ * Returns: (nullable): an icon name, or %NULL
  *
  * Since: 3.0
  *

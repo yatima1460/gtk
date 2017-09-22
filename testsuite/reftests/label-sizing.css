@@ -1,8 +1,8 @@
 * {
-  font: Monospace 12;
+  font: 12px Monospace;
   padding: 0;
 }
 
-GtkPaned GtkLabel {
+GtkPaned label {
   background-color: pink
 }

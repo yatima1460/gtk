@@ -30,6 +30,7 @@
 #include "gdkinternals.h"
 #include "gdkmain.h"
 #include "gdkbroadway-server.h"
+#include "gdkmonitorprivate.h"
 
 G_BEGIN_DECLS
 
@@ -50,16 +51,14 @@ struct _GdkBroadwayDisplay
   /* drag and drop information */
   GdkDragContext *current_dest_drag;
 
-  /* Input device */
-  /* input GdkDevice list */
-  GList *input_devices;
-
   /* The offscreen window that has the pointer in it (if any) */
   GdkWindow *active_offscreen_window;
 
   GdkBroadwayServer *server;
 
   gpointer move_resize_data;
+
+  GdkMonitor *monitor;
 };
 
 struct _GdkBroadwayDisplayClass

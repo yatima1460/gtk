@@ -49,7 +49,11 @@ typedef enum
   GDK_OSX_SNOW_LEOPARD = 6,
   GDK_OSX_LION = 7,
   GDK_OSX_MOUNTAIN_LION = 8,
-  GDK_OSX_CURRENT = 8,
+  GDK_OSX_MAVERICKS = 9,
+  GDK_OSX_YOSEMITE = 10,
+  GDK_OSX_EL_CAPITAN = 11,
+  GDK_OSX_SIERRA = 12,
+  GDK_OSX_CURRENT = 12,
   GDK_OSX_NEW = 99
 } GdkOSXVersion;
 
@@ -71,6 +75,7 @@ G_END_DECLS
 #include <gdk/quartz/gdkquartzdisplaymanager.h>
 #include <gdk/quartz/gdkquartzdnd.h>
 #include <gdk/quartz/gdkquartzkeys.h>
+#include <gdk/quartz/gdkquartzmonitor.h>
 #include <gdk/quartz/gdkquartzscreen.h>
 #include <gdk/quartz/gdkquartzutils.h>
 #include <gdk/quartz/gdkquartzvisual.h>

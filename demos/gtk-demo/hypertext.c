@@ -1,4 +1,4 @@
-/* Text Widget/Hypertext
+/* Text View/Hypertext
  *
  * Usually, tags modify the appearance of text in the view, e.g. making it
  * bold or colored or underlined. But tags are not restricted to appearance.
@@ -44,7 +44,7 @@ show_page (GtkTextBuffer *buffer,
   if (page == 1)
     {
       gtk_text_buffer_insert (buffer, &iter, "Some text to show that simple ", -1);
-      insert_link (buffer, &iter, "hypertext", 3);
+      insert_link (buffer, &iter, "hyper text", 3);
       gtk_text_buffer_insert (buffer, &iter, " can easily be realized with ", -1);
       insert_link (buffer, &iter, "tags", 2);
       gtk_text_buffer_insert (buffer, &iter, ".", -1);
@@ -128,7 +128,7 @@ key_press_event (GtkWidget *text_view,
   return FALSE;
 }
 
-/* Links can also be activated by clicking.
+/* Links can also be activated by clicking or tapping.
  */
 static gboolean
 event_after (GtkWidget *text_view,
@@ -136,15 +136,30 @@ event_after (GtkWidget *text_view,
 {
   GtkTextIter start, end, iter;
   GtkTextBuffer *buffer;
-  GdkEventButton *event;
+  gdouble ex, ey;
   gint x, y;
 
-  if (ev->type != GDK_BUTTON_RELEASE)
-    return FALSE;
+  if (ev->type == GDK_BUTTON_RELEASE)
+    {
+      GdkEventButton *event;
 
-  event = (GdkEventButton *)ev;
+      event = (GdkEventButton *)ev;
+      if (event->button != GDK_BUTTON_PRIMARY)
+        return FALSE;
 
-  if (event->button != GDK_BUTTON_PRIMARY)
+      ex = event->x;
+      ey = event->y;
+    }
+  else if (ev->type == GDK_TOUCH_END)
+    {
+      GdkEventTouch *event;
+
+      event = (GdkEventTouch *)ev;
+
+      ex = event->x;
+      ey = event->y;
+    }
+  else
     return FALSE;
 
   buffer = gtk_text_view_get_buffer (GTK_TEXT_VIEW (text_view));
@@ -156,13 +171,12 @@ event_after (GtkWidget *text_view,
 
   gtk_text_view_window_to_buffer_coords (GTK_TEXT_VIEW (text_view),
                                          GTK_TEXT_WINDOW_WIDGET,
-                                         event->x, event->y, &x, &y);
+                                         ex, ey, &x, &y);
 
-  gtk_text_view_get_iter_at_location (GTK_TEXT_VIEW (text_view), &iter, x, y);
+  if (gtk_text_view_get_iter_at_location (GTK_TEXT_VIEW (text_view), &iter, x, y))
+    follow_if_link (text_view, &iter);
 
-  follow_if_link (text_view, &iter);
-
-  return FALSE;
+  return TRUE;
 }
 
 static gboolean hovering_over_link = FALSE;
@@ -182,18 +196,19 @@ set_cursor_if_appropriate (GtkTextView    *text_view,
   GtkTextIter iter;
   gboolean hovering = FALSE;
 
-  gtk_text_view_get_iter_at_location (text_view, &iter, x, y);
-
-  tags = gtk_text_iter_get_tags (&iter);
-  for (tagp = tags;  tagp != NULL;  tagp = tagp->next)
+  if (gtk_text_view_get_iter_at_location (text_view, &iter, x, y))
     {
-      GtkTextTag *tag = tagp->data;
-      gint page = GPOINTER_TO_INT (g_object_get_data (G_OBJECT (tag), "page"));
-
-      if (page != 0)
+      tags = gtk_text_iter_get_tags (&iter);
+      for (tagp = tags;  tagp != NULL;  tagp = tagp->next)
         {
-          hovering = TRUE;
-          break;
+          GtkTextTag *tag = tagp->data;
+          gint page = GPOINTER_TO_INT (g_object_get_data (G_OBJECT (tag), "page"));
+
+          if (page != 0)
+            {
+              hovering = TRUE;
+              break;
+            }
         }
     }
 
@@ -238,24 +253,27 @@ do_hypertext (GtkWidget *do_widget)
       GtkWidget *view;
       GtkWidget *sw;
       GtkTextBuffer *buffer;
+      GdkDisplay *display;
 
-      hand_cursor = gdk_cursor_new_for_display (gtk_widget_get_display (do_widget), GDK_HAND2);
-      regular_cursor = gdk_cursor_new_for_display (gtk_widget_get_display (do_widget), GDK_XTERM);
+      display = gtk_widget_get_display (do_widget);
+      hand_cursor = gdk_cursor_new_from_name (display, "pointer");
+      regular_cursor = gdk_cursor_new_from_name (display, "text");
 
       window = gtk_window_new (GTK_WINDOW_TOPLEVEL);
+      gtk_window_set_title (GTK_WINDOW (window), "Hypertext");
       gtk_window_set_screen (GTK_WINDOW (window),
                              gtk_widget_get_screen (do_widget));
-      gtk_window_set_default_size (GTK_WINDOW (window),
-                                   450, 450);
+      gtk_window_set_default_size (GTK_WINDOW (window), 450, 450);
 
       g_signal_connect (window, "destroy",
                         G_CALLBACK (gtk_widget_destroyed), &window);
 
-      gtk_window_set_title (GTK_WINDOW (window), "Hypertext");
       gtk_container_set_border_width (GTK_CONTAINER (window), 0);
 
       view = gtk_text_view_new ();
       gtk_text_view_set_wrap_mode (GTK_TEXT_VIEW (view), GTK_WRAP_WORD);
+      gtk_text_view_set_left_margin (GTK_TEXT_VIEW (view), 20);
+      gtk_text_view_set_right_margin (GTK_TEXT_VIEW (view), 20);
       g_signal_connect (view, "key-press-event",
                         G_CALLBACK (key_press_event), NULL);
       g_signal_connect (view, "event-after",
@@ -278,14 +296,9 @@ do_hypertext (GtkWidget *do_widget)
     }
 
   if (!gtk_widget_get_visible (window))
-    {
-      gtk_widget_show (window);
-    }
+    gtk_widget_show (window);
   else
-    {
-      gtk_widget_destroy (window);
-      window = NULL;
-    }
+    gtk_widget_destroy (window);
 
   return window;
 }

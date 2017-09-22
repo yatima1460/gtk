@@ -29,41 +29,67 @@ typedef struct _GtkCssNodeDeclaration GtkCssNodeDeclaration;
 typedef struct _GtkCssStyle GtkCssStyle;
 typedef struct _GtkStyleProviderPrivate GtkStyleProviderPrivate; /* dummy typedef */
 
-typedef enum { /*< skip >*/
-  GTK_CSS_CHANGE_CLASS                    = (1 <<  0),
-  GTK_CSS_CHANGE_NAME                     = (1 <<  1),
-  GTK_CSS_CHANGE_ID                       = GTK_CSS_CHANGE_NAME,
-  GTK_CSS_CHANGE_REGION                   = GTK_CSS_CHANGE_NAME,
-  GTK_CSS_CHANGE_POSITION                 = (1 <<  2),
-  GTK_CSS_CHANGE_STATE                    = (1 <<  3),
-  GTK_CSS_CHANGE_SIBLING_CLASS            = (1 <<  4),
-  GTK_CSS_CHANGE_SIBLING_NAME             = (1 <<  5),
-  GTK_CSS_CHANGE_SIBLING_POSITION         = (1 <<  6),
-  GTK_CSS_CHANGE_SIBLING_STATE            = (1 <<  7),
-  GTK_CSS_CHANGE_PARENT_CLASS             = (1 <<  8),
-  GTK_CSS_CHANGE_PARENT_NAME              = (1 <<  9),
-  GTK_CSS_CHANGE_PARENT_REGION            = GTK_CSS_CHANGE_PARENT_NAME,
-  GTK_CSS_CHANGE_PARENT_POSITION          = (1 << 10),
-  GTK_CSS_CHANGE_PARENT_STATE             = (1 << 11),
-  GTK_CSS_CHANGE_PARENT_SIBLING_CLASS     = (1 << 12),
-  GTK_CSS_CHANGE_PARENT_SIBLING_NAME      = (1 << 13),
-  GTK_CSS_CHANGE_PARENT_SIBLING_POSITION  = (1 << 14),
-  GTK_CSS_CHANGE_PARENT_SIBLING_STATE     = (1 << 15),
-  /* add more */
-  GTK_CSS_CHANGE_SOURCE                   = (1 << 16),
-  GTK_CSS_CHANGE_PARENT_STYLE             = (1 << 17),
-  GTK_CSS_CHANGE_TIMESTAMP                = (1 << 18),
-  GTK_CSS_CHANGE_ANIMATIONS               = (1 << 19),
+#define GTK_CSS_CHANGE_CLASS                          (1ULL <<  0)
+#define GTK_CSS_CHANGE_NAME                           (1ULL <<  1)
+#define GTK_CSS_CHANGE_ID                             (1ULL <<  2)
+#define GTK_CSS_CHANGE_FIRST_CHILD                    (1ULL <<  3)
+#define GTK_CSS_CHANGE_LAST_CHILD                     (1ULL <<  4)
+#define GTK_CSS_CHANGE_NTH_CHILD                      (1ULL <<  5)
+#define GTK_CSS_CHANGE_NTH_LAST_CHILD                 (1ULL <<  6)
+#define GTK_CSS_CHANGE_STATE                          (1ULL <<  7)
+#define GTK_CSS_CHANGE_SIBLING_CLASS                  (1ULL <<  8)
+#define GTK_CSS_CHANGE_SIBLING_NAME                   (1ULL <<  9)
+#define GTK_CSS_CHANGE_SIBLING_ID                     (1ULL << 10)
+#define GTK_CSS_CHANGE_SIBLING_FIRST_CHILD            (1ULL << 11)
+#define GTK_CSS_CHANGE_SIBLING_LAST_CHILD             (1ULL << 12)
+#define GTK_CSS_CHANGE_SIBLING_NTH_CHILD              (1ULL << 13)
+#define GTK_CSS_CHANGE_SIBLING_NTH_LAST_CHILD         (1ULL << 14)
+#define GTK_CSS_CHANGE_SIBLING_STATE                  (1ULL << 15)
+#define GTK_CSS_CHANGE_PARENT_CLASS                   (1ULL << 16)
+#define GTK_CSS_CHANGE_PARENT_NAME                    (1ULL << 17)
+#define GTK_CSS_CHANGE_PARENT_ID                      (1ULL << 18)
+#define GTK_CSS_CHANGE_PARENT_FIRST_CHILD             (1ULL << 19)
+#define GTK_CSS_CHANGE_PARENT_LAST_CHILD              (1ULL << 20)
+#define GTK_CSS_CHANGE_PARENT_NTH_CHILD               (1ULL << 21)
+#define GTK_CSS_CHANGE_PARENT_NTH_LAST_CHILD          (1ULL << 22)
+#define GTK_CSS_CHANGE_PARENT_STATE                   (1ULL << 23)
+#define GTK_CSS_CHANGE_PARENT_SIBLING_CLASS           (1ULL << 24)
+#define GTK_CSS_CHANGE_PARENT_SIBLING_ID              (1ULL << 25)
+#define GTK_CSS_CHANGE_PARENT_SIBLING_NAME            (1ULL << 26)
+#define GTK_CSS_CHANGE_PARENT_SIBLING_FIRST_CHILD     (1ULL << 27)
+#define GTK_CSS_CHANGE_PARENT_SIBLING_LAST_CHILD      (1ULL << 28)
+#define GTK_CSS_CHANGE_PARENT_SIBLING_NTH_CHILD       (1ULL << 29)
+#define GTK_CSS_CHANGE_PARENT_SIBLING_NTH_LAST_CHILD  (1ULL << 30)
+#define GTK_CSS_CHANGE_PARENT_SIBLING_STATE           (1ULL << 31)
 
-  GTK_CSS_CHANGE_RESERVED_BIT             = (1 << 31) /* Used internally in gtkcssselector.c */
-} GtkCssChange;
+/* add more */
+#define GTK_CSS_CHANGE_SOURCE                         (1ULL << 32)
+#define GTK_CSS_CHANGE_PARENT_STYLE                   (1ULL << 33)
+#define GTK_CSS_CHANGE_TIMESTAMP                      (1ULL << 34)
+#define GTK_CSS_CHANGE_ANIMATIONS                     (1ULL << 35)
+
+#define GTK_CSS_CHANGE_RESERVED_BIT                   (1ULL << 62) /* Used internally in gtkcssselector.c */
+
+typedef guint64 GtkCssChange;
+
+#define GTK_CSS_CHANGE_POSITION (GTK_CSS_CHANGE_FIRST_CHILD | GTK_CSS_CHANGE_LAST_CHILD | \
+                                 GTK_CSS_CHANGE_NTH_CHILD | GTK_CSS_CHANGE_NTH_LAST_CHILD)
+#define GTK_CSS_CHANGE_SIBLING_POSITION (GTK_CSS_CHANGE_SIBLING_FIRST_CHILD | GTK_CSS_CHANGE_SIBLING_LAST_CHILD | \
+                                         GTK_CSS_CHANGE_SIBLING_NTH_CHILD | GTK_CSS_CHANGE_SIBLING_NTH_LAST_CHILD)
+#define GTK_CSS_CHANGE_PARENT_POSITION (GTK_CSS_CHANGE_PARENT_FIRST_CHILD | GTK_CSS_CHANGE_PARENT_LAST_CHILD | \
+                                        GTK_CSS_CHANGE_PARENT_NTH_CHILD | GTK_CSS_CHANGE_PARENT_NTH_LAST_CHILD)
+#define GTK_CSS_CHANGE_PARENT_SIBLING_POSITION (GTK_CSS_CHANGE_PARENT_SIBLING_FIRST_CHILD | GTK_CSS_CHANGE_PARENT_SIBLING_LAST_CHILD | \
+                                                GTK_CSS_CHANGE_PARENT_SIBLING_NTH_CHILD | GTK_CSS_CHANGE_PARENT_SIBLING_NTH_LAST_CHILD)
+
 
 #define GTK_CSS_CHANGE_ANY ((1 << 19) - 1)
-#define GTK_CSS_CHANGE_ANY_SELF (GTK_CSS_CHANGE_CLASS | GTK_CSS_CHANGE_NAME | GTK_CSS_CHANGE_POSITION | GTK_CSS_CHANGE_STATE)
+#define GTK_CSS_CHANGE_ANY_SELF (GTK_CSS_CHANGE_CLASS | GTK_CSS_CHANGE_NAME | GTK_CSS_CHANGE_ID | GTK_CSS_CHANGE_POSITION | GTK_CSS_CHANGE_STATE)
 #define GTK_CSS_CHANGE_ANY_SIBLING (GTK_CSS_CHANGE_SIBLING_CLASS | GTK_CSS_CHANGE_SIBLING_NAME | \
+                                    GTK_CSS_CHANGE_SIBLING_ID | \
                                     GTK_CSS_CHANGE_SIBLING_POSITION | GTK_CSS_CHANGE_SIBLING_STATE)
 #define GTK_CSS_CHANGE_ANY_PARENT (GTK_CSS_CHANGE_PARENT_CLASS | GTK_CSS_CHANGE_PARENT_SIBLING_CLASS | \
                                    GTK_CSS_CHANGE_PARENT_NAME | GTK_CSS_CHANGE_PARENT_SIBLING_NAME | \
+                                   GTK_CSS_CHANGE_PARENT_ID | GTK_CSS_CHANGE_PARENT_SIBLING_ID | \
                                    GTK_CSS_CHANGE_PARENT_POSITION | GTK_CSS_CHANGE_PARENT_SIBLING_POSITION | \
                                    GTK_CSS_CHANGE_PARENT_STATE | GTK_CSS_CHANGE_PARENT_SIBLING_STATE)
 
@@ -78,7 +104,9 @@ typedef enum { /*< skip >*/
  * @GTK_CSS_AFFECTS_FONT: The font is affected and should be reloaded
  *   if it was cached.
  * @GTK_CSS_AFFECTS_TEXT: Text rendering is affected.
- * @GTK_CSS_AFFECTS_ICON: Icons and icon rendering is affected.
+ * @GTK_CSS_AFFECTS_TEXT_ATTRS: Text attributes are affected.
+ * @GTK_CSS_AFFECTS_ICON: Fullcolor icons and their rendering is affected.
+ * @GTK_CSS_AFFECTS_SYMBOLIC_ICON: Symbolic icons and their rendering is affected.
  * @GTK_CSS_AFFECTS_OUTLINE: The outline styling is affected. Outlines
  *   only affect elements that can be focused.
  * @GTK_CSS_AFFECTS_CLIP: Changes in this property may have an effect
@@ -99,23 +127,37 @@ typedef enum {
   GTK_CSS_AFFECTS_BORDER = (1 << 2),
   GTK_CSS_AFFECTS_FONT = (1 << 3),
   GTK_CSS_AFFECTS_TEXT = (1 << 4),
-  GTK_CSS_AFFECTS_ICON = (1 << 5),
-  GTK_CSS_AFFECTS_OUTLINE = (1 << 6),
-  GTK_CSS_AFFECTS_CLIP = (1 << 7),
-  GTK_CSS_AFFECTS_SIZE = (1 << 8)
+  GTK_CSS_AFFECTS_TEXT_ATTRS = (1 << 5),
+  GTK_CSS_AFFECTS_ICON = (1 << 6),
+  GTK_CSS_AFFECTS_SYMBOLIC_ICON = (1 << 7),
+  GTK_CSS_AFFECTS_OUTLINE = (1 << 8),
+  GTK_CSS_AFFECTS_CLIP = (1 << 9),
+  GTK_CSS_AFFECTS_SIZE = (1 << 10)
 } GtkCssAffects;
+
+#define GTK_CSS_AFFECTS_REDRAW (GTK_CSS_AFFECTS_FOREGROUND |    \
+                                GTK_CSS_AFFECTS_BACKGROUND |    \
+                                GTK_CSS_AFFECTS_BORDER |        \
+                                GTK_CSS_AFFECTS_ICON |          \
+                                GTK_CSS_AFFECTS_SYMBOLIC_ICON | \
+                                GTK_CSS_AFFECTS_OUTLINE)
 
 enum { /*< skip >*/
   GTK_CSS_PROPERTY_COLOR,
   GTK_CSS_PROPERTY_DPI,
   GTK_CSS_PROPERTY_FONT_SIZE,
   GTK_CSS_PROPERTY_ICON_THEME,
+  GTK_CSS_PROPERTY_ICON_PALETTE,
   GTK_CSS_PROPERTY_BACKGROUND_COLOR,
   GTK_CSS_PROPERTY_FONT_FAMILY,
   GTK_CSS_PROPERTY_FONT_STYLE,
   GTK_CSS_PROPERTY_FONT_VARIANT,
   GTK_CSS_PROPERTY_FONT_WEIGHT,
   GTK_CSS_PROPERTY_FONT_STRETCH,
+  GTK_CSS_PROPERTY_LETTER_SPACING,
+  GTK_CSS_PROPERTY_TEXT_DECORATION_LINE,
+  GTK_CSS_PROPERTY_TEXT_DECORATION_COLOR,
+  GTK_CSS_PROPERTY_TEXT_DECORATION_STYLE,
   GTK_CSS_PROPERTY_TEXT_SHADOW,
   GTK_CSS_PROPERTY_BOX_SHADOW,
   GTK_CSS_PROPERTY_MARGIN_TOP,
@@ -156,6 +198,7 @@ enum { /*< skip >*/
   GTK_CSS_PROPERTY_OUTLINE_COLOR,
   GTK_CSS_PROPERTY_BACKGROUND_REPEAT,
   GTK_CSS_PROPERTY_BACKGROUND_IMAGE,
+  GTK_CSS_PROPERTY_BACKGROUND_BLEND_MODE,
   GTK_CSS_PROPERTY_BORDER_IMAGE_SOURCE,
   GTK_CSS_PROPERTY_BORDER_IMAGE_REPEAT,
   GTK_CSS_PROPERTY_BORDER_IMAGE_SLICE,
@@ -164,6 +207,8 @@ enum { /*< skip >*/
   GTK_CSS_PROPERTY_ICON_SHADOW,
   GTK_CSS_PROPERTY_ICON_STYLE,
   GTK_CSS_PROPERTY_ICON_TRANSFORM,
+  GTK_CSS_PROPERTY_MIN_WIDTH,
+  GTK_CSS_PROPERTY_MIN_HEIGHT,
   GTK_CSS_PROPERTY_TRANSITION_PROPERTY,
   GTK_CSS_PROPERTY_TRANSITION_DURATION,
   GTK_CSS_PROPERTY_TRANSITION_TIMING_FUNCTION,
@@ -177,12 +222,64 @@ enum { /*< skip >*/
   GTK_CSS_PROPERTY_ANIMATION_DELAY,
   GTK_CSS_PROPERTY_ANIMATION_FILL_MODE,
   GTK_CSS_PROPERTY_OPACITY,
-  GTK_CSS_PROPERTY_GTK_IMAGE_EFFECT,
+  GTK_CSS_PROPERTY_ICON_EFFECT,
   GTK_CSS_PROPERTY_ENGINE,
   GTK_CSS_PROPERTY_GTK_KEY_BINDINGS,
+  GTK_CSS_PROPERTY_CARET_COLOR,
+  GTK_CSS_PROPERTY_SECONDARY_CARET_COLOR,
   /* add more */
   GTK_CSS_PROPERTY_N_PROPERTIES
 };
+
+typedef enum /*< skip >*/ {
+  GTK_CSS_BLEND_MODE_COLOR,
+  GTK_CSS_BLEND_MODE_COLOR_BURN,
+  GTK_CSS_BLEND_MODE_COLOR_DODGE,
+  GTK_CSS_BLEND_MODE_DARKEN,
+  GTK_CSS_BLEND_MODE_DIFFERENCE,
+  GTK_CSS_BLEND_MODE_EXCLUSION,
+  GTK_CSS_BLEND_MODE_HARD_LIGHT,
+  GTK_CSS_BLEND_MODE_HUE,
+  GTK_CSS_BLEND_MODE_LIGHTEN,
+  GTK_CSS_BLEND_MODE_LUMINOSITY,
+  GTK_CSS_BLEND_MODE_MULTIPLY,
+  GTK_CSS_BLEND_MODE_NORMAL,
+  GTK_CSS_BLEND_MODE_OVERLAY,
+  GTK_CSS_BLEND_MODE_SATURATE,
+  GTK_CSS_BLEND_MODE_SCREEN,
+  GTK_CSS_BLEND_MODE_SOFT_LIGHT
+} GtkCssBlendMode;
+
+typedef enum /*< skip >*/ {
+  GTK_CSS_IMAGE_BUILTIN_NONE,
+  GTK_CSS_IMAGE_BUILTIN_CHECK,
+  GTK_CSS_IMAGE_BUILTIN_CHECK_INCONSISTENT,
+  GTK_CSS_IMAGE_BUILTIN_OPTION,
+  GTK_CSS_IMAGE_BUILTIN_OPTION_INCONSISTENT,
+  GTK_CSS_IMAGE_BUILTIN_ARROW_UP,
+  GTK_CSS_IMAGE_BUILTIN_ARROW_DOWN,
+  GTK_CSS_IMAGE_BUILTIN_ARROW_LEFT,
+  GTK_CSS_IMAGE_BUILTIN_ARROW_RIGHT,
+  GTK_CSS_IMAGE_BUILTIN_EXPANDER_HORIZONTAL_LEFT,
+  GTK_CSS_IMAGE_BUILTIN_EXPANDER_VERTICAL_LEFT,
+  GTK_CSS_IMAGE_BUILTIN_EXPANDER_HORIZONTAL_RIGHT,
+  GTK_CSS_IMAGE_BUILTIN_EXPANDER_VERTICAL_RIGHT,
+  GTK_CSS_IMAGE_BUILTIN_EXPANDER_HORIZONTAL_LEFT_EXPANDED,
+  GTK_CSS_IMAGE_BUILTIN_EXPANDER_VERTICAL_LEFT_EXPANDED,
+  GTK_CSS_IMAGE_BUILTIN_EXPANDER_HORIZONTAL_RIGHT_EXPANDED,
+  GTK_CSS_IMAGE_BUILTIN_EXPANDER_VERTICAL_RIGHT_EXPANDED,
+  GTK_CSS_IMAGE_BUILTIN_GRIP_TOPLEFT,
+  GTK_CSS_IMAGE_BUILTIN_GRIP_TOP,
+  GTK_CSS_IMAGE_BUILTIN_GRIP_TOPRIGHT,
+  GTK_CSS_IMAGE_BUILTIN_GRIP_RIGHT,
+  GTK_CSS_IMAGE_BUILTIN_GRIP_BOTTOMRIGHT,
+  GTK_CSS_IMAGE_BUILTIN_GRIP_BOTTOM,
+  GTK_CSS_IMAGE_BUILTIN_GRIP_BOTTOMLEFT,
+  GTK_CSS_IMAGE_BUILTIN_GRIP_LEFT,
+  GTK_CSS_IMAGE_BUILTIN_PANE_SEPARATOR,
+  GTK_CSS_IMAGE_BUILTIN_HANDLE,
+  GTK_CSS_IMAGE_BUILTIN_SPINNER
+} GtkCssImageBuiltinType;
 
 typedef enum /*< skip >*/ {
   GTK_CSS_AREA_BORDER_BOX,
@@ -210,10 +307,10 @@ typedef enum /*< skip >*/ {
 } GtkCssFillMode;
 
 typedef enum /*< skip >*/ {
-  GTK_CSS_IMAGE_EFFECT_NONE,
-  GTK_CSS_IMAGE_EFFECT_HIGHLIGHT,
-  GTK_CSS_IMAGE_EFFECT_DIM
-} GtkCssImageEffect;
+  GTK_CSS_ICON_EFFECT_NONE,
+  GTK_CSS_ICON_EFFECT_HIGHLIGHT,
+  GTK_CSS_ICON_EFFECT_DIM
+} GtkCssIconEffect;
 
 typedef enum /*< skip >*/ {
   GTK_CSS_ICON_STYLE_REQUESTED,
@@ -235,6 +332,18 @@ typedef enum /*< skip >*/ {
   GTK_CSS_FONT_SIZE_XX_LARGE
 } GtkCssFontSize;
 
+typedef enum /*< skip >*/ {
+  GTK_CSS_TEXT_DECORATION_LINE_NONE,
+  GTK_CSS_TEXT_DECORATION_LINE_UNDERLINE,
+  GTK_CSS_TEXT_DECORATION_LINE_LINE_THROUGH
+} GtkTextDecorationLine;
+
+typedef enum /*< skip >*/ {
+  GTK_CSS_TEXT_DECORATION_STYLE_SOLID,
+  GTK_CSS_TEXT_DECORATION_STYLE_DOUBLE,
+  GTK_CSS_TEXT_DECORATION_STYLE_WAVY
+} GtkTextDecorationStyle;
+
 /* for the order in arrays */
 typedef enum /*< skip >*/ {
   GTK_CSS_TOP,
@@ -251,6 +360,14 @@ typedef enum /*< skip >*/ {
 } GtkCssCorner;
 
 typedef enum /*< skip >*/ {
+  GTK_CSS_DIMENSION_PERCENTAGE,
+  GTK_CSS_DIMENSION_NUMBER,
+  GTK_CSS_DIMENSION_LENGTH,
+  GTK_CSS_DIMENSION_ANGLE,
+  GTK_CSS_DIMENSION_TIME
+} GtkCssDimension;
+
+typedef enum /*< skip >*/ {
   /* CSS term: <number> */
   GTK_CSS_NUMBER,
   /* CSS term: <percentage> */
@@ -260,6 +377,7 @@ typedef enum /*< skip >*/ {
   GTK_CSS_PT,
   GTK_CSS_EM,
   GTK_CSS_EX,
+  GTK_CSS_REM,
   GTK_CSS_PC,
   GTK_CSS_IN,
   GTK_CSS_CM,
@@ -274,8 +392,16 @@ typedef enum /*< skip >*/ {
   GTK_CSS_MS,
 } GtkCssUnit;
 
+cairo_operator_t        _gtk_css_blend_mode_get_operator         (GtkCssBlendMode    mode);
+
 GtkCssChange            _gtk_css_change_for_sibling              (GtkCssChange       match);
 GtkCssChange            _gtk_css_change_for_child                (GtkCssChange       match);
+
+GtkCssDimension         gtk_css_unit_get_dimension               (GtkCssUnit         unit);
+
+char *                  gtk_css_change_to_string                 (GtkCssChange       change);
+void                    gtk_css_change_print                     (GtkCssChange       change,
+                                                                  GString           *string);
 
 /* for lack of better place to put it */
 /* mirror what cairo does */

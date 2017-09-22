@@ -250,8 +250,10 @@ static void
 on_surface_changed (void *data)
 {
   GdkWindow *window = data;
+  GdkWindowImplX11 *impl = GDK_WINDOW_IMPL_X11 (window->impl);
 
-  window_pre_damage (window);
+  if (impl->tracking_damage)
+    window_pre_damage (window);
 }
 
 /* We want to know when cairo drawing causes damage to the window,
@@ -269,12 +271,15 @@ hook_surface_changed (GdkWindow *window)
   GdkWindowImplX11 *impl = GDK_WINDOW_IMPL_X11 (window->impl);
 
   if (impl->cairo_surface)
-    cairo_surface_set_mime_data (impl->cairo_surface,
-                                 "x-gdk/change-notify",
-                                 (unsigned char *)"X",
-                                 1,
-                                 on_surface_changed,
-                                 window);
+    {
+      cairo_surface_set_mime_data (impl->cairo_surface,
+                                   "x-gdk/change-notify",
+                                   (unsigned char *)"X",
+                                   1,
+                                   on_surface_changed,
+                                   window);
+      impl->tracking_damage = 1;
+    }
 }
 
 static void
@@ -283,10 +288,13 @@ unhook_surface_changed (GdkWindow *window)
   GdkWindowImplX11 *impl = GDK_WINDOW_IMPL_X11 (window->impl);
 
   if (impl->cairo_surface)
-    cairo_surface_set_mime_data (impl->cairo_surface,
-                                 "x-gdk/change-notify",
-                                 NULL, 0,
-                                 NULL, NULL);
+    {
+      impl->tracking_damage = 0;
+      cairo_surface_set_mime_data (impl->cairo_surface,
+                                   "x-gdk/change-notify",
+                                   NULL, 0,
+                                   NULL, NULL);
+    }
 }
 
 static void
@@ -399,7 +407,7 @@ gdk_x11_window_end_frame (GdkWindow *window)
   if (impl->toplevel->current_counter_value % 2 == 1)
     {
 #ifdef G_ENABLE_DEBUG
-      if ((_gdk_debug_flags & GDK_DEBUG_FRAMES) != 0)
+      if (GDK_DEBUG_CHECK (FRAMES))
         {
           XImage *image = XGetImage (GDK_WINDOW_XDISPLAY (window),
                                      GDK_WINDOW_XID (window),
@@ -1239,7 +1247,7 @@ gdk_x11_window_foreign_new_for_display (GdkDisplay *display,
   if (!win->parent || GDK_WINDOW_TYPE (win->parent) == GDK_WINDOW_FOREIGN)
     win->parent = gdk_screen_get_root_window (screen);
 
-  win->parent->children = g_list_prepend (win->parent->children, win);
+  win->parent->children = g_list_concat (&win->children_list_node, win->parent->children);
   win->parent->impl_window->native_children =
     g_list_prepend (win->parent->impl_window->native_children, win);
 
@@ -1297,7 +1305,10 @@ gdk_toplevel_x11_free_contents (GdkDisplay *display,
     {
       XSyncDestroyCounter (GDK_DISPLAY_XDISPLAY (display), 
 			   toplevel->update_counter);
+      XSyncDestroyCounter (GDK_DISPLAY_XDISPLAY (display),
+                           toplevel->extended_update_counter);
       toplevel->update_counter = None;
+      toplevel->extended_update_counter = None;
 
       toplevel->current_counter_value = 0;
     }
@@ -1319,6 +1330,8 @@ gdk_x11_window_destroy (GdkWindow *window,
   toplevel = _gdk_x11_window_get_toplevel (window);
   if (toplevel)
     gdk_toplevel_x11_free_contents (GDK_WINDOW_DISPLAY (window), toplevel);
+
+  unhook_surface_changed (window);
 
   if (impl->cairo_surface)
     {
@@ -2090,7 +2103,7 @@ gdk_window_x11_restack_toplevel (GdkWindow *window,
   changes.stack_mode = above ? Above : Below;
   XReconfigureWMWindow (GDK_WINDOW_XDISPLAY (window),
 			GDK_WINDOW_XID (window),
-			gdk_screen_get_number (GDK_WINDOW_SCREEN (window)),
+			gdk_x11_screen_get_number (GDK_WINDOW_SCREEN (window)),
 			CWStackMode | CWSibling, &changes);
 }
 
@@ -2907,6 +2920,7 @@ gdk_window_x11_set_back_color (GdkWindow *window,
 	   * it's likely alpha, so we set them to 1s.
 	   */
 	  guint padding, pixel;
+	  gint red_prec, red_shift, green_prec, green_shift, blue_prec, blue_shift;
 
 	  /* Shifting by >= width-of-type isn't defined in C */
 	  if (visual->depth >= 32)
@@ -2915,10 +2929,14 @@ gdk_window_x11_set_back_color (GdkWindow *window,
 	    padding = ((~(guint32)0)) << visual->depth;
 	  
 	  pixel = ~ (visual->red_mask | visual->green_mask | visual->blue_mask | padding);
-	  
-	  pixel += (((int) (red   * ((1 << visual->red_prec  ) - 1))) << visual->red_shift  ) +
-		   (((int) (green * ((1 << visual->green_prec) - 1))) << visual->green_shift) +
-		   (((int) (blue  * ((1 << visual->blue_prec ) - 1))) << visual->blue_shift );
+
+          gdk_visual_get_red_pixel_details (visual, NULL, &red_shift, &red_prec);
+          gdk_visual_get_green_pixel_details (visual, NULL, &green_shift, &green_prec);
+          gdk_visual_get_blue_pixel_details (visual, NULL, &blue_shift, &blue_prec);
+
+          pixel += (((int) (red   * ((1 << red_prec  ) - 1))) << red_shift  ) +
+                   (((int) (green * ((1 << green_prec) - 1))) << green_shift) +
+                   (((int) (blue  * ((1 << blue_prec ) - 1))) << blue_shift );
 
           XSetWindowBackground (GDK_WINDOW_XDISPLAY (window),
                                 GDK_WINDOW_XID (window), pixel);
@@ -2963,15 +2981,15 @@ gdk_window_x11_set_background (GdkWindow      *window,
     {
       GdkWindow *parent;
 
-      /* X throws BadMatch if the parent has a different visual when
+      /* X throws BadMatch if the parent has a different depth when
        * using ParentRelative */
       parent = gdk_window_get_parent (window);
-      if (parent && gdk_window_get_visual (parent) == gdk_window_get_visual (window))
-        XSetWindowBackgroundPixmap (GDK_WINDOW_XDISPLAY (window),
-                                    GDK_WINDOW_XID (window), ParentRelative);
-      else
+      if (parent && window->depth != parent->depth)
         XSetWindowBackgroundPixmap (GDK_WINDOW_XDISPLAY (window),
                                     GDK_WINDOW_XID (window), None);
+      else
+        XSetWindowBackgroundPixmap (GDK_WINDOW_XDISPLAY (window),
+                                    GDK_WINDOW_XID (window), ParentRelative);
       return;
     }
 
@@ -3715,7 +3733,8 @@ void
 gdk_x11_window_set_theme_variant (GdkWindow *window,
                                   char      *variant)
 {
-  gdk_x11_window_set_utf8_property (window, "_GTK_THEME_VARIANT", variant);
+  gdk_x11_window_set_utf8_property (window, "_GTK_THEME_VARIANT",
+                                    variant ? variant : "");
 }
 
 #define GDK_SELECTION_MAX_SIZE(display)                                 \
@@ -3864,7 +3883,7 @@ gdk_x11_window_set_icon_list (GdkWindow *window,
       n++;
       size += 2 + width * height;
       
-      l = g_list_next (l);
+      l = l->next;
     }
 
   data = g_malloc (size * sizeof (gulong));
@@ -3903,7 +3922,7 @@ gdk_x11_window_set_icon_list (GdkWindow *window,
 	    }
 	}
 
-      l = g_list_next (l);
+      l = l->next;
       n--;
     }
 
@@ -3984,7 +4003,7 @@ gdk_x11_window_iconify (GdkWindow *window)
     {  
       XIconifyWindow (GDK_WINDOW_XDISPLAY (window),
 		      GDK_WINDOW_XID (window),
-		      gdk_screen_get_number (GDK_WINDOW_SCREEN (window)));
+		      gdk_x11_screen_get_number (GDK_WINDOW_SCREEN (window)));
     }
   else
     {
@@ -4148,7 +4167,7 @@ gdk_x11_window_apply_fullscreen_mode (GdkWindow *window)
   if (GDK_WINDOW_IS_MAPPED (window))
     {
       XClientMessageEvent xclient;
-      gint                gdk_monitors[4];
+      gint                monitors[4];
       gint                i;
 
       memset (&xclient, 0, sizeof (xclient));
@@ -4189,15 +4208,14 @@ gdk_x11_window_apply_fullscreen_mode (GdkWindow *window)
 	case GDK_FULLSCREEN_ON_ALL_MONITORS:
 
 	  _gdk_x11_screen_get_edge_monitors (GDK_WINDOW_SCREEN (window),
-					     &gdk_monitors[0],
-					     &gdk_monitors[1],
-					     &gdk_monitors[2],
-					     &gdk_monitors[3]);
+					     &monitors[0],
+					     &monitors[1],
+					     &monitors[2],
+					     &monitors[3]);
 	  /* Translate all 4 monitors from the GDK set into XINERAMA indices */
 	  for (i = 0; i < 4; ++i)
 	    {
-	      xclient.data.l[i] = _gdk_x11_screen_get_xinerama_index (GDK_WINDOW_SCREEN (window),
-								      gdk_monitors[i]);
+	      xclient.data.l[i] = monitors[i];
 	      /* Sanity check, if XINERAMA is not available, we could have invalid
 	       * negative values for the XINERAMA indices.
 	       */
@@ -4247,6 +4265,25 @@ gdk_x11_window_fullscreen (GdkWindow *window)
     gdk_synthesize_window_state (window,
                                  0,
                                  GDK_WINDOW_STATE_FULLSCREEN);
+}
+
+static void
+gdk_x11_window_fullscreen_on_monitor (GdkWindow *window,
+                                      gint       monitor)
+{
+  GdkRectangle monitor_geom;
+
+  if (GDK_WINDOW_DESTROYED (window) ||
+      !WINDOW_IS_TOPLEVEL_OR_FOREIGN (window))
+    return;
+
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+  gdk_screen_get_monitor_geometry (GDK_WINDOW_SCREEN (window), monitor, &monitor_geom);
+  gdk_window_move (window, monitor_geom.x, monitor_geom.y);
+G_GNUC_END_IGNORE_DEPRECATIONS
+
+  gdk_window_set_fullscreen_mode (window, GDK_FULLSCREEN_ON_CURRENT_MONITOR);
+  gdk_x11_window_fullscreen (window);
 }
 
 static void
@@ -4491,7 +4528,7 @@ gdk_x11_window_get_decorations(GdkWindow       *window,
 
 static void
 gdk_x11_window_set_functions (GdkWindow    *window,
-			  GdkWMFunction functions)
+                              GdkWMFunction functions)
 {
   MotifWmHints hints;
   
@@ -4686,7 +4723,7 @@ wmspec_moveresize (GdkWindow *window,
   GdkDisplay *display = GDK_WINDOW_DISPLAY (window);
 
   if (button != 0)
-    gdk_device_ungrab (device, timestamp); /* Release passive grab */
+    gdk_seat_ungrab (gdk_device_get_seat (device)); /* Release passive grab */
   GDK_X11_DISPLAY (display)->wm_moveresize_button = button;
 
   wmspec_send_message (display, window, root_x, root_y, direction, button);
@@ -4933,8 +4970,7 @@ finish_drag (MoveResizeData *mv_resize)
 {
   gdk_window_destroy (mv_resize->moveresize_emulation_window);
   mv_resize->moveresize_emulation_window = NULL;
-  g_object_unref (mv_resize->moveresize_window);
-  mv_resize->moveresize_window = NULL;
+  g_clear_object (&mv_resize->moveresize_window);
   g_clear_pointer (&mv_resize->moveresize_pending_event, g_free);
 }
 
@@ -5146,13 +5182,10 @@ create_moveresize_window (MoveResizeData *mv_resize,
 
   gdk_window_show (mv_resize->moveresize_emulation_window);
 
-  status = gdk_device_grab (mv_resize->device,
-                            mv_resize->moveresize_emulation_window,
-                            GDK_OWNERSHIP_NONE,
-                            FALSE,
-                            GDK_BUTTON_RELEASE_MASK | GDK_POINTER_MOTION_MASK,
-                            NULL,
-                            timestamp);
+  status = gdk_seat_grab (gdk_device_get_seat (mv_resize->device),
+                          mv_resize->moveresize_emulation_window,
+                          GDK_SEAT_CAPABILITY_POINTER, FALSE,
+                          NULL, NULL, NULL, NULL);
 
   if (status != GDK_GRAB_SUCCESS)
     {
@@ -5664,7 +5697,7 @@ gdk_x11_window_show_window_menu (GdkWindow *window,
                 NULL);
 
   /* Ungrab the implicit grab */
-  gdk_device_ungrab (device, gdk_event_get_time (event));
+  gdk_seat_ungrab (gdk_device_get_seat (device));
 
   xclient.type = ClientMessage;
   xclient.window = GDK_WINDOW_XID (window);
@@ -5740,6 +5773,7 @@ gdk_window_impl_x11_class_init (GdkWindowImplX11Class *klass)
   impl_class->maximize = gdk_x11_window_maximize;
   impl_class->unmaximize = gdk_x11_window_unmaximize;
   impl_class->fullscreen = gdk_x11_window_fullscreen;
+  impl_class->fullscreen_on_monitor = gdk_x11_window_fullscreen_on_monitor;
   impl_class->apply_fullscreen_mode = gdk_x11_window_apply_fullscreen_mode;
   impl_class->unfullscreen = gdk_x11_window_unfullscreen;
   impl_class->set_keep_above = gdk_x11_window_set_keep_above;
@@ -5748,7 +5782,6 @@ gdk_window_impl_x11_class_init (GdkWindowImplX11Class *klass)
   impl_class->set_group = gdk_x11_window_set_group;
   impl_class->set_decorations = gdk_x11_window_set_decorations;
   impl_class->get_decorations = gdk_x11_window_get_decorations;
-  impl_class->set_functions = gdk_x11_window_set_functions;
   impl_class->set_functions = gdk_x11_window_set_functions;
   impl_class->begin_resize_drag = gdk_x11_window_begin_resize_drag;
   impl_class->begin_move_drag = gdk_x11_window_begin_move_drag;

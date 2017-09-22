@@ -42,10 +42,6 @@ struct _GdkX11Screen
   Window xroot_window;
   GdkWindow *root_window;
   gint screen_num;
-  /* Xinerama/RandR 1.2 */
-  gint  n_monitors;
-  GdkX11Monitor *monitors;
-  gint primary_monitor;
 
   gint width;
   gint height;
@@ -96,9 +92,6 @@ struct _GdkX11Screen
 
   /* cache for window->translate vfunc */
   GC subwindow_gcs[32];
-
-  /* cache for Xinerama monitor indices */
-  GHashTable *xinerama_matches;
 };
 
 struct _GdkX11ScreenClass
@@ -119,8 +112,6 @@ void _gdk_x11_screen_size_changed           (GdkScreen *screen,
 					     XEvent    *event);
 void _gdk_x11_screen_process_owner_change   (GdkScreen *screen,
 					     XEvent    *event);
-gint _gdk_x11_screen_get_xinerama_index     (GdkScreen *screen,
-					     gint       monitor_num);
 void _gdk_x11_screen_get_edge_monitors      (GdkScreen *screen,
 					     gint      *top,
 					     gint      *bottom,
@@ -128,6 +119,11 @@ void _gdk_x11_screen_get_edge_monitors      (GdkScreen *screen,
 					     gint      *right);
 void _gdk_x11_screen_set_window_scale       (GdkX11Screen *x11_screen,
 					     int        scale);
+void gdk_x11_screen_get_work_area           (GdkScreen    *screen,
+                                             GdkRectangle *area);
+gint gdk_x11_screen_get_width               (GdkScreen *screen);
+gint gdk_x11_screen_get_height              (GdkScreen *screen);
+gint gdk_x11_screen_get_number              (GdkScreen *screen);
 
 G_END_DECLS
 

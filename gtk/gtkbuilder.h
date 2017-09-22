@@ -64,6 +64,7 @@ typedef struct _GtkBuilderPrivate GtkBuilderPrivate;
  * @GTK_BUILDER_ERROR_TEMPLATE_MISMATCH: The wrong type was specified in a composite class’s template XML
  * @GTK_BUILDER_ERROR_INVALID_PROPERTY: The specified property is unknown for the object class.
  * @GTK_BUILDER_ERROR_INVALID_SIGNAL: The specified signal is unknown for the object class.
+ * @GTK_BUILDER_ERROR_INVALID_ID: An object id is unknown
  *
  * Error codes that identify various errors that can occur while using
  * #GtkBuilder.
@@ -82,7 +83,8 @@ typedef enum
   GTK_BUILDER_ERROR_OBJECT_TYPE_REFUSED,
   GTK_BUILDER_ERROR_TEMPLATE_MISMATCH,
   GTK_BUILDER_ERROR_INVALID_PROPERTY,
-  GTK_BUILDER_ERROR_INVALID_SIGNAL
+  GTK_BUILDER_ERROR_INVALID_SIGNAL,
+  GTK_BUILDER_ERROR_INVALID_ID
 } GtkBuilderError;
 
 GDK_AVAILABLE_IN_ALL
@@ -223,6 +225,13 @@ GtkApplication * gtk_builder_get_application     (GtkBuilder     *builder);
  */
 #define GTK_BUILDER_WARN_INVALID_CHILD_TYPE(object, type) \
   g_warning ("'%s' is not a valid child type of '%s'", type, g_type_name (G_OBJECT_TYPE (object)))
+
+GDK_AVAILABLE_IN_3_18
+guint     gtk_builder_extend_with_template  (GtkBuilder    *builder,
+                                             GtkWidget     *widget,
+                                             GType          template_type,                                                          const gchar   *buffer,
+                                             gsize          length,
+                                             GError       **error);
 
 G_END_DECLS
 

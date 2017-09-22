@@ -75,6 +75,13 @@ struct _GdkWindowImplClass
                                          gint             y,
                                          gint             width,
                                          gint             height);
+  void         (* move_to_rect)         (GdkWindow       *window,
+                                         const GdkRectangle *rect,
+                                         GdkGravity       rect_anchor,
+                                         GdkGravity       window_anchor,
+                                         GdkAnchorHints   anchor_hints,
+                                         gint             rect_anchor_dx,
+                                         gint             rect_anchor_dy);
   void         (* set_background)       (GdkWindow       *window,
                                          cairo_pattern_t *pattern);
 
@@ -198,6 +205,7 @@ struct _GdkWindowImplClass
   void         (* maximize)             (GdkWindow *window);
   void         (* unmaximize)           (GdkWindow *window);
   void         (* fullscreen)           (GdkWindow *window);
+  void         (* fullscreen_on_monitor) (GdkWindow *window, gint monitor);
   void         (* apply_fullscreen_mode) (GdkWindow *window);
   void         (* unfullscreen)         (GdkWindow *window);
   void         (* set_keep_above)       (GdkWindow *window,
@@ -238,7 +246,9 @@ struct _GdkWindowImplClass
   void         (* register_dnd)         (GdkWindow *window);
   GdkDragContext * (*drag_begin)        (GdkWindow *window,
                                          GdkDevice *device,
-                                         GList     *targets);
+                                         GList     *targets,
+                                         gint       x_root,
+                                         gint       y_root);
 
   void         (*process_updates_recurse) (GdkWindow      *window,
                                            cairo_region_t *region);
@@ -300,6 +310,11 @@ struct _GdkWindowImplClass
                                            GError        **error);
   void         (*invalidate_for_new_frame)(GdkWindow      *window,
                                            cairo_region_t *update_area);
+
+  GdkDrawingContext *(* create_draw_context)  (GdkWindow            *window,
+                                               const cairo_region_t *region);
+  void               (* destroy_draw_context) (GdkWindow            *window,
+                                               GdkDrawingContext    *context);
 };
 
 /* Interface Functions */

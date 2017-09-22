@@ -23,6 +23,8 @@
 #include <gtk/gtkliststore.h>
 #include <gtk/gtkentrycompletion.h>
 #include <gtk/gtkentry.h>
+#include <gtk/gtkcssgadgetprivate.h>
+#include <gtk/gtkspinbutton.h>
 
 G_BEGIN_DECLS
 
@@ -74,7 +76,7 @@ struct _GtkEntryCompletionPrivate
   GdkDevice *device;
 };
 
-gboolean _gtk_entry_completion_resize_popup (GtkEntryCompletion *completion);
+void     _gtk_entry_completion_resize_popup (GtkEntryCompletion *completion);
 void     _gtk_entry_completion_popdown      (GtkEntryCompletion *completion);
 void     _gtk_entry_completion_connect      (GtkEntryCompletion *completion,
                                              GtkEntry           *entry);
@@ -86,10 +88,12 @@ gchar*   _gtk_entry_get_display_text       (GtkEntry *entry,
 void     _gtk_entry_get_borders            (GtkEntry  *entry,
                                             GtkBorder *borders);
 GtkIMContext* _gtk_entry_get_im_context    (GtkEntry  *entry);
-void     _gtk_entry_set_is_cell_renderer   (GtkEntry  *entry,
-                                            gboolean   is_cell_renderer);
+GtkCssGadget* gtk_entry_get_gadget         (GtkEntry  *entry);
 void     _gtk_entry_grab_focus             (GtkEntry  *entry,
                                             gboolean   select_all);
+
+/* in gtkspinbutton.c (because I'm too lazy to create gtkspinbuttonprivate.h) */
+gint     gtk_spin_button_get_text_width    (GtkSpinButton *spin_button);
 
 G_END_DECLS
 

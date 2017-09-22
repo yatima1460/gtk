@@ -23,6 +23,8 @@
 #include "gtkintl.h"
 #include "gtktoolbarprivate.h"
 #include "gtkprivate.h"
+#include "gtkwidgetprivate.h"
+#include "gtkcsscustomgadgetprivate.h"
 
 /**
  * SECTION:gtkseparatortoolitem
@@ -40,12 +42,17 @@
  * a “spring” that forces other items to the ends of the toolbar.
  *
  * Use gtk_separator_tool_item_new() to create a new #GtkSeparatorToolItem.
+ *
+ * # CSS nodes
+ *
+ * GtkSeparatorToolItem has a single CSS node with name separator.
  */
 
 #define MENU_ID "gtk-separator-tool-item-menu-id"
 
 struct _GtkSeparatorToolItemPrivate
 {
+  GtkCssGadget *gadget;
   GdkWindow *event_window;
   guint draw : 1;
 };
@@ -76,7 +83,6 @@ static gboolean gtk_separator_tool_item_draw              (GtkWidget            
                                                            cairo_t                   *cr);
 static void     gtk_separator_tool_item_add               (GtkContainer              *container,
                                                            GtkWidget                 *child);
-static gint     get_space_size                            (GtkToolItem               *tool_item);
 static void     gtk_separator_tool_item_realize           (GtkWidget                 *widget);
 static void     gtk_separator_tool_item_unrealize         (GtkWidget                 *widget);
 static void     gtk_separator_tool_item_map               (GtkWidget                 *widget);
@@ -86,25 +92,16 @@ static gboolean gtk_separator_tool_item_button_event      (GtkWidget            
 static gboolean gtk_separator_tool_item_motion_event      (GtkWidget                 *widget,
                                                            GdkEventMotion            *event);
 
-
 G_DEFINE_TYPE_WITH_PRIVATE (GtkSeparatorToolItem, gtk_separator_tool_item, GTK_TYPE_TOOL_ITEM)
 
-static gint
-get_space_size (GtkToolItem *tool_item)
+static void
+gtk_separator_tool_item_finalize (GObject *object)
 {
-  gint space_size = _gtk_toolbar_get_default_space_size();
-  GtkWidget *parent;
+  GtkSeparatorToolItem *item = GTK_SEPARATOR_TOOL_ITEM (object);
 
-  parent = gtk_widget_get_parent (GTK_WIDGET (tool_item));
+  g_clear_object (&item->priv->gadget);
 
-  if (GTK_IS_TOOLBAR (parent))
-    {
-      gtk_widget_style_get (parent,
-                            "space-size", &space_size,
-                            NULL);
-    }
-  
-  return space_size;
+  G_OBJECT_CLASS (gtk_separator_tool_item_parent_class)->finalize (object);
 }
 
 static void
@@ -122,6 +119,8 @@ gtk_separator_tool_item_class_init (GtkSeparatorToolItemClass *class)
 
   object_class->set_property = gtk_separator_tool_item_set_property;
   object_class->get_property = gtk_separator_tool_item_get_property;
+  object_class->finalize = gtk_separator_tool_item_finalize;
+
   widget_class->get_preferred_width = gtk_separator_tool_item_get_preferred_width;
   widget_class->get_preferred_height = gtk_separator_tool_item_get_preferred_height;
   widget_class->size_allocate = gtk_separator_tool_item_size_allocate;
@@ -145,20 +144,29 @@ gtk_separator_tool_item_class_init (GtkSeparatorToolItemClass *class)
                                                          P_("Whether the separator is drawn, or just blank"),
                                                          TRUE,
                                                          GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
+
+  gtk_widget_class_set_css_name (widget_class, "separator");
 }
 
 static void
 gtk_separator_tool_item_init (GtkSeparatorToolItem *separator_item)
 {
-  GtkStyleContext *context;
+  GtkSeparatorToolItemPrivate *priv;
+  GtkWidget *widget;
+  GtkCssNode *widget_node;
 
-  separator_item->priv = gtk_separator_tool_item_get_instance_private (separator_item);
-  separator_item->priv->draw = TRUE;
+  widget = GTK_WIDGET (separator_item);
+  priv = separator_item->priv = gtk_separator_tool_item_get_instance_private (separator_item);
+  priv->draw = TRUE;
 
-  gtk_widget_set_has_window (GTK_WIDGET (separator_item), FALSE);
+  gtk_widget_set_has_window (widget, FALSE);
 
-  context = gtk_widget_get_style_context (GTK_WIDGET (separator_item));
-  gtk_style_context_add_class (context, GTK_STYLE_CLASS_SEPARATOR);
+  widget_node = gtk_widget_get_css_node (widget);
+  separator_item->priv->gadget =
+    gtk_css_custom_gadget_new_for_node (widget_node,
+                                        widget,
+                                        NULL, NULL, NULL,
+                                        NULL, NULL);
 }
 
 static void
@@ -173,7 +181,7 @@ gtk_separator_tool_item_create_menu_proxy (GtkToolItem *item)
 {
   GtkWidget *menu_item = NULL;
   
-  menu_item = gtk_separator_menu_item_new();
+  menu_item = gtk_separator_menu_item_new ();
   
   gtk_tool_item_set_proxy_menu_item (item, MENU_ID, menu_item);
   
@@ -219,26 +227,15 @@ gtk_separator_tool_item_get_property (GObject      *object,
 }
 
 static void
-gtk_separator_tool_item_get_preferred_size (GtkWidget      *widget,
-                                            GtkOrientation  orientation,
-                                            gint           *minimum,
-                                            gint           *natural)
-{
-  if (gtk_tool_item_get_orientation (GTK_TOOL_ITEM (widget)) == orientation)
-    *minimum = *natural = get_space_size (GTK_TOOL_ITEM (widget));
-  else
-    *minimum = *natural = 1;
-}
-
-static void
 gtk_separator_tool_item_get_preferred_width (GtkWidget *widget,
                                              gint      *minimum,
                                              gint      *natural)
 {
-  gtk_separator_tool_item_get_preferred_size (widget,
-                                              GTK_ORIENTATION_HORIZONTAL,
-                                              minimum,
-                                              natural);
+  gtk_css_gadget_get_preferred_size (GTK_SEPARATOR_TOOL_ITEM (widget)->priv->gadget,
+                                     GTK_ORIENTATION_HORIZONTAL,
+                                     -1,
+                                     minimum, natural,
+                                     NULL, NULL);
 }
 
 static void
@@ -246,10 +243,11 @@ gtk_separator_tool_item_get_preferred_height (GtkWidget *widget,
                                               gint      *minimum,
                                               gint      *natural)
 {
-  gtk_separator_tool_item_get_preferred_size (widget,
-                                              GTK_ORIENTATION_VERTICAL,
-                                              minimum,
-                                              natural);
+  gtk_css_gadget_get_preferred_size (GTK_SEPARATOR_TOOL_ITEM (widget)->priv->gadget,
+                                     GTK_ORIENTATION_VERTICAL,
+                                     -1,
+                                     minimum, natural,
+                                     NULL, NULL);
 }
 
 static void
@@ -258,6 +256,7 @@ gtk_separator_tool_item_size_allocate (GtkWidget     *widget,
 {
   GtkSeparatorToolItem *separator = GTK_SEPARATOR_TOOL_ITEM (widget);
   GtkSeparatorToolItemPrivate *priv = separator->priv;
+  GtkAllocation clip;
 
   gtk_widget_set_allocation (widget, allocation);
 
@@ -268,6 +267,12 @@ gtk_separator_tool_item_size_allocate (GtkWidget     *widget,
                             allocation->width,
                             allocation->height);
 
+  gtk_css_gadget_allocate (priv->gadget,
+                           allocation,
+                           gtk_widget_get_allocated_baseline (widget),
+                           &clip);
+
+  gtk_widget_set_clip (widget, &clip);
 }
 
 static void
@@ -376,21 +381,8 @@ static gboolean
 gtk_separator_tool_item_draw (GtkWidget *widget,
                               cairo_t   *cr)
 {
-  GtkAllocation allocation;
-  GtkToolbar *toolbar = NULL;
-  GtkSeparatorToolItem *separator = GTK_SEPARATOR_TOOL_ITEM (widget);
-  GtkSeparatorToolItemPrivate *priv = separator->priv;
-  GtkWidget *parent;
-
-  if (priv->draw)
-    {
-      parent = gtk_widget_get_parent (widget);
-      if (GTK_IS_TOOLBAR (parent))
-        toolbar = GTK_TOOLBAR (parent);
-
-      gtk_widget_get_allocation (widget, &allocation);
-      _gtk_toolbar_paint_space_line (widget, toolbar, cr);
-    }
+  if (GTK_SEPARATOR_TOOL_ITEM (widget)->priv->draw)
+    gtk_css_gadget_draw (GTK_SEPARATOR_TOOL_ITEM (widget)->priv->gadget, cr);
 
   return FALSE;
 }
@@ -456,6 +448,10 @@ gtk_separator_tool_item_set_draw (GtkSeparatorToolItem *item,
   if (draw != item->priv->draw)
     {
       item->priv->draw = draw;
+      if (draw)
+        gtk_css_gadget_remove_class (item->priv->gadget, "invisible");
+      else
+        gtk_css_gadget_add_class (item->priv->gadget, "invisible");
 
       gtk_widget_queue_draw (GTK_WIDGET (item));
 

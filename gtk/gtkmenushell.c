@@ -66,6 +66,7 @@
 #include "gtkmenuitemprivate.h"
 #include "gtkmenushellprivate.h"
 #include "gtkmnemonichash.h"
+#include "gtkrender.h"
 #include "gtkwindow.h"
 #include "gtkwindowprivate.h"
 #include "gtkprivate.h"
@@ -226,7 +227,7 @@ gtk_menu_shell_class_init (GtkMenuShellClass *klass)
                   G_SIGNAL_RUN_FIRST,
                   G_STRUCT_OFFSET (GtkMenuShellClass, deactivate),
                   NULL, NULL,
-                  _gtk_marshal_VOID__VOID,
+                  NULL,
                   G_TYPE_NONE, 0);
 
   /**
@@ -242,7 +243,7 @@ gtk_menu_shell_class_init (GtkMenuShellClass *klass)
                   G_SIGNAL_RUN_FIRST,
                   G_STRUCT_OFFSET (GtkMenuShellClass, selection_done),
                   NULL, NULL,
-                  _gtk_marshal_VOID__VOID,
+                  NULL,
                   G_TYPE_NONE, 0);
 
   /**
@@ -259,7 +260,7 @@ gtk_menu_shell_class_init (GtkMenuShellClass *klass)
                   G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
                   G_STRUCT_OFFSET (GtkMenuShellClass, move_current),
                   NULL, NULL,
-                  _gtk_marshal_VOID__ENUM,
+                  NULL,
                   G_TYPE_NONE, 1,
                   GTK_TYPE_MENU_DIRECTION_TYPE);
 
@@ -277,7 +278,7 @@ gtk_menu_shell_class_init (GtkMenuShellClass *klass)
                   G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
                   G_STRUCT_OFFSET (GtkMenuShellClass, activate_current),
                   NULL, NULL,
-                  _gtk_marshal_VOID__BOOLEAN,
+                  NULL,
                   G_TYPE_NONE, 1,
                   G_TYPE_BOOLEAN);
 
@@ -294,7 +295,7 @@ gtk_menu_shell_class_init (GtkMenuShellClass *klass)
                   G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
                   G_STRUCT_OFFSET (GtkMenuShellClass, cancel),
                   NULL, NULL,
-                  _gtk_marshal_VOID__VOID,
+                  NULL,
                   G_TYPE_NONE, 0);
 
   /**
@@ -311,7 +312,7 @@ gtk_menu_shell_class_init (GtkMenuShellClass *klass)
                                 G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
                                 G_CALLBACK (gtk_real_menu_shell_cycle_focus),
                                 NULL, NULL,
-                                _gtk_marshal_VOID__ENUM,
+                                NULL,
                                 G_TYPE_NONE, 1,
                                 GTK_TYPE_DIRECTION_TYPE);
 
@@ -360,6 +361,9 @@ gtk_menu_shell_class_init (GtkMenuShellClass *klass)
                   NULL, NULL,
                   _gtk_marshal_VOID__OBJECT_INT,
                   G_TYPE_NONE, 2, GTK_TYPE_WIDGET, G_TYPE_INT);
+  g_signal_set_va_marshaller (menu_shell_signals[INSERT],
+                              G_OBJECT_CLASS_TYPE (object_class),
+                              _gtk_marshal_VOID__OBJECT_INTv);
 
 
   binding_set = gtk_binding_set_by_class (klass);
@@ -585,7 +589,6 @@ gtk_menu_shell_realize (GtkWidget *widget)
   GdkWindow *window;
   GdkWindowAttr attributes;
   gint attributes_mask;
-  GtkStyleContext *context;
 
   gtk_widget_set_realized (widget, TRUE);
 
@@ -599,8 +602,7 @@ gtk_menu_shell_realize (GtkWidget *widget)
   attributes.wclass = GDK_INPUT_OUTPUT;
   attributes.visual = gtk_widget_get_visual (widget);
   attributes.event_mask = gtk_widget_get_events (widget);
-  attributes.event_mask |= (GDK_EXPOSURE_MASK |
-                            GDK_BUTTON_PRESS_MASK |
+  attributes.event_mask |= (GDK_BUTTON_PRESS_MASK |
                             GDK_BUTTON_RELEASE_MASK |
                             GDK_POINTER_MOTION_MASK |
                             GDK_KEY_PRESS_MASK |
@@ -613,9 +615,6 @@ gtk_menu_shell_realize (GtkWidget *widget)
                            &attributes, attributes_mask);
   gtk_widget_set_window (widget, window);
   gtk_widget_register_window (widget, window);
-
-  context = gtk_widget_get_style_context (widget);
-  gtk_style_context_set_background (context, window);
 }
 
 static void
@@ -630,7 +629,7 @@ gtk_menu_shell_activate (GtkMenuShell *menu_shell)
       device = gtk_get_current_event_device ();
 
       _gtk_menu_shell_set_grab_device (menu_shell, device);
-      gtk_device_grab_add (GTK_WIDGET (menu_shell), device, TRUE);
+      gtk_grab_add (GTK_WIDGET (menu_shell));
 
       priv->have_grab = TRUE;
       priv->active = TRUE;
@@ -1177,18 +1176,11 @@ gtk_real_menu_shell_deactivate (GtkMenuShell *menu_shell)
       if (priv->have_grab)
         {
           priv->have_grab = FALSE;
-          gtk_device_grab_remove (GTK_WIDGET (menu_shell), priv->grab_pointer);
+          gtk_grab_remove (GTK_WIDGET (menu_shell));
         }
       if (priv->have_xgrab)
         {
-          GdkDevice *keyboard;
-
-          gdk_device_ungrab (priv->grab_pointer, GDK_CURRENT_TIME);
-          keyboard = gdk_device_get_associated_device (priv->grab_pointer);
-
-          if (keyboard)
-            gdk_device_ungrab (keyboard, GDK_CURRENT_TIME);
-
+          gdk_seat_ungrab (gdk_device_get_seat (priv->grab_pointer));
           priv->have_xgrab = FALSE;
         }
 
@@ -1249,12 +1241,13 @@ void
 gtk_menu_shell_select_item (GtkMenuShell *menu_shell,
                             GtkWidget    *menu_item)
 {
-  GtkMenuShellPrivate *priv = menu_shell->priv;
+  GtkMenuShellPrivate *priv;
   GtkMenuShellClass *class;
 
   g_return_if_fail (GTK_IS_MENU_SHELL (menu_shell));
   g_return_if_fail (GTK_IS_MENU_ITEM (menu_item));
 
+  priv = menu_shell->priv;
   class = GTK_MENU_SHELL_GET_CLASS (menu_shell);
 
   if (class->select_item &&
@@ -1316,9 +1309,11 @@ gtk_menu_shell_real_select_item (GtkMenuShell *menu_shell,
 void
 gtk_menu_shell_deselect (GtkMenuShell *menu_shell)
 {
-  GtkMenuShellPrivate *priv = menu_shell->priv;
+  GtkMenuShellPrivate *priv;
 
   g_return_if_fail (GTK_IS_MENU_SHELL (menu_shell));
+
+  priv = menu_shell->priv;
 
   if (priv->active_menu_item)
     {
@@ -1863,10 +1858,12 @@ void
 _gtk_menu_shell_set_grab_device (GtkMenuShell *menu_shell,
                                  GdkDevice    *device)
 {
-  GtkMenuShellPrivate *priv = menu_shell->priv;
+  GtkMenuShellPrivate *priv;
 
   g_return_if_fail (GTK_IS_MENU_SHELL (menu_shell));
   g_return_if_fail (device == NULL || GDK_IS_DEVICE (device));
+
+  priv = menu_shell->priv;
 
   if (!device)
     priv->grab_pointer = NULL;
@@ -1941,9 +1938,11 @@ void
 gtk_menu_shell_set_take_focus (GtkMenuShell *menu_shell,
                                gboolean      take_focus)
 {
-  GtkMenuShellPrivate *priv = menu_shell->priv;
+  GtkMenuShellPrivate *priv;
 
   g_return_if_fail (GTK_IS_MENU_SHELL (menu_shell));
+
+  priv = menu_shell->priv;
 
   if (priv->take_focus != take_focus)
     {

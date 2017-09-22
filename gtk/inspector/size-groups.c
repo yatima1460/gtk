@@ -249,10 +249,10 @@ add_size_group (GtkInspectorSizeGroups *sl,
   g_object_set (combo, "margin", 10, NULL);
   gtk_widget_set_halign (combo, GTK_ALIGN_END);
   gtk_widget_set_valign (combo, GTK_ALIGN_BASELINE);
-  gtk_combo_box_text_append_text (GTK_COMBO_BOX_TEXT (combo), _("None"));
-  gtk_combo_box_text_append_text (GTK_COMBO_BOX_TEXT (combo), _("Horizontal"));
-  gtk_combo_box_text_append_text (GTK_COMBO_BOX_TEXT (combo), _("Vertical"));
-  gtk_combo_box_text_append_text (GTK_COMBO_BOX_TEXT (combo), _("Both"));
+  gtk_combo_box_text_append_text (GTK_COMBO_BOX_TEXT (combo), C_("sizegroup mode", "None"));
+  gtk_combo_box_text_append_text (GTK_COMBO_BOX_TEXT (combo), C_("sizegroup mode", "Horizontal"));
+  gtk_combo_box_text_append_text (GTK_COMBO_BOX_TEXT (combo), C_("sizegroup mode", "Vertical"));
+  gtk_combo_box_text_append_text (GTK_COMBO_BOX_TEXT (combo), C_("sizegroup mode", "Both"));
   g_object_bind_property (group, "mode",
                           combo, "active",
                           G_BINDING_BIDIRECTIONAL | G_BINDING_SYNC_CREATE);
@@ -274,8 +274,6 @@ gtk_inspector_size_groups_set_object (GtkInspectorSizeGroups *sl,
                                       GObject                *object)
 {
   GSList *groups, *l;
-  const gchar *title;
-  GtkWidget *label;
 
   clear_view (sl);
 
@@ -284,16 +282,6 @@ gtk_inspector_size_groups_set_object (GtkInspectorSizeGroups *sl,
       gtk_widget_hide (GTK_WIDGET (sl));
       return;
     }
-
-  title = (const gchar *)g_object_get_data (object, "gtk-inspector-object-title");
-  label = gtk_label_new (title);
-
-  gtk_widget_set_halign (label, GTK_ALIGN_FILL);
-  gtk_widget_set_valign (label, GTK_ALIGN_CENTER);
-  gtk_widget_set_margin_top (label, 12);
-  gtk_widget_set_margin_bottom (label, 30);
-  gtk_widget_show (label);
-  gtk_container_add (GTK_CONTAINER (sl), label);
 
   groups = _gtk_widget_get_sizegroups (GTK_WIDGET (object));
   if (groups)
@@ -313,6 +301,7 @@ gtk_inspector_size_groups_init (GtkInspectorSizeGroups *sl)
                 "margin-start", 60,
                 "margin-end", 60,
                 "margin-bottom", 60,
+                "margin-bottom", 30,
                 "spacing", 10,
                 NULL);
 }

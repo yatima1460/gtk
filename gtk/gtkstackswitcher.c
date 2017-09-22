@@ -21,6 +21,8 @@
 #include "gtkstackswitcher.h"
 #include "gtkradiobutton.h"
 #include "gtklabel.h"
+#include "gtkdnd.h"
+#include "gtkdragdest.h"
 #include "gtkorientable.h"
 #include "gtkprivate.h"
 #include "gtkintl.h"
@@ -42,18 +44,33 @@
  * with the same stack widget.
  *
  * The GtkStackSwitcher widget was added in 3.10.
+ *
+ * # CSS nodes
+ *
+ * GtkStackSwitcher has a single CSS node named stackswitcher and
+ * style class .stack-switcher.
+ *
+ * When circumstances require it, GtkStackSwitcher adds the
+ * .needs-attention style class to the widgets representing the
+ * stack pages.
  */
+
+#define TIMEOUT_EXPAND 500
 
 typedef struct _GtkStackSwitcherPrivate GtkStackSwitcherPrivate;
 struct _GtkStackSwitcherPrivate
 {
   GtkStack *stack;
   GHashTable *buttons;
+  gint icon_size;
   gboolean in_child_changed;
+  GtkWidget *switch_button;
+  guint switch_timer;
 };
 
 enum {
   PROP_0,
+  PROP_ICON_SIZE,
   PROP_STACK
 };
 
@@ -65,8 +82,11 @@ gtk_stack_switcher_init (GtkStackSwitcher *switcher)
   GtkStyleContext *context;
   GtkStackSwitcherPrivate *priv;
 
+  gtk_widget_set_has_window (GTK_WIDGET (switcher), FALSE);
+
   priv = gtk_stack_switcher_get_instance_private (switcher);
 
+  priv->icon_size = GTK_ICON_SIZE_MENU;
   priv->stack = NULL;
   priv->buttons = g_hash_table_new (g_direct_hash, g_direct_equal);
 
@@ -75,6 +95,9 @@ gtk_stack_switcher_init (GtkStackSwitcher *switcher)
   gtk_style_context_add_class (context, GTK_STYLE_CLASS_LINKED);
 
   gtk_orientable_set_orientation (GTK_ORIENTABLE (switcher), GTK_ORIENTATION_HORIZONTAL);
+
+  gtk_drag_dest_set (GTK_WIDGET (switcher), 0, NULL, 0, 0);
+  gtk_drag_dest_set_track_motion (GTK_WIDGET (switcher), TRUE);
 }
 
 static void
@@ -96,7 +119,8 @@ on_button_clicked (GtkWidget        *widget,
 static void
 rebuild_child (GtkWidget   *self,
                const gchar *icon_name,
-               const gchar *title)
+               const gchar *title,
+               gint         icon_size)
 {
   GtkStyleContext *context;
   GtkWidget *button_child;
@@ -110,7 +134,7 @@ rebuild_child (GtkWidget   *self,
 
   if (icon_name != NULL)
     {
-      button_child = gtk_image_new_from_icon_name (icon_name, GTK_ICON_SIZE_MENU);
+      button_child = gtk_image_new_from_icon_name (icon_name, icon_size);
       if (title != NULL)
         gtk_widget_set_tooltip_text (GTK_WIDGET (self), title);
 
@@ -170,14 +194,9 @@ update_button (GtkStackSwitcher *self,
                            "icon-name", &icon_name,
                            NULL);
 
-  rebuild_child (button, icon_name, title);
+  rebuild_child (button, icon_name, title, priv->icon_size);
 
   gtk_widget_set_visible (button, gtk_widget_get_visible (widget) && (title != NULL || icon_name != NULL));
-
-  if (icon_name != NULL)
-    gtk_widget_set_size_request (button, -1, -1);
-  else
-    gtk_widget_set_size_request (button, 100, -1);
 
   g_free (title);
   g_free (icon_name);
@@ -234,6 +253,102 @@ on_needs_attention_updated (GtkWidget        *widget,
 }
 
 static void
+remove_switch_timer (GtkStackSwitcher *self)
+{
+  GtkStackSwitcherPrivate *priv;
+
+  priv = gtk_stack_switcher_get_instance_private (self);
+
+  if (priv->switch_timer)
+    {
+      g_source_remove (priv->switch_timer);
+      priv->switch_timer = 0;
+    }
+}
+
+static gboolean
+gtk_stack_switcher_switch_timeout (gpointer data)
+{
+  GtkStackSwitcher *self = data;
+  GtkStackSwitcherPrivate *priv;
+  GtkWidget *button;
+
+  priv = gtk_stack_switcher_get_instance_private (self);
+
+  priv->switch_timer = 0;
+
+  button = priv->switch_button;
+  priv->switch_button = NULL;
+
+  if (button)
+    gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON (button), TRUE);
+
+  return G_SOURCE_REMOVE;
+}
+
+static gboolean
+gtk_stack_switcher_drag_motion (GtkWidget      *widget,
+                                GdkDragContext *context,
+                                gint            x,
+                                gint            y,
+                                guint           time)
+{
+  GtkStackSwitcher *self = GTK_STACK_SWITCHER (widget);
+  GtkStackSwitcherPrivate *priv;
+  GtkAllocation allocation;
+  GtkWidget *button;
+  GHashTableIter iter;
+  gpointer value;
+  gboolean retval = FALSE;
+
+  gtk_widget_get_allocation (widget, &allocation);
+
+  priv = gtk_stack_switcher_get_instance_private (self);
+
+  x += allocation.x;
+  y += allocation.y;
+
+  button = NULL;
+  g_hash_table_iter_init (&iter, priv->buttons);
+  while (g_hash_table_iter_next (&iter, NULL, &value))
+    {
+      gtk_widget_get_allocation (GTK_WIDGET (value), &allocation);
+      if (x >= allocation.x && x <= allocation.x + allocation.width &&
+          y >= allocation.y && y <= allocation.y + allocation.height)
+        {
+          button = GTK_WIDGET (value);
+          retval = TRUE;
+          break;
+        }
+    }
+
+  if (button != priv->switch_button)
+    remove_switch_timer (self);
+
+  priv->switch_button = button;
+
+  if (button && !priv->switch_timer)
+    {
+      priv->switch_timer = gdk_threads_add_timeout (TIMEOUT_EXPAND,
+                                                    gtk_stack_switcher_switch_timeout,
+                                                    self);
+      g_source_set_name_by_id (priv->switch_timer, "[gtk+] gtk_stack_switcher_switch_timeout");
+    }
+
+  return retval;
+}
+
+static void
+gtk_stack_switcher_drag_leave (GtkWidget      *widget,
+                               GdkDragContext *context,
+                               guint           time)
+{
+  GtkStackSwitcher *self = GTK_STACK_SWITCHER (widget);
+
+  remove_switch_timer (self);
+}
+
+static void
 add_child (GtkWidget        *widget,
            GtkStackSwitcher *self)
 {
@@ -244,7 +359,8 @@ add_child (GtkWidget        *widget,
   priv = gtk_stack_switcher_get_instance_private (self);
 
   button = gtk_radio_button_new (NULL);
-  gtk_button_set_focus_on_click (GTK_BUTTON (button), FALSE);
+
+  gtk_widget_set_focus_on_click (button, FALSE);
   gtk_toggle_button_set_mode (GTK_TOGGLE_BUTTON (button), FALSE);
 
   update_button (self, widget, button);
@@ -300,7 +416,9 @@ populate_switcher (GtkStackSwitcher *self)
   if (widget)
     {
       button = g_hash_table_lookup (priv->buttons, widget);
+      priv->in_child_changed = TRUE;
       gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON (button), TRUE);
+      priv->in_child_changed = FALSE;
     }
 }
 
@@ -426,7 +544,7 @@ gtk_stack_switcher_set_stack (GtkStackSwitcher *switcher,
  * Retrieves the stack.
  * See gtk_stack_switcher_set_stack().
  *
- * Returns: (transfer none): the stack, or %NULL if
+ * Returns: (nullable) (transfer none): the stack, or %NULL if
  *    none has been set explicitly.
  *
  * Since: 3.10
@@ -442,6 +560,30 @@ gtk_stack_switcher_get_stack (GtkStackSwitcher *switcher)
 }
 
 static void
+gtk_stack_switcher_set_icon_size (GtkStackSwitcher *switcher,
+                                  gint              icon_size)
+{
+  GtkStackSwitcherPrivate *priv;
+
+  g_return_if_fail (GTK_IS_STACK_SWITCHER (switcher));
+
+  priv = gtk_stack_switcher_get_instance_private (switcher);
+
+  if (icon_size != priv->icon_size)
+    {
+      priv->icon_size = icon_size;
+
+      if (priv->stack != NULL)
+        {
+          clear_switcher (switcher);
+          populate_switcher (switcher);
+        }
+
+      g_object_notify (G_OBJECT (switcher), "icon-size");
+    }
+}
+
+static void
 gtk_stack_switcher_get_property (GObject      *object,
                                  guint         prop_id,
                                  GValue       *value,
@@ -453,6 +595,10 @@ gtk_stack_switcher_get_property (GObject      *object,
   priv = gtk_stack_switcher_get_instance_private (switcher);
   switch (prop_id)
     {
+    case PROP_ICON_SIZE:
+      g_value_set_int (value, priv->icon_size);
+      break;
+
     case PROP_STACK:
       g_value_set_object (value, priv->stack);
       break;
@@ -473,6 +619,10 @@ gtk_stack_switcher_set_property (GObject      *object,
 
   switch (prop_id)
     {
+    case PROP_ICON_SIZE:
+      gtk_stack_switcher_set_icon_size (switcher, g_value_get_int (value));
+      break;
+
     case PROP_STACK:
       gtk_stack_switcher_set_stack (switcher, g_value_get_object (value));
       break;
@@ -488,6 +638,7 @@ gtk_stack_switcher_dispose (GObject *object)
 {
   GtkStackSwitcher *switcher = GTK_STACK_SWITCHER (object);
 
+  remove_switch_timer (switcher);
   gtk_stack_switcher_set_stack (switcher, NULL);
 
   G_OBJECT_CLASS (gtk_stack_switcher_parent_class)->dispose (object);
@@ -510,11 +661,31 @@ static void
 gtk_stack_switcher_class_init (GtkStackSwitcherClass *class)
 {
   GObjectClass *object_class = G_OBJECT_CLASS (class);
+  GtkWidgetClass *widget_class = GTK_WIDGET_CLASS (class);
 
   object_class->get_property = gtk_stack_switcher_get_property;
   object_class->set_property = gtk_stack_switcher_set_property;
   object_class->dispose = gtk_stack_switcher_dispose;
   object_class->finalize = gtk_stack_switcher_finalize;
+
+  widget_class->drag_motion = gtk_stack_switcher_drag_motion;
+  widget_class->drag_leave = gtk_stack_switcher_drag_leave;
+  /**
+   * GtkStackSwitcher:icon-size:
+   *
+   * Use the "icon-size" property to change the size of the image displayed
+   * when a #GtkStackSwitcher is displaying icons.
+   *
+   * Since: 3.20
+   */
+  g_object_class_install_property (object_class,
+                                   PROP_ICON_SIZE,
+                                   g_param_spec_int ("icon-size",
+                                                     P_("Icon Size"),
+                                                     P_("Symbolic size to use for named icon"),
+                                                     0, G_MAXINT,
+                                                     GTK_ICON_SIZE_MENU,
+                                                     G_PARAM_EXPLICIT_NOTIFY | GTK_PARAM_READWRITE));
 
   g_object_class_install_property (object_class,
                                    PROP_STACK,
@@ -524,6 +695,8 @@ gtk_stack_switcher_class_init (GtkStackSwitcherClass *class)
                                                         GTK_TYPE_STACK,
                                                         GTK_PARAM_READWRITE |
                                                         G_PARAM_CONSTRUCT));
+
+  gtk_widget_class_set_css_name (widget_class, "stackswitcher");
 }
 
 /**

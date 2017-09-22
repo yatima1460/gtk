@@ -196,7 +196,8 @@ enum
   PROP_SORT_INDICATOR,
   PROP_SORT_ORDER,
   PROP_SORT_COLUMN_ID,
-  PROP_CELL_AREA
+  PROP_CELL_AREA,
+  LAST_PROP
 };
 
 enum
@@ -206,6 +207,7 @@ enum
 };
 
 static guint tree_column_signals[LAST_SIGNAL] = { 0 };
+static GParamSpec *tree_column_props[LAST_PROP] = { NULL, };
 
 G_DEFINE_TYPE_WITH_CODE (GtkTreeViewColumn, gtk_tree_view_column, G_TYPE_INITIALLY_UNOWNED,
                          G_ADD_PRIVATE (GtkTreeViewColumn)
@@ -236,151 +238,135 @@ gtk_tree_view_column_class_init (GtkTreeViewColumnClass *class)
                   G_SIGNAL_RUN_LAST,
                   G_STRUCT_OFFSET (GtkTreeViewColumnClass, clicked),
                   NULL, NULL,
-                  _gtk_marshal_VOID__VOID,
+                  NULL,
                   G_TYPE_NONE, 0);
 
-  g_object_class_install_property (object_class,
-                                   PROP_VISIBLE,
-                                   g_param_spec_boolean ("visible",
-                                                        P_("Visible"),
-                                                        P_("Whether to display the column"),
-                                                         TRUE,
-                                                         GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
-  
-  g_object_class_install_property (object_class,
-                                   PROP_RESIZABLE,
-                                   g_param_spec_boolean ("resizable",
-							 P_("Resizable"),
-							 P_("Column is user-resizable"),
-                                                         FALSE,
-                                                         GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
-  
-  g_object_class_install_property (object_class,
-                                   PROP_X_OFFSET,
-                                   g_param_spec_int ("x-offset",
-                                                     P_("X position"),
-                                                     P_("Current X position of the column"),
-                                                     -G_MAXINT,
-                                                     G_MAXINT,
-                                                     0,
-                                                     GTK_PARAM_READABLE));
+  tree_column_props[PROP_VISIBLE] =
+      g_param_spec_boolean ("visible",
+                            P_("Visible"),
+                            P_("Whether to display the column"),
+                            TRUE,
+                            GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
-  g_object_class_install_property (object_class,
-                                   PROP_WIDTH,
-                                   g_param_spec_int ("width",
-						     P_("Width"),
-						     P_("Current width of the column"),
-						     0,
-						     G_MAXINT,
-						     0,
-						     GTK_PARAM_READABLE));
-  g_object_class_install_property (object_class,
-                                   PROP_SPACING,
-                                   g_param_spec_int ("spacing",
-						     P_("Spacing"),
-						     P_("Space which is inserted between cells"),
-						     0,
-						     G_MAXINT,
-						     0,
-						     GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
-  g_object_class_install_property (object_class,
-                                   PROP_SIZING,
-                                   g_param_spec_enum ("sizing",
-                                                      P_("Sizing"),
-                                                      P_("Resize mode of the column"),
-                                                      GTK_TYPE_TREE_VIEW_COLUMN_SIZING,
-                                                      GTK_TREE_VIEW_COLUMN_GROW_ONLY,
-                                                      GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
-  
-  g_object_class_install_property (object_class,
-                                   PROP_FIXED_WIDTH,
-                                   g_param_spec_int ("fixed-width",
-                                                     P_("Fixed Width"),
-                                                     P_("Current fixed width of the column"),
-                                                     -1, G_MAXINT, -1,
-                                                     GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
+  tree_column_props[PROP_RESIZABLE] =
+      g_param_spec_boolean ("resizable",
+                            P_("Resizable"),
+                            P_("Column is user-resizable"),
+                            FALSE,
+                            GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
-  g_object_class_install_property (object_class,
-                                   PROP_MIN_WIDTH,
-                                   g_param_spec_int ("min-width",
-                                                     P_("Minimum Width"),
-                                                     P_("Minimum allowed width of the column"),
-                                                     -1, G_MAXINT, -1,
-                                                     GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
+  tree_column_props[PROP_X_OFFSET] =
+      g_param_spec_int ("x-offset",
+                        P_("X position"),
+                        P_("Current X position of the column"),
+                        -G_MAXINT, G_MAXINT,
+                        0,
+                        GTK_PARAM_READABLE);
 
-  g_object_class_install_property (object_class,
-                                   PROP_MAX_WIDTH,
-                                   g_param_spec_int ("max-width",
-                                                     P_("Maximum Width"),
-                                                     P_("Maximum allowed width of the column"),
-                                                     -1, G_MAXINT, -1,
-                                                     GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
+  tree_column_props[PROP_WIDTH] =
+      g_param_spec_int ("width",
+                        P_("Width"),
+                        P_("Current width of the column"),
+                        0, G_MAXINT,
+                        0,
+                        GTK_PARAM_READABLE);
 
-  g_object_class_install_property (object_class,
-                                   PROP_TITLE,
-                                   g_param_spec_string ("title",
-                                                        P_("Title"),
-                                                        P_("Title to appear in column header"),
-                                                        "",
-                                                        GTK_PARAM_READWRITE));
-  
-  g_object_class_install_property (object_class,
-                                   PROP_EXPAND,
-                                   g_param_spec_boolean ("expand",
-							 P_("Expand"),
-							 P_("Column gets share of extra width allocated to the widget"),
-							 FALSE,
-							 GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
-  
-  g_object_class_install_property (object_class,
-                                   PROP_CLICKABLE,
-                                   g_param_spec_boolean ("clickable",
-                                                        P_("Clickable"),
-                                                        P_("Whether the header can be clicked"),
-                                                         FALSE,
-                                                         GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
-  
+  tree_column_props[PROP_SPACING] =
+      g_param_spec_int ("spacing",
+                        P_("Spacing"),
+                        P_("Space which is inserted between cells"),
+                        0, G_MAXINT,
+                        0,
+                        GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
-  g_object_class_install_property (object_class,
-                                   PROP_WIDGET,
-                                   g_param_spec_object ("widget",
-                                                        P_("Widget"),
-                                                        P_("Widget to put in column header button instead of column title"),
-                                                        GTK_TYPE_WIDGET,
-                                                        GTK_PARAM_READWRITE));
+  tree_column_props[PROP_SIZING] =
+      g_param_spec_enum ("sizing",
+                         P_("Sizing"),
+                         P_("Resize mode of the column"),
+                         GTK_TYPE_TREE_VIEW_COLUMN_SIZING,
+                         GTK_TREE_VIEW_COLUMN_GROW_ONLY,
+                         GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
-  g_object_class_install_property (object_class,
-                                   PROP_ALIGNMENT,
-                                   g_param_spec_float ("alignment",
-                                                       P_("Alignment"),
-                                                       P_("X Alignment of the column header text or widget"),
-                                                       0.0, 1.0, 0.0,
-                                                       GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
+  tree_column_props[PROP_FIXED_WIDTH] =
+      g_param_spec_int ("fixed-width",
+                         P_("Fixed Width"),
+                         P_("Current fixed width of the column"),
+                         -1, G_MAXINT,
+                         -1,
+                         GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
-  g_object_class_install_property (object_class,
-                                   PROP_REORDERABLE,
-                                   g_param_spec_boolean ("reorderable",
-							 P_("Reorderable"),
-							 P_("Whether the column can be reordered around the headers"),
-							 FALSE,
-							 GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
+  tree_column_props[PROP_MIN_WIDTH] =
+      g_param_spec_int ("min-width",
+                        P_("Minimum Width"),
+                        P_("Minimum allowed width of the column"),
+                        -1, G_MAXINT,
+                        -1,
+                        GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
-  g_object_class_install_property (object_class,
-                                   PROP_SORT_INDICATOR,
-                                   g_param_spec_boolean ("sort-indicator",
-                                                        P_("Sort indicator"),
-                                                        P_("Whether to show a sort indicator"),
-                                                         FALSE,
-                                                         GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
+  tree_column_props[PROP_MAX_WIDTH] =
+      g_param_spec_int ("max-width",
+                        P_("Maximum Width"),
+                        P_("Maximum allowed width of the column"),
+                        -1, G_MAXINT,
+                        -1,
+                        GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
-  g_object_class_install_property (object_class,
-                                   PROP_SORT_ORDER,
-                                   g_param_spec_enum ("sort-order",
-                                                      P_("Sort order"),
-                                                      P_("Sort direction the sort indicator should indicate"),
-                                                      GTK_TYPE_SORT_TYPE,
-                                                      GTK_SORT_ASCENDING,
-                                                      GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
+  tree_column_props[PROP_TITLE] =
+      g_param_spec_string ("title",
+                           P_("Title"),
+                           P_("Title to appear in column header"),
+                           "",
+                           GTK_PARAM_READWRITE);
+
+  tree_column_props[PROP_EXPAND] =
+      g_param_spec_boolean ("expand",
+                            P_("Expand"),
+                            P_("Column gets share of extra width allocated to the widget"),
+                            FALSE,
+                            GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
+
+  tree_column_props[PROP_CLICKABLE] =
+      g_param_spec_boolean ("clickable",
+                            P_("Clickable"),
+                            P_("Whether the header can be clicked"),
+                            FALSE,
+                            GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
+
+  tree_column_props[PROP_WIDGET] =
+      g_param_spec_object ("widget",
+                           P_("Widget"),
+                           P_("Widget to put in column header button instead of column title"),
+                           GTK_TYPE_WIDGET,
+                           GTK_PARAM_READWRITE);
+
+  tree_column_props[PROP_ALIGNMENT] =
+      g_param_spec_float ("alignment",
+                          P_("Alignment"),
+                          P_("X Alignment of the column header text or widget"),
+                          0.0, 1.0, 0.0,
+                          GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
+
+  tree_column_props[PROP_REORDERABLE] =
+      g_param_spec_boolean ("reorderable",
+                            P_("Reorderable"),
+                            P_("Whether the column can be reordered around the headers"),
+                            FALSE,
+                            GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
+
+  tree_column_props[PROP_SORT_INDICATOR] =
+      g_param_spec_boolean ("sort-indicator",
+                            P_("Sort indicator"),
+                            P_("Whether to show a sort indicator"),
+                            FALSE,
+                            GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
+
+  tree_column_props[PROP_SORT_ORDER] =
+      g_param_spec_enum ("sort-order",
+                         P_("Sort order"),
+                         P_("Sort direction the sort indicator should indicate"),
+                         GTK_TYPE_SORT_TYPE,
+                         GTK_SORT_ASCENDING,
+                         GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
    * GtkTreeViewColumn:sort-column-id:
@@ -390,13 +376,13 @@ gtk_tree_view_column_class_init (GtkTreeViewColumnClass *class)
    *
    * Since: 2.18
    **/
-  g_object_class_install_property (object_class,
-                                   PROP_SORT_COLUMN_ID,
-                                   g_param_spec_int ("sort-column-id",
-                                                     P_("Sort column ID"),
-                                                     P_("Logical sort column ID this column sorts on when selected for sorting"),
-                                                     -1, G_MAXINT, -1,
-                                                     GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
+  tree_column_props[PROP_SORT_COLUMN_ID] =
+      g_param_spec_int ("sort-column-id",
+                        P_("Sort column ID"),
+                        P_("Logical sort column ID this column sorts on when selected for sorting"),
+                        -1, G_MAXINT,
+                        -1,
+                        GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
 
   /**
    * GtkTreeViewColumn:cell-area:
@@ -408,13 +394,14 @@ gtk_tree_view_column_class_init (GtkTreeViewColumnClass *class)
    *
    * Since: 3.0
    */
-  g_object_class_install_property (object_class,
-				   PROP_CELL_AREA,
-				   g_param_spec_object ("cell-area",
-							P_("Cell Area"),
-							P_("The GtkCellArea used to layout cells"),
-							GTK_TYPE_CELL_AREA,
-							GTK_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
+  tree_column_props[PROP_CELL_AREA] =
+      g_param_spec_object ("cell-area",
+                           P_("Cell Area"),
+                           P_("The GtkCellArea used to layout cells"),
+                           GTK_TYPE_CELL_AREA,
+                           GTK_PARAM_READWRITE|G_PARAM_CONSTRUCT_ONLY);
+
+  g_object_class_install_properties (object_class, LAST_PROP, tree_column_props);
 }
 
 static void
@@ -472,6 +459,8 @@ gtk_tree_view_column_init (GtkTreeViewColumn *tree_column)
   priv->maybe_reordered = FALSE;
   priv->fixed_width = -1;
   priv->title = g_strdup ("");
+
+  gtk_tree_view_column_create_button (tree_column);
 }
 
 static void
@@ -525,6 +514,8 @@ gtk_tree_view_column_dispose (GObject *object)
       g_object_unref (priv->child);
       priv->child = NULL;
     }
+
+  g_clear_object (&priv->button);
 
   G_OBJECT_CLASS (gtk_tree_view_column_parent_class)->dispose (object);
 }
@@ -822,25 +813,16 @@ static void
 gtk_tree_view_column_create_button (GtkTreeViewColumn *tree_column)
 {
   GtkTreeViewColumnPrivate *priv = tree_column->priv;
-  GtkTreeView *tree_view;
   GtkWidget *child;
   GtkWidget *hbox;
 
-  tree_view = (GtkTreeView *) priv->tree_view;
-
-  g_return_if_fail (GTK_IS_TREE_VIEW (tree_view));
   g_return_if_fail (priv->button == NULL);
 
   priv->button = gtk_button_new ();
-  if (priv->visible)
-    gtk_widget_show (priv->button);
+  g_object_ref_sink (priv->button);
+
+  gtk_widget_show (priv->button);
   gtk_widget_add_events (priv->button, GDK_POINTER_MOTION_MASK);
-
-  /* make sure we own a reference to it as well. */
-  if (_gtk_tree_view_get_header_window (tree_view))
-    gtk_widget_set_parent_window (priv->button, _gtk_tree_view_get_header_window (tree_view));
-
-  gtk_widget_set_parent (priv->button, GTK_WIDGET (tree_view));
 
   g_signal_connect (priv->button, "event",
 		    G_CALLBACK (gtk_tree_view_column_button_event),
@@ -884,7 +866,6 @@ G_GNUC_END_IGNORE_DEPRECATIONS
 
   gtk_widget_show (hbox);
   gtk_widget_show (priv->alignment);
-  gtk_tree_view_column_update_button (tree_column);
 }
 
 static void 
@@ -903,16 +884,6 @@ gtk_tree_view_column_update_button (GtkTreeViewColumn *tree_column)
     model = gtk_tree_view_get_model (GTK_TREE_VIEW (priv->tree_view));
   else
     model = NULL;
-
-  /* Create a button if necessary */
-  if (priv->visible &&
-      priv->button == NULL &&
-      priv->tree_view &&
-      gtk_widget_get_realized (priv->tree_view))
-    gtk_tree_view_column_create_button (tree_column);
-  
-  if (! priv->button)
-    return;
 
   hbox = gtk_bin_get_child (GTK_BIN (priv->button));
   alignment = priv->alignment;
@@ -963,9 +934,12 @@ G_GNUC_END_IGNORE_DEPRECATIONS
     {
       gboolean alternative;
 
-      g_object_get (gtk_widget_get_settings (priv->tree_view),
-		    "gtk-alternative-sort-arrows", &alternative,
-		    NULL);
+      if (priv->tree_view)
+        g_object_get (gtk_widget_get_settings (priv->tree_view),
+                      "gtk-alternative-sort-arrows", &alternative,
+                      NULL);
+      else
+        alternative = FALSE;
 
       switch (priv->sort_order)
         {
@@ -1007,8 +981,7 @@ G_GNUC_END_IGNORE_DEPRECATIONS
 
   /* It's always safe to hide the button.  It isn't always safe to show it, as
    * if you show it before it's realized, it'll get the wrong window. */
-  if (priv->button &&
-      priv->tree_view != NULL &&
+  if (priv->tree_view != NULL &&
       gtk_widget_get_realized (priv->tree_view))
     {
       if (priv->visible &&
@@ -1056,9 +1029,8 @@ G_GNUC_END_IGNORE_DEPRECATIONS
   /* Queue a resize on the assumption that we always want to catch all changes
    * and columns don't change all that often.
    */
-  if (gtk_widget_get_realized (priv->tree_view))
+  if (priv->tree_view && gtk_widget_get_realized (priv->tree_view))
      gtk_widget_queue_resize (priv->tree_view);
-
 }
 
 /* Button signal handlers
@@ -1342,6 +1314,7 @@ _gtk_tree_view_column_realize_button (GtkTreeViewColumn *column)
   GdkWindowAttr attr;
   guint attributes_mask;
   gboolean rtl;
+  GdkDisplay *display;
 
   tree_view = (GtkTreeView *)priv->tree_view;
   rtl       = (gtk_widget_get_direction (priv->tree_view) == GTK_TEXT_DIR_RTL);
@@ -1362,8 +1335,8 @@ _gtk_tree_view_column_realize_button (GtkTreeViewColumn *column)
 		     GDK_POINTER_MOTION_MASK |
 		     GDK_KEY_PRESS_MASK);
   attributes_mask = GDK_WA_CURSOR | GDK_WA_X | GDK_WA_Y;
-  attr.cursor = gdk_cursor_new_for_display 
-    (gdk_window_get_display (_gtk_tree_view_get_header_window (tree_view)), GDK_SB_H_DOUBLE_ARROW);
+  display = gdk_window_get_display (_gtk_tree_view_get_header_window (tree_view));
+  attr.cursor = gdk_cursor_new_from_name (display, "col-resize");
   attr.y = 0;
   attr.width = TREE_VIEW_DRAG_WIDTH;
   attr.height = _gtk_tree_view_get_header_height (tree_view);
@@ -1376,7 +1349,7 @@ _gtk_tree_view_column_realize_button (GtkTreeViewColumn *column)
 
   gtk_tree_view_column_update_button (column);
 
-  g_object_unref (attr.cursor);
+  g_clear_object (&attr.cursor);
 }
 
 void
@@ -1418,7 +1391,12 @@ _gtk_tree_view_column_set_tree_view (GtkTreeViewColumn *column,
   g_assert (priv->tree_view == NULL);
 
   priv->tree_view = GTK_WIDGET (tree_view);
-  gtk_tree_view_column_create_button (column);
+
+  /* make sure we own a reference to it as well. */
+  if (_gtk_tree_view_get_header_window (tree_view))
+    gtk_widget_set_parent_window (priv->button, _gtk_tree_view_get_header_window (tree_view));
+
+  gtk_widget_set_parent (priv->button, GTK_WIDGET (tree_view));
 
   priv->property_changed_signal =
     g_signal_connect_swapped (tree_view,
@@ -1434,7 +1412,7 @@ _gtk_tree_view_column_unset_tree_view (GtkTreeViewColumn *column)
 {
   GtkTreeViewColumnPrivate *priv = column->priv;
 
-  if (priv->tree_view && priv->button)
+  if (priv->tree_view)
     {
       gtk_container_remove (GTK_CONTAINER (priv->tree_view), priv->button);
     }
@@ -1856,7 +1834,7 @@ gtk_tree_view_column_set_spacing (GtkTreeViewColumn *tree_column,
       gtk_cell_area_box_set_spacing (GTK_CELL_AREA_BOX (priv->cell_area), spacing);
       if (priv->tree_view)
         _gtk_tree_view_column_cell_set_dirty (tree_column, TRUE);
-      g_object_notify (G_OBJECT (tree_column), "spacing");
+      g_object_notify_by_pspec (G_OBJECT (tree_column), tree_column_props[PROP_SPACING]);
     }
 }
 
@@ -1905,18 +1883,19 @@ gtk_tree_view_column_set_visible (GtkTreeViewColumn *tree_column,
 
   priv->visible = visible;
 
+  gtk_widget_set_visible (priv->button, visible);
+
   if (priv->visible)
     _gtk_tree_view_column_cell_set_dirty (tree_column, TRUE);
 
   if (priv->tree_view)
     {
-      _gtk_tree_view_reset_header_styles (GTK_TREE_VIEW (priv->tree_view));
       _gtk_tree_view_accessible_toggle_visibility (GTK_TREE_VIEW (priv->tree_view),
                                                    tree_column);
     }
 
   gtk_tree_view_column_update_button (tree_column);
-  g_object_notify (G_OBJECT (tree_column), "visible");
+  g_object_notify_by_pspec (G_OBJECT (tree_column), tree_column_props[PROP_VISIBLE]);
 }
 
 /**
@@ -1967,7 +1946,7 @@ gtk_tree_view_column_set_resizable (GtkTreeViewColumn *tree_column,
 
   gtk_tree_view_column_update_button (tree_column);
 
-  g_object_notify (G_OBJECT (tree_column), "resizable");
+  g_object_notify_by_pspec (G_OBJECT (tree_column), tree_column_props[PROP_RESIZABLE]);
 }
 
 /**
@@ -2014,7 +1993,7 @@ gtk_tree_view_column_set_sizing (GtkTreeViewColumn       *tree_column,
 
   gtk_tree_view_column_update_button (tree_column);
 
-  g_object_notify (G_OBJECT (tree_column), "sizing");
+  g_object_notify_by_pspec (G_OBJECT (tree_column), tree_column_props[PROP_SIZING]);
 }
 
 /**
@@ -2151,8 +2130,8 @@ _gtk_tree_view_column_allocate (GtkTreeViewColumn *tree_column,
 			      TREE_VIEW_DRAG_WIDTH, allocation.height);
     }
 
-  g_object_notify (G_OBJECT (tree_column), "x-offset");
-  g_object_notify (G_OBJECT (tree_column), "width");
+  g_object_notify_by_pspec (G_OBJECT (tree_column), tree_column_props[PROP_X_OFFSET]);
+  g_object_notify_by_pspec (G_OBJECT (tree_column), tree_column_props[PROP_WIDTH]);
 }
 
 /**
@@ -2162,10 +2141,10 @@ _gtk_tree_view_column_allocate (GtkTreeViewColumn *tree_column,
  *
  * If @fixed_width is not -1, sets the fixed width of @tree_column; otherwise
  * unsets it.  The effective value of @fixed_width is clamped between the
- * minumum and maximum width of the column; however, the value stored in the
- * “fixed-width” property is not clamped.  If the column sizing is 
- * #GTK_TREE_VIEW_COLUMN_GROW_ONLY or #GTK_TREE_VIEW_COLUMN_AUTOSIZE, setting a
- * fixed width overrides the automatically calculated width.  Note that
+ * minimum and maximum width of the column; however, the value stored in the
+ * “fixed-width” property is not clamped.  If the column sizing is
+ * #GTK_TREE_VIEW_COLUMN_GROW_ONLY or #GTK_TREE_VIEW_COLUMN_AUTOSIZE, setting
+ * a fixed width overrides the automatically calculated width.  Note that
  * @fixed_width is only a hint to GTK+; the width actually allocated to the
  * column may be greater or less than requested.
  *
@@ -2191,7 +2170,7 @@ gtk_tree_view_column_set_fixed_width (GtkTreeViewColumn *tree_column,
           gtk_widget_get_realized (priv->tree_view))
         gtk_widget_queue_resize (priv->tree_view);
 
-      g_object_notify (G_OBJECT (tree_column), "fixed-width");
+      g_object_notify_by_pspec (G_OBJECT (tree_column), tree_column_props[PROP_FIXED_WIDTH]);
     }
 }
 
@@ -2247,9 +2226,9 @@ gtk_tree_view_column_set_min_width (GtkTreeViewColumn *tree_column,
   if (priv->max_width != -1 && priv->max_width < min_width)
     {
       priv->max_width = min_width;
-      g_object_notify (G_OBJECT (tree_column), "max-width");
+      g_object_notify_by_pspec (G_OBJECT (tree_column), tree_column_props[PROP_MAX_WIDTH]);
     }
-  g_object_notify (G_OBJECT (tree_column), "min-width");
+  g_object_notify_by_pspec (G_OBJECT (tree_column), tree_column_props[PROP_MIN_WIDTH]);
   g_object_thaw_notify (G_OBJECT (tree_column));
 
   if (priv->column_type == GTK_TREE_VIEW_COLUMN_AUTOSIZE && priv->tree_view)
@@ -2311,9 +2290,9 @@ gtk_tree_view_column_set_max_width (GtkTreeViewColumn *tree_column,
   if (max_width != -1 && max_width < priv->min_width)
     {
       priv->min_width = max_width;
-      g_object_notify (G_OBJECT (tree_column), "min-width");
+      g_object_notify_by_pspec (G_OBJECT (tree_column), tree_column_props[PROP_MIN_WIDTH]);
     }
-  g_object_notify (G_OBJECT (tree_column), "max-width");
+  g_object_notify_by_pspec (G_OBJECT (tree_column), tree_column_props[PROP_MAX_WIDTH]);
   g_object_thaw_notify (G_OBJECT (tree_column));
 
   if (priv->column_type == GTK_TREE_VIEW_COLUMN_AUTOSIZE && priv->tree_view)
@@ -2355,7 +2334,6 @@ gtk_tree_view_column_clicked (GtkTreeViewColumn *tree_column)
   priv = tree_column->priv;
 
   if (priv->visible &&
-      priv->button &&
       priv->clickable)
     gtk_button_clicked (GTK_BUTTON (priv->button));
 }
@@ -2384,7 +2362,7 @@ gtk_tree_view_column_set_title (GtkTreeViewColumn *tree_column,
   priv->title = new_title;
 
   gtk_tree_view_column_update_button (tree_column);
-  g_object_notify (G_OBJECT (tree_column), "title");
+  g_object_notify_by_pspec (G_OBJECT (tree_column), tree_column_props[PROP_TITLE]);
 }
 
 /**
@@ -2441,7 +2419,7 @@ gtk_tree_view_column_set_expand (GtkTreeViewColumn *tree_column,
       gtk_widget_queue_resize (priv->tree_view);
     }
 
-  g_object_notify (G_OBJECT (tree_column), "expand");
+  g_object_notify_by_pspec (G_OBJECT (tree_column), tree_column_props[PROP_EXPAND]);
 }
 
 /**
@@ -2486,7 +2464,7 @@ gtk_tree_view_column_set_clickable (GtkTreeViewColumn *tree_column,
 
   priv->clickable = clickable;
   gtk_tree_view_column_update_button (tree_column);
-  g_object_notify (G_OBJECT (tree_column), "clickable");
+  g_object_notify_by_pspec (G_OBJECT (tree_column), tree_column_props[PROP_CLICKABLE]);
 }
 
 /**
@@ -2527,12 +2505,12 @@ gtk_tree_view_column_set_widget (GtkTreeViewColumn *tree_column,
   if (widget)
     g_object_ref_sink (widget);
 
-  if (priv->child)      
+  if (priv->child)
     g_object_unref (priv->child);
 
   priv->child = widget;
   gtk_tree_view_column_update_button (tree_column);
-  g_object_notify (G_OBJECT (tree_column), "widget");
+  g_object_notify_by_pspec (G_OBJECT (tree_column), tree_column_props[PROP_WIDGET]);
 }
 
 /**
@@ -2542,7 +2520,7 @@ gtk_tree_view_column_set_widget (GtkTreeViewColumn *tree_column,
  * Returns the #GtkWidget in the button on the column header.
  * If a custom widget has not been set then %NULL is returned.
  *
- * Returns: (transfer none): The #GtkWidget in the column
+ * Returns: (nullable) (transfer none): The #GtkWidget in the column
  *     header, or %NULL
  **/
 GtkWidget *
@@ -2579,7 +2557,7 @@ gtk_tree_view_column_set_alignment (GtkTreeViewColumn *tree_column,
 
   priv->xalign = xalign;
   gtk_tree_view_column_update_button (tree_column);
-  g_object_notify (G_OBJECT (tree_column), "alignment");
+  g_object_notify_by_pspec (G_OBJECT (tree_column), tree_column_props[PROP_ALIGNMENT]);
 }
 
 /**
@@ -2625,7 +2603,7 @@ gtk_tree_view_column_set_reorderable (GtkTreeViewColumn *tree_column,
 
   priv->reorderable = (reorderable?TRUE:FALSE);
   gtk_tree_view_column_update_button (tree_column);
-  g_object_notify (G_OBJECT (tree_column), "reorderable");
+  g_object_notify_by_pspec (G_OBJECT (tree_column), tree_column_props[PROP_REORDERABLE]);
 }
 
 /**
@@ -2689,7 +2667,7 @@ gtk_tree_view_column_set_sort_column_id (GtkTreeViewColumn *tree_column,
       gtk_tree_view_column_set_sort_order (tree_column, GTK_SORT_ASCENDING);
       gtk_tree_view_column_set_sort_indicator (tree_column, FALSE);
       gtk_tree_view_column_set_clickable (tree_column, FALSE);
-      g_object_notify (G_OBJECT (tree_column), "sort-column-id");
+      g_object_notify_by_pspec (G_OBJECT (tree_column), tree_column_props[PROP_SORT_COLUMN_ID]);
       return;
     }
 
@@ -2702,7 +2680,7 @@ gtk_tree_view_column_set_sort_column_id (GtkTreeViewColumn *tree_column,
 						  NULL);
 
   gtk_tree_view_column_setup_sort_column_id_callback (tree_column);
-  g_object_notify (G_OBJECT (tree_column), "sort-column-id");
+  g_object_notify_by_pspec (G_OBJECT (tree_column), tree_column_props[PROP_SORT_COLUMN_ID]);
 }
 
 /**
@@ -2748,7 +2726,7 @@ gtk_tree_view_column_set_sort_indicator (GtkTreeViewColumn     *tree_column,
 
   tree_column->priv->show_sort_indicator = setting;
   gtk_tree_view_column_update_button (tree_column);
-  g_object_notify (G_OBJECT (tree_column), "sort-indicator");
+  g_object_notify_by_pspec (G_OBJECT (tree_column), tree_column_props[PROP_SORT_INDICATOR]);
 }
 
 /**
@@ -2795,7 +2773,7 @@ gtk_tree_view_column_set_sort_order      (GtkTreeViewColumn     *tree_column,
 
   tree_column->priv->sort_order = order;
   gtk_tree_view_column_update_button (tree_column);
-  g_object_notify (G_OBJECT (tree_column), "sort-order");
+  g_object_notify_by_pspec (G_OBJECT (tree_column), tree_column_props[PROP_SORT_ORDER]);
 }
 
 /**
@@ -3123,7 +3101,7 @@ gtk_tree_view_column_queue_resize (GtkTreeViewColumn *tree_column)
  * If @column is currently not inserted in any tree view, %NULL is
  * returned.
  *
- * Returns: (transfer none): The tree view wherein @column has
+ * Returns: (nullable) (transfer none): The tree view wherein @column has
  *     been inserted if any, %NULL otherwise.
  *
  * Since: 2.12

@@ -16,8 +16,6 @@
  */
 
 
-#define PANGO_ENABLE_BACKEND /* for pango_fc_font_map_cache_clear() */
-
 #include "config.h"
 
 #include <string.h>
@@ -43,6 +41,7 @@
 
 #ifdef GDK_WINDOWING_WAYLAND
 #include "wayland/gdkwayland.h"
+#include <pango/pangofc-fontmap.h>
 #endif
 
 #ifdef GDK_WINDOWING_BROADWAY
@@ -53,8 +52,8 @@
 #include "quartz/gdkquartz.h"
 #endif
 
-#ifdef G_OS_WIN32
-#include "gtkwin32themeprivate.h"
+#ifdef GDK_WINDOWING_WIN32
+#include "win32/gdkwin32.h"
 #endif
 
 #include "deprecated/gtkrc.h"
@@ -124,6 +123,9 @@ struct _GtkSettingsPrivate
   GSList *style_cascades;
   GtkCssProvider *theme_provider;
   GtkCssProvider *key_theme_provider;
+  gint font_size;
+  gboolean font_size_absolute;
+  gchar *font_family;
 };
 
 struct _GtkSettingsValuePrivate
@@ -221,7 +223,8 @@ enum {
   PROP_DIALOGS_USE_HEADER,
   PROP_ENABLE_PRIMARY_PASTE,
   PROP_RECENT_FILES_ENABLED,
-  PROP_LONG_PRESS_TIME
+  PROP_LONG_PRESS_TIME,
+  PROP_KEYNAV_USE_CARET
 };
 
 /* --- prototypes --- */
@@ -248,9 +251,14 @@ static void    settings_update_modules           (GtkSettings           *setting
 static void    settings_update_cursor_theme      (GtkSettings           *settings);
 static void    settings_update_resolution        (GtkSettings           *settings);
 static void    settings_update_font_options      (GtkSettings           *settings);
+static void    settings_update_font_values       (GtkSettings           *settings);
 static gboolean settings_update_fontconfig       (GtkSettings           *settings);
-static void    settings_update_theme             (GtkSettings *settings);
-static void    settings_update_key_theme         (GtkSettings *settings);
+static void    settings_update_theme             (GtkSettings           *settings);
+static void    settings_update_key_theme         (GtkSettings           *settings);
+static gboolean settings_update_xsetting         (GtkSettings           *settings,
+                                                  GParamSpec            *pspec,
+                                                  gboolean               force);
+static void    settings_update_xsettings         (GtkSettings           *settings);
 
 static void gtk_settings_load_from_key_file      (GtkSettings           *settings,
                                                   const gchar           *path,
@@ -266,8 +274,16 @@ static const gchar default_color_palette[] =
 
 /* --- variables --- */
 static GQuark            quark_property_parser = 0;
+static GQuark            quark_gtk_settings = 0;
 static GSList           *object_list = NULL;
 static guint             class_n_properties = 0;
+
+typedef struct {
+  GdkDisplay *display;
+  GtkSettings *settings;
+} DisplaySettings;
+
+static GArray *display_settings;
 
 
 G_DEFINE_TYPE_EXTENDED (GtkSettings, gtk_settings, G_TYPE_OBJECT, 0,
@@ -286,7 +302,6 @@ gtk_settings_init (GtkSettings *settings)
   guint i = 0;
   gchar *path;
   const gchar * const *config_dirs;
-  const gchar *config_dir;
 
   priv = gtk_settings_get_instance_private (settings);
   settings->priv = priv;
@@ -319,7 +334,7 @@ gtk_settings_init (GtkSettings *settings)
       g_value_init (&priv->property_values[i].value, value_type);
       g_param_value_set_default (pspec, &priv->property_values[i].value);
 
-      g_object_notify (G_OBJECT (settings), pspec->name);
+      g_object_notify_by_pspec (G_OBJECT (settings), pspec);
       priv->property_values[i].source = GTK_SETTINGS_SOURCE_DEFAULT;
       i++;
     }
@@ -336,9 +351,9 @@ gtk_settings_init (GtkSettings *settings)
   g_free (path);
 
   config_dirs = g_get_system_config_dirs ();
-  for (config_dir = *config_dirs; *config_dirs != NULL; config_dirs++)
+  for (i = 0; config_dirs[i] != NULL; i++)
     {
-      path = g_build_filename (config_dir, "gtk-3.0", "settings.ini", NULL);
+      path = g_build_filename (config_dirs[i], "gtk-3.0", "settings.ini", NULL);
       if (g_file_test (path, G_FILE_TEST_EXISTS))
         gtk_settings_load_from_key_file (settings, path, GTK_SETTINGS_SOURCE_DEFAULT);
       g_free (path);
@@ -350,6 +365,10 @@ gtk_settings_init (GtkSettings *settings)
   g_free (path);
 
   g_object_thaw_notify (G_OBJECT (settings));
+
+  /* ensure that derived fields are initialized */
+  if (priv->font_size == 0)
+    settings_update_font_values (settings);
 }
 
 static void
@@ -364,11 +383,13 @@ gtk_settings_class_init (GtkSettingsClass *class)
   gobject_class->notify = gtk_settings_notify;
 
   quark_property_parser = g_quark_from_static_string ("gtk-rc-property-parser");
+  quark_gtk_settings = g_quark_from_static_string ("gtk-settings");
+
   result = settings_install_property_parser (class,
                                              g_param_spec_int ("gtk-double-click-time",
                                                                P_("Double Click Time"),
                                                                P_("Maximum time allowed between two clicks for them to be considered a double click (in milliseconds)"),
-                                                               0, G_MAXINT, 250,
+                                                               0, G_MAXINT, 400,
                                                                GTK_PARAM_READWRITE),
                                              NULL);
   g_assert (result == PROP_DOUBLE_CLICK_TIME);
@@ -502,10 +523,15 @@ gtk_settings_class_init (GtkSettingsClass *class)
                                              NULL);
   g_assert (result == PROP_DND_DRAG_THRESHOLD);
 
+  /**
+   * GtkSettings:gtk-font-name:
+   *
+   * The default font to use. GTK+ uses the family name and size from this string.
+   */
   result = settings_install_property_parser (class,
                                              g_param_spec_string ("gtk-font-name",
                                                                    P_("Font Name"),
-                                                                   P_("Name of default font to use"),
+                                                                   P_("The default font family and size to use"),
                                                                   "Sans 10",
                                                                   GTK_PARAM_READWRITE),
                                              NULL);
@@ -922,7 +948,7 @@ gtk_settings_class_init (GtkSettingsClass *class)
   g_assert (result == PROP_ERROR_BELL);
 
   /**
-   * GtkSettings:color-hash: (element-type utf8 Gdk.Color)
+   * GtkSettings:color-hash: (type GLib.HashTable(utf8,Gdk.Color)) (transfer container)
    *
    * Holds a hash table representation of the #GtkSettings:gtk-color-scheme
    * setting, mapping color names to #GdkColors.
@@ -1308,13 +1334,17 @@ gtk_settings_class_init (GtkSettingsClass *class)
   g_assert (result == PROP_APPLICATION_PREFER_DARK_THEME);
 
   /**
-   * GtkSettings::gtk-button-images:
+   * GtkSettings:gtk-button-images:
    *
    * Whether images should be shown on buttons
    *
    * Since: 2.4
    *
-   * Deprecated: 3.10: This setting is deprecated
+   * Deprecated: 3.10: This setting is deprecated. Application developers
+   *   control whether a button should show an icon or not, on a
+   *   per-button basis. If a #GtkButton should show an icon, use the
+   *   #GtkButton:always-show-image property of #GtkButton, and pack a
+   *   #GtkImage inside the #GtkButton
    */
   result = settings_install_property_parser (class,
                                              g_param_spec_boolean ("gtk-button-images",
@@ -1354,11 +1384,15 @@ gtk_settings_class_init (GtkSettingsClass *class)
   g_assert (result == PROP_ENTRY_PASSWORD_HINT_TIMEOUT);
 
   /**
-   * GtkSettings::gtk-menu-images:
+   * GtkSettings:gtk-menu-images:
    *
    * Whether images should be shown in menu items
    *
-   * Deprecated: 3.10: This setting is deprecated
+   * Deprecated: 3.10: This setting is deprecated. Application developers
+   *   control whether or not a #GtkMenuItem should have an icon or not,
+   *   on a per widget basis. Either use a #GtkMenuItem with a #GtkBox
+   *   containing a #GtkImage and a #GtkAccelLabel, or describe your menus
+   *   using a #GMenu XML description
    */
   result = settings_install_property_parser (class,
                                              g_param_spec_boolean ("gtk-menu-images",
@@ -1588,7 +1622,7 @@ gtk_settings_class_init (GtkSettingsClass *class)
    * Recognized actions are minimize, toggle-maximize, menu, lower
    * or none.
    *
-   * Since: 3.14.1
+   * Since: 3.14
    */
   result = settings_install_property_parser (class,
                                              g_param_spec_string ("gtk-titlebar-double-click",
@@ -1607,7 +1641,7 @@ gtk_settings_class_init (GtkSettingsClass *class)
    * Recognized actions are minimize, toggle-maximize, menu, lower
    * or none.
    *
-   * Since: 3.14.1
+   * Since: 3.14
    */
   result = settings_install_property_parser (class,
                                              g_param_spec_string ("gtk-titlebar-middle-click",
@@ -1626,7 +1660,7 @@ gtk_settings_class_init (GtkSettingsClass *class)
    * Recognized actions are minimize, toggle-maximize, menu, lower
    * or none.
    *
-   * Since: 3.14.1
+   * Since: 3.14
    */
   result = settings_install_property_parser (class,
                                              g_param_spec_string ("gtk-titlebar-right-click",
@@ -1709,6 +1743,24 @@ gtk_settings_class_init (GtkSettingsClass *class)
 								GTK_PARAM_READWRITE),
                                              NULL);
   g_assert (result == PROP_LONG_PRESS_TIME);
+
+  /**
+   * GtkSettings:gtk-keynav-use-caret:
+   *
+   * Whether GTK+ should make sure that text can be navigated with
+   * a caret, even if it is not editable. This is useful when using
+   * a screen reader.
+   *
+   * Since: 3.20
+   */
+  result = settings_install_property_parser (class,
+                                             g_param_spec_boolean ("gtk-keynav-use-caret",
+                                                                   P_("Whether to show cursor in text"),
+                                                                   P_("Whether to show cursor in text"),
+                                                                   FALSE,
+                                                                   GTK_PARAM_READWRITE),
+                                             NULL);
+  g_assert (result == PROP_KEYNAV_USE_CARET);
 }
 
 static void
@@ -1746,6 +1798,8 @@ gtk_settings_finalize (GObject *object)
   settings_update_provider (priv->screen, &priv->theme_provider, NULL);
   settings_update_provider (priv->screen, &priv->key_theme_provider, NULL);
   g_slist_free_full (priv->style_cascades, g_object_unref);
+
+  g_free (priv->font_family);
 
   G_OBJECT_CLASS (gtk_settings_parent_class)->finalize (object);
 }
@@ -1821,6 +1875,67 @@ settings_init_style (GtkSettings *settings)
   settings_update_key_theme (settings);
 }
 
+static GtkSettings *
+gtk_settings_create_for_display (GdkDisplay *display)
+{
+  GtkSettings *settings;
+  DisplaySettings v;
+
+#ifdef GDK_WINDOWING_QUARTZ
+  if (GDK_IS_QUARTZ_DISPLAY (display))
+    settings = g_object_new (GTK_TYPE_SETTINGS,
+                             "gtk-key-theme-name", "Mac",
+                             "gtk-shell-shows-app-menu", TRUE,
+                             "gtk-shell-shows-menubar", TRUE,
+                             NULL);
+  else
+#endif
+#ifdef GDK_WINDOWING_BROADWAY
+    if (GDK_IS_BROADWAY_DISPLAY (display))
+      settings = g_object_new (GTK_TYPE_SETTINGS,
+                               "gtk-im-module", "broadway",
+                               NULL);
+  else
+#endif
+    settings = g_object_new (GTK_TYPE_SETTINGS, NULL);
+
+  settings->priv->screen = gdk_display_get_default_screen (display);
+
+  v.display = display;
+  v.settings = settings;
+  g_array_append_val (display_settings, v);
+
+  settings_init_style (settings);
+  settings_update_xsettings (settings);
+  settings_update_modules (settings);
+  settings_update_double_click (settings);
+  settings_update_cursor_theme (settings);
+  settings_update_resolution (settings);
+  settings_update_font_options (settings);
+  settings_update_font_values (settings);
+
+  return settings;
+}
+
+static GtkSettings *
+gtk_settings_get_for_display (GdkDisplay *display)
+{
+  DisplaySettings *ds;
+  int i;
+
+  if G_UNLIKELY (display_settings == NULL)
+    display_settings = g_array_new (FALSE, TRUE, sizeof (DisplaySettings));
+
+  ds = (DisplaySettings *)display_settings->data;
+  for (i = 0; i < display_settings->len; i++)
+    {
+      if (ds[i].display == display)
+        return ds[i].settings;
+    }
+
+  return gtk_settings_create_for_display (display);
+}
+
 /**
  * gtk_settings_get_for_screen:
  * @screen: a #GdkScreen.
@@ -1831,50 +1946,12 @@ settings_init_style (GtkSettings *settings)
  *
  * Since: 2.2
  */
-GtkSettings*
+GtkSettings *
 gtk_settings_get_for_screen (GdkScreen *screen)
 {
-  GtkSettings *settings;
-
   g_return_val_if_fail (GDK_IS_SCREEN (screen), NULL);
 
-  settings = g_object_get_data (G_OBJECT (screen), "gtk-settings");
-  if (!settings)
-    {
-#ifdef GDK_WINDOWING_QUARTZ
-      if (GDK_IS_QUARTZ_SCREEN (screen))
-        {
-          settings = g_object_new (GTK_TYPE_SETTINGS,
-                                   "gtk-key-theme-name", "Mac",
-                                   "gtk-shell-shows-app-menu", TRUE,
-                                   "gtk-shell-shows-menubar", TRUE,
-                                   NULL);
-        }
-      else
-#endif
-#ifdef GDK_WINDOWING_BROADWAY
-      if (GDK_IS_BROADWAY_DISPLAY (gdk_screen_get_display (screen)))
-        {
-          settings = g_object_new (GTK_TYPE_SETTINGS,
-                                   "gtk-im-module", "broadway",
-                                   NULL);
-        }
-      else
-#endif
-        settings = g_object_new (GTK_TYPE_SETTINGS, NULL);
-      settings->priv->screen = screen;
-      g_object_set_data_full (G_OBJECT (screen), I_("gtk-settings"),
-                              settings, g_object_unref);
-
-      settings_init_style (settings);
-      settings_update_modules (settings);
-      settings_update_double_click (settings);
-      settings_update_cursor_theme (settings);
-      settings_update_resolution (settings);
-      settings_update_font_options (settings);
-    }
-
-  return settings;
+  return gtk_settings_get_for_display (gdk_screen_get_display (screen));
 }
 
 /**
@@ -1883,16 +1960,16 @@ gtk_settings_get_for_screen (GdkScreen *screen)
  * Gets the #GtkSettings object for the default GDK screen, creating
  * it if necessary. See gtk_settings_get_for_screen().
  *
- * Returns: (transfer none): a #GtkSettings object. If there is no default
- *  screen, then returns %NULL.
+ * Returns: (nullable) (transfer none): a #GtkSettings object. If there is
+ * no default screen, then returns %NULL.
  **/
 GtkSettings*
 gtk_settings_get_default (void)
 {
-  GdkScreen *screen = gdk_screen_get_default ();
+  GdkDisplay *display = gdk_display_get_default ();
 
-  if (screen)
-    return gtk_settings_get_for_screen (screen);
+  if (display)
+    return gtk_settings_get_for_display (display);
   else
     return NULL;
 }
@@ -1911,88 +1988,47 @@ gtk_settings_set_property (GObject      *object,
 }
 
 static void
-gtk_settings_get_property (GObject     *object,
-                           guint        property_id,
-                           GValue      *value,
-                           GParamSpec  *pspec)
-{
-  GtkSettings *settings = GTK_SETTINGS (object);
-  GtkSettingsPrivate *priv = settings->priv;
-  GType value_type = G_VALUE_TYPE (value);
-  GType fundamental_type = G_TYPE_FUNDAMENTAL (value_type);
-
-  /* handle internal properties */
-  switch (property_id)
-    {
-    case PROP_COLOR_HASH:
-      g_value_take_boxed (value, g_hash_table_new (g_str_hash, g_str_equal));
-      return;
-    default: ;
-    }
-
-  /* For enums and strings, we need to get the value as a string,
-   * not as an int, since we support using names/nicks as the setting
-   * value.
-   */
-  if ((g_value_type_transformable (G_TYPE_INT, value_type) &&
-       !(fundamental_type == G_TYPE_ENUM || fundamental_type == G_TYPE_FLAGS)) ||
-      g_value_type_transformable (G_TYPE_STRING, G_VALUE_TYPE (value)) ||
-      g_value_type_transformable (GDK_TYPE_RGBA, G_VALUE_TYPE (value)))
-    {
-      if (priv->property_values[property_id - 1].source == GTK_SETTINGS_SOURCE_APPLICATION ||
-          !gdk_screen_get_setting (priv->screen, pspec->name, value))
-        g_value_copy (&priv->property_values[property_id - 1].value, value);
-      else
-        g_param_value_validate (pspec, value);
-    }
-  else
-    {
-      GValue val = G_VALUE_INIT;
-
-      /* Try to get xsetting as a string and parse it. */
-
-      g_value_init (&val, G_TYPE_STRING);
-
-      if (priv->property_values[property_id - 1].source == GTK_SETTINGS_SOURCE_APPLICATION ||
-          !gdk_screen_get_setting (priv->screen, pspec->name, &val))
-        {
-          g_value_copy (&priv->property_values[property_id - 1].value, value);
-        }
-      else
-        {
-          GValue tmp_value = G_VALUE_INIT;
-          GValue gstring_value = G_VALUE_INIT;
-          GtkRcPropertyParser parser = (GtkRcPropertyParser) g_param_spec_get_qdata (pspec, quark_property_parser);
-
-          g_value_init (&gstring_value, G_TYPE_GSTRING);
-          g_value_take_boxed (&gstring_value,
-                              g_string_new (g_value_get_string (&val)));
-
-          g_value_init (&tmp_value, G_PARAM_SPEC_VALUE_TYPE (pspec));
-
-          if (parser && _gtk_settings_parse_convert (parser, &gstring_value,
-                                                     pspec, &tmp_value))
-            {
-              g_value_copy (&tmp_value, value);
-              g_param_value_validate (pspec, value);
-            }
-          else
-            {
-              g_value_copy (&priv->property_values[property_id - 1].value, value);
-            }
-
-          g_value_unset (&gstring_value);
-          g_value_unset (&tmp_value);
-        }
-
-      g_value_unset (&val);
-    }
-}
-
-static void
 settings_invalidate_style (GtkSettings *settings)
 {
   _gtk_style_provider_private_changed (GTK_STYLE_PROVIDER_PRIVATE (settings));
+}
+
+static void
+settings_update_font_values (GtkSettings *settings)
+{
+  GtkSettingsPrivate *priv = settings->priv;
+  PangoFontDescription *desc;
+  const gchar *font_name;
+
+  font_name = g_value_get_string (&priv->property_values[PROP_FONT_NAME - 1].value);
+  desc = pango_font_description_from_string (font_name);
+
+  if (desc != NULL &&
+      (pango_font_description_get_set_fields (desc) & PANGO_FONT_MASK_SIZE) != 0)
+    {
+      priv->font_size = pango_font_description_get_size (desc);
+      priv->font_size_absolute = pango_font_description_get_size_is_absolute (desc);
+    }
+  else
+    {
+      priv->font_size = 10 * PANGO_SCALE;
+      priv->font_size_absolute = FALSE;
+    }
+
+  g_free (priv->font_family);
+
+  if (desc != NULL &&
+      (pango_font_description_get_set_fields (desc) & PANGO_FONT_MASK_FAMILY) != 0)
+    {
+      priv->font_family = g_strdup (pango_font_description_get_family (desc));
+    }
+  else
+    {
+      priv->font_family = g_strdup ("Sans");
+    }
+
+  if (desc)
+    pango_font_description_free (desc);
 }
 
 static void
@@ -2016,6 +2052,7 @@ gtk_settings_notify (GObject    *object,
       settings_update_double_click (settings);
       break;
     case PROP_FONT_NAME:
+      settings_update_font_values (settings);
       settings_invalidate_style (settings);
       gtk_style_context_reset_widgets (priv->screen);
       break;
@@ -2140,7 +2177,7 @@ apply_queued_setting (GtkSettings             *settings,
         {
           g_value_copy (&tmp_value, &priv->property_values[pspec->param_id - 1].value);
           priv->property_values[pspec->param_id - 1].source = qvalue->source;
-          g_object_notify (G_OBJECT (settings), g_param_spec_get_name (pspec));
+          g_object_notify_by_pspec (G_OBJECT (settings), pspec);
         }
 
     }
@@ -2148,7 +2185,7 @@ apply_queued_setting (GtkSettings             *settings,
     {
       gchar *debug = g_strdup_value_contents (&qvalue->public.value);
 
-      g_message ("%s: failed to retrieve property `%s' of type `%s' from rc file value \"%s\" of type `%s'",
+      g_message ("%s: failed to retrieve property '%s' of type '%s' from rc file value \"%s\" of type '%s'",
                  qvalue->public.origin ? qvalue->public.origin : "(for origin information, set GTK_DEBUG)",
                  pspec->name,
                  g_type_name (G_PARAM_SPEC_VALUE_TYPE (pspec)),
@@ -2189,7 +2226,7 @@ settings_install_property_parser (GtkSettingsClass   *class,
     default:
       if (!parser)
         {
-          g_warning (G_STRLOC ": parser needs to be specified for property \"%s\" of type `%s'",
+          g_warning (G_STRLOC ": parser needs to be specified for property \"%s\" of type '%s'",
                      pspec->name, g_type_name (G_PARAM_SPEC_VALUE_TYPE (pspec)));
           return 0;
         }
@@ -2218,9 +2255,9 @@ settings_install_property_parser (GtkSettingsClass   *class,
       g_value_init (&priv->property_values[class_n_properties - 1].value, G_PARAM_SPEC_VALUE_TYPE (pspec));
       g_param_value_set_default (pspec, &priv->property_values[class_n_properties - 1].value);
       priv->property_values[class_n_properties - 1].source = GTK_SETTINGS_SOURCE_DEFAULT;
-      g_object_notify (G_OBJECT (settings), pspec->name);
+      g_object_notify_by_pspec (G_OBJECT (settings), pspec);
 
-      qvalue = g_datalist_get_data (&priv->queued_settings, pspec->name);
+      qvalue = g_datalist_id_dup_data (&priv->queued_settings, g_param_spec_get_name_quark (pspec), NULL, NULL);
       if (qvalue)
         apply_queued_setting (settings, pspec, qvalue);
     }
@@ -2332,7 +2369,7 @@ gtk_settings_set_property_value_internal (GtkSettings            *settings,
   name_quark = g_quark_from_string (name);
   g_free (name);
 
-  qvalue = g_datalist_id_get_data (&priv->queued_settings, name_quark);
+  qvalue = g_datalist_id_dup_data (&priv->queued_settings, name_quark, NULL, NULL);
   if (!qvalue)
     {
       qvalue = g_slice_new0 (GtkSettingsValuePrivate);
@@ -2821,8 +2858,11 @@ _gtk_settings_handle_event (GdkEventSetting *event)
   settings = gtk_settings_get_for_screen (screen);
   pspec = g_object_class_find_property (G_OBJECT_GET_CLASS (settings), event->name);
 
-  if (pspec)
-    g_object_notify (G_OBJECT (settings), pspec->name);
+  if (!pspec)
+    return;
+
+  if (settings_update_xsetting (settings, pspec, TRUE))
+    g_object_notify_by_pspec (G_OBJECT (settings), pspec);
 }
 
 static void
@@ -2872,7 +2912,7 @@ _gtk_settings_reset_rc_values (GtkSettings *settings)
           GParamSpec *pspec = *p;
 
           g_param_value_set_default (pspec, &priv->property_values[i].value);
-          g_object_notify (G_OBJECT (settings), pspec->name);
+          g_object_notify_by_pspec (G_OBJECT (settings), pspec);
         }
       i++;
     }
@@ -2884,21 +2924,17 @@ static void
 settings_update_double_click (GtkSettings *settings)
 {
   GtkSettingsPrivate *priv = settings->priv;
+  GdkDisplay *display = gdk_screen_get_display (priv->screen);
+  gint double_click_time;
+  gint double_click_distance;
 
-  if (gdk_screen_get_number (priv->screen) == 0)
-    {
-      GdkDisplay *display = gdk_screen_get_display (priv->screen);
-      gint double_click_time;
-      gint double_click_distance;
+  g_object_get (settings,
+                "gtk-double-click-time", &double_click_time,
+                "gtk-double-click-distance", &double_click_distance,
+                NULL);
 
-      g_object_get (settings,
-                    "gtk-double-click-time", &double_click_time,
-                    "gtk-double-click-distance", &double_click_distance,
-                    NULL);
-
-      gdk_display_set_double_click_time (display, double_click_time);
-      gdk_display_set_double_click_distance (display, double_click_distance);
-    }
+  gdk_display_set_double_click_time (display, double_click_time);
+  gdk_display_set_double_click_distance (display, double_click_distance);
 }
 
 static void
@@ -2920,7 +2956,7 @@ settings_update_cursor_theme (GtkSettings *settings)
 {
   gchar *theme = NULL;
   gint size = 0;
-#if defined(GDK_WINDOWING_X11) || defined(GDK_WINDOWING_WAYLAND)
+#if defined(GDK_WINDOWING_X11) || defined(GDK_WINDOWING_WAYLAND) || defined(GDK_WINDOWING_WIN32)
   GdkDisplay *display = gdk_screen_get_display (settings->priv->screen);
 #endif
 
@@ -2940,7 +2976,12 @@ settings_update_cursor_theme (GtkSettings *settings)
     gdk_wayland_display_set_cursor_theme (display, theme, size);
   else
 #endif
-    g_warning ("GtkSettings Cursor Theme: Unsupported GDK backend\n");
+#ifdef GDK_WINDOWING_WIN32
+  if (GDK_IS_WIN32_DISPLAY (display))
+    gdk_win32_display_set_cursor_theme (display, theme, size);
+  else
+#endif
+    g_warning ("GtkSettings Cursor Theme: Unsupported GDK backend");
   g_free (theme);
 }
 
@@ -3032,7 +3073,7 @@ settings_update_font_options (GtkSettings *settings)
 static gboolean
 settings_update_fontconfig (GtkSettings *settings)
 {
-#ifdef GDK_WINDOWING_X11
+#if defined(GDK_WINDOWING_X11) || defined(GDK_WINDOWING_WAYLAND)
   static guint    last_update_timestamp;
   static gboolean last_update_needed;
 
@@ -3054,7 +3095,7 @@ settings_update_fontconfig (GtkSettings *settings)
       /* bug 547680 */
       if (PANGO_IS_FC_FONT_MAP (fontmap) && !FcConfigUptoDate (NULL))
         {
-          pango_fc_font_map_cache_clear (PANGO_FC_FONT_MAP (fontmap));
+          pango_fc_font_map_config_changed (PANGO_FC_FONT_MAP (fontmap));
           if (FcInitReinitialize ())
             update_needed = TRUE;
         }
@@ -3066,7 +3107,7 @@ settings_update_fontconfig (GtkSettings *settings)
   return last_update_needed;
 #else
   return FALSE;
-#endif /* GDK_WINDOWING_X11 */
+#endif /* GDK_WINDOWING_X11 || GDK_WINDOWING_WAYLAND */
 }
 
 static void
@@ -3179,7 +3220,7 @@ settings_update_theme (GtkSettings *settings)
   GtkSettingsPrivate *priv = settings->priv;
   gchar *theme_name;
   gchar *theme_variant;
-  gchar *theme_dir;
+  const gchar *theme_dir;
   gchar *path;
 
   get_theme_name (settings, &theme_name, &theme_variant);
@@ -3188,16 +3229,17 @@ settings_update_theme (GtkSettings *settings)
                                 theme_name, theme_variant);
 
   /* reload per-theme settings */
-  theme_dir = _gtk_css_provider_get_theme_dir ();
-  path = g_build_filename (theme_dir, theme_name, "gtk-3.0", "settings.ini", NULL);
-
-  if (g_file_test (path, G_FILE_TEST_EXISTS))
-    gtk_settings_load_from_key_file (settings, path, GTK_SETTINGS_SOURCE_THEME);
+  theme_dir = _gtk_css_provider_get_theme_dir (priv->theme_provider);
+  if (theme_dir)
+    {
+      path = g_build_filename (theme_dir, "settings.ini", NULL);
+      if (g_file_test (path, G_FILE_TEST_EXISTS))
+        gtk_settings_load_from_key_file (settings, path, GTK_SETTINGS_SOURCE_THEME);
+      g_free (path);
+    }
 
   g_free (theme_name);
   g_free (theme_variant);
-  g_free (theme_dir);
-  g_free (path);
 }
 
 static void
@@ -3225,6 +3267,12 @@ _gtk_settings_get_screen (GtkSettings *settings)
   return settings->priv->screen;
 }
 
+static void
+gvalue_free (gpointer data)
+{
+  g_value_unset (data);
+  g_free (data);
+}
 
 static void
 gtk_settings_load_from_key_file (GtkSettings       *settings,
@@ -3334,8 +3382,19 @@ gtk_settings_load_from_key_file (GtkSettings       *settings,
         }
       else
         {
+          GValue *copy;
+
+          copy = g_new0 (GValue, 1);
+
+          g_value_init (copy, G_VALUE_TYPE (&svalue.value));
+          g_value_copy (&svalue.value, copy);
+
+          g_param_spec_set_qdata_full (pspec, g_quark_from_string (key),
+                                       copy, gvalue_free);
+
           if (g_getenv ("GTK_DEBUG"))
             svalue.origin = (gchar *)path;
+
           gtk_settings_set_property_value_internal (settings, key, &svalue, source);
           g_value_unset (&svalue.value);
         }
@@ -3346,31 +3405,239 @@ gtk_settings_load_from_key_file (GtkSettings       *settings,
   g_key_file_free (keyfile);
 }
 
+static gboolean
+settings_update_xsetting (GtkSettings *settings,
+                          GParamSpec  *pspec,
+                          gboolean     force)
+{
+  GtkSettingsPrivate *priv = settings->priv;
+  GType value_type;
+  GType fundamental_type;
+  gboolean retval = FALSE;
+
+  if (priv->property_values[pspec->param_id - 1].source == GTK_SETTINGS_SOURCE_APPLICATION)
+    return FALSE;
+
+  if (priv->property_values[pspec->param_id - 1].source == GTK_SETTINGS_SOURCE_XSETTING && !force)
+    return FALSE;
+
+  value_type = G_PARAM_SPEC_VALUE_TYPE (pspec);
+  fundamental_type = G_TYPE_FUNDAMENTAL (value_type);
+
+  if ((g_value_type_transformable (G_TYPE_INT, value_type) &&
+       !(fundamental_type == G_TYPE_ENUM || fundamental_type == G_TYPE_FLAGS)) ||
+      g_value_type_transformable (G_TYPE_STRING, value_type) ||
+      g_value_type_transformable (GDK_TYPE_RGBA, value_type))
+    {
+      GValue val = G_VALUE_INIT;
+
+      g_value_init (&val, value_type);
+
+      if (!gdk_screen_get_setting (priv->screen, pspec->name, &val))
+        return FALSE;
+
+      g_param_value_validate (pspec, &val);
+      g_value_copy (&val, &priv->property_values[pspec->param_id - 1].value);
+      priv->property_values[pspec->param_id - 1].source = GTK_SETTINGS_SOURCE_XSETTING;
+
+      g_value_unset (&val);
+
+      retval = TRUE;
+    }
+  else
+    {
+      GValue tmp_value = G_VALUE_INIT;
+      GValue gstring_value = G_VALUE_INIT;
+      GValue val = G_VALUE_INIT;
+      GtkRcPropertyParser parser = (GtkRcPropertyParser) g_param_spec_get_qdata (pspec, quark_property_parser);
+
+      g_value_init (&val, G_TYPE_STRING);
+
+      if (!gdk_screen_get_setting (priv->screen, pspec->name, &val))
+        return FALSE;
+
+      g_value_init (&gstring_value, G_TYPE_GSTRING);
+      g_value_take_boxed (&gstring_value, g_string_new (g_value_get_string (&val)));
+
+      g_value_init (&tmp_value, value_type);
+      if (parser && _gtk_settings_parse_convert (parser, &gstring_value,
+                                                 pspec, &tmp_value))
+        {
+          g_param_value_validate (pspec, &tmp_value);
+          g_value_copy (&tmp_value, &priv->property_values[pspec->param_id - 1].value);
+          priv->property_values[pspec->param_id - 1].source = GTK_SETTINGS_SOURCE_XSETTING;
+          retval = TRUE;
+        }
+
+      g_value_unset (&gstring_value);
+      g_value_unset (&tmp_value);
+
+      g_value_unset (&val);
+    }
+
+  return retval;
+}
+
+static void
+settings_update_xsettings (GtkSettings *settings)
+{
+  GParamSpec **pspecs;
+  gint i;
+
+  pspecs = g_object_class_list_properties (G_OBJECT_GET_CLASS (settings), NULL);
+  for (i = 0; pspecs[i]; i++)
+    settings_update_xsetting (settings, pspecs[i], FALSE);
+  g_free (pspecs);
+}
+
+static void
+gtk_settings_get_property (GObject     *object,
+                           guint        property_id,
+                           GValue      *value,
+                           GParamSpec  *pspec)
+{
+  GtkSettings *settings = GTK_SETTINGS (object);
+  GtkSettingsPrivate *priv = settings->priv;
+
+  /* handle internal properties */
+  switch (property_id)
+    {
+    case PROP_COLOR_HASH:
+      g_value_take_boxed (value, g_hash_table_new (g_str_hash, g_str_equal));
+      return;
+    default: ;
+    }
+
+  settings_update_xsetting (settings, pspec, FALSE);
+
+  g_value_copy (&priv->property_values[property_id - 1].value, value);
+}
+
 GtkSettingsSource
 _gtk_settings_get_setting_source (GtkSettings *settings,
                                   const gchar *name)
 {
   GtkSettingsPrivate *priv = settings->priv;
   GParamSpec *pspec;
-  GValue val = G_VALUE_INIT;
 
   pspec = g_object_class_find_property (G_OBJECT_GET_CLASS (settings), name);
   if (!pspec)
     return GTK_SETTINGS_SOURCE_DEFAULT;
 
-  if (priv->property_values[pspec->param_id - 1].source == GTK_SETTINGS_SOURCE_APPLICATION)
-    return GTK_SETTINGS_SOURCE_APPLICATION;
+  return priv->property_values[pspec->param_id - 1].source;
+}
 
-  /* We never actually store GTK_SETTINGS_SOURCE_XSETTING as a source
-   * value in the property_values array - we just try to load the xsetting,
-   * and use it when available. Do the same here.
-   */
-  g_value_init (&val, G_TYPE_STRING);
-  if (gdk_screen_get_setting (priv->screen, pspec->name, &val))
+/**
+ * gtk_settings_reset_property:
+ * @settings: a #GtkSettings object
+ * @name: the name of the setting to reset
+ *
+ * Undoes the effect of calling g_object_set() to install an
+ * application-specific value for a setting. After this call,
+ * the setting will again follow the session-wide value for
+ * this setting.
+ *
+ * Since: 3.20
+ */
+void
+gtk_settings_reset_property (GtkSettings *settings,
+                             const gchar *name)
+{
+  GtkSettingsPrivate *priv = settings->priv;
+  GParamSpec *pspec;
+  GtkRcPropertyParser parser;
+  GValue *value;
+  GValue tmp_value = G_VALUE_INIT;
+
+  pspec = g_object_class_find_property (G_OBJECT_GET_CLASS (settings), name);
+
+  g_return_if_fail (pspec != NULL);
+
+  parser = (GtkRcPropertyParser) g_param_spec_get_qdata (pspec, quark_property_parser);
+  value = g_param_spec_get_qdata (pspec, g_quark_from_string (name));
+
+  g_value_init (&tmp_value, G_PARAM_SPEC_VALUE_TYPE (pspec));
+  if (value && _gtk_settings_parse_convert (parser, value, pspec, &tmp_value))
+    g_value_copy (&tmp_value, &priv->property_values[pspec->param_id - 1].value);
+  else
+    g_param_value_set_default (pspec, &priv->property_values[pspec->param_id - 1].value);
+
+  priv->property_values[pspec->param_id - 1].source = GTK_SETTINGS_SOURCE_DEFAULT;
+  g_object_notify_by_pspec (G_OBJECT (settings), pspec);
+}
+
+gboolean
+gtk_settings_get_enable_animations (GtkSettings *settings)
+{
+  GtkSettingsPrivate *priv = settings->priv;
+  GtkSettingsPropertyValue *svalue = &priv->property_values[PROP_ENABLE_ANIMATIONS - 1];
+
+  if (svalue->source < GTK_SETTINGS_SOURCE_XSETTING)
     {
-      g_value_unset (&val);
-      return GTK_SETTINGS_SOURCE_XSETTING; 
+      GParamSpec *pspec;
+
+      pspec = g_object_class_find_property (G_OBJECT_GET_CLASS (settings), "gtk-enable-animations");
+      if (settings_update_xsetting (settings, pspec, FALSE))
+        g_object_notify_by_pspec (G_OBJECT (settings), pspec);
     }
 
-  return priv->property_values[pspec->param_id - 1].source;  
+  return g_value_get_boolean (&svalue->value);
+}
+
+gint
+gtk_settings_get_dnd_drag_threshold (GtkSettings *settings)
+{
+  GtkSettingsPrivate *priv = settings->priv;
+  GtkSettingsPropertyValue *svalue = &priv->property_values[PROP_DND_DRAG_THRESHOLD - 1];
+
+  if (svalue->source < GTK_SETTINGS_SOURCE_XSETTING)
+    {
+      GParamSpec *pspec;
+
+      pspec = g_object_class_find_property (G_OBJECT_GET_CLASS (settings), "gtk-dnd-drag-threshold");
+      if (settings_update_xsetting (settings, pspec, FALSE))
+        g_object_notify_by_pspec (G_OBJECT (settings), pspec);
+    }
+
+  return g_value_get_int (&svalue->value);
+}
+
+static void
+settings_update_font_name (GtkSettings *settings)
+{
+  GtkSettingsPrivate *priv = settings->priv;
+  GtkSettingsPropertyValue *svalue = &priv->property_values[PROP_FONT_NAME - 1];
+
+  if (svalue->source < GTK_SETTINGS_SOURCE_XSETTING)
+    {
+      GParamSpec *pspec;
+
+      pspec = g_object_class_find_property (G_OBJECT_GET_CLASS (settings), "gtk-font-name");
+      if (settings_update_xsetting (settings, pspec, FALSE))
+        g_object_notify_by_pspec (G_OBJECT (settings), pspec);
+    }
+}
+
+const gchar *
+gtk_settings_get_font_family (GtkSettings *settings)
+{
+  settings_update_font_name (settings);
+
+  return settings->priv->font_family;
+}
+
+gint
+gtk_settings_get_font_size (GtkSettings *settings)
+{
+  settings_update_font_name (settings);
+
+  return settings->priv->font_size;
+}
+
+gboolean
+gtk_settings_get_font_size_is_absolute (GtkSettings *settings)
+{
+  settings_update_font_name (settings);
+
+  return settings->priv->font_size_absolute;
 }

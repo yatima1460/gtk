@@ -242,6 +242,8 @@ struct _GtkAccelGroupEntry
   GQuark       accel_path_quark;
 };
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(GtkAccelGroup, g_object_unref)
+
 G_END_DECLS
 
 #endif /* __GTK_ACCEL_GROUP_H__ */

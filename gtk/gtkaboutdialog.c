@@ -72,12 +72,12 @@
  * All parts of the dialog are optional.
  *
  * About dialogs often contain links and email addresses. GtkAboutDialog
- * displays these as clickable links. By default, it calls gtk_show_uri()
+ * displays these as clickable links. By default, it calls gtk_show_uri_on_window()
  * when a user clicks one. The behaviour can be overridden with the
  * #GtkAboutDialog::activate-link signal.
  *
  * To specify a person with an email address, use a string like
- * "Edgar Allan Poe <edgar@poe.com>". To specify a website with a title,
+ * "Edgar Allan Poe <edgar\@poe.com>". To specify a website with a title,
  * use a string like "GTK+ team http://www.gtk.org".
  *
  * To make constructing a GtkAboutDialog as convenient as possible, you can
@@ -108,26 +108,22 @@ typedef struct
   const gchar *url;
 } LicenseInfo;
 
-/* Translators: this is the license preamble; the string at the end
- * contains the name of the license as link text.
- */
-static const gchar *gtk_license_preamble = N_("This program comes with absolutely no warranty.\nSee the <a href=\"%s\">%s</a> for details.");
-
 /* LicenseInfo for each GtkLicense type; keep in the same order as the enumeration */
 static const LicenseInfo gtk_license_info [] = {
   { N_("License"), NULL },
   { N_("Custom License") , NULL },
-  { N_("GNU General Public License, version 2 or later"), "http://www.gnu.org/licenses/old-licenses/gpl-2.0.html" },
-  { N_("GNU General Public License, version 3 or later"), "http://www.gnu.org/licenses/gpl-3.0.html" },
-  { N_("GNU Lesser General Public License, version 2.1 or later"), "http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html" },
-  { N_("GNU Lesser General Public License, version 3 or later"), "http://www.gnu.org/licenses/lgpl-3.0.html" },
-  { N_("BSD 2-Clause License"), "http://opensource.org/licenses/bsd-license.php" },
-  { N_("The MIT License (MIT)"), "http://opensource.org/licenses/mit-license.php" },
-  { N_("Artistic License 2.0"), "http://opensource.org/licenses/artistic-license-2.0.php" },
-  { N_("GNU General Public License, version 2 only"), "http://www.gnu.org/licenses/old-licenses/gpl-2.0.html" },
-  { N_("GNU General Public License, version 3 only"), "http://www.gnu.org/licenses/gpl-3.0.html" },
-  { N_("GNU Lesser General Public License, version 2.1 only"), "http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html" },
-  { N_("GNU Lesser General Public License, version 3 only"), "http://www.gnu.org/licenses/lgpl-3.0.html" }
+  { N_("GNU General Public License, version 2 or later"), "https://www.gnu.org/licenses/old-licenses/gpl-2.0.html" },
+  { N_("GNU General Public License, version 3 or later"), "https://www.gnu.org/licenses/gpl-3.0.html" },
+  { N_("GNU Lesser General Public License, version 2.1 or later"), "https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html" },
+  { N_("GNU Lesser General Public License, version 3 or later"), "https://www.gnu.org/licenses/lgpl-3.0.html" },
+  { N_("BSD 2-Clause License"), "https://opensource.org/licenses/bsd-license.php" },
+  { N_("The MIT License (MIT)"), "https://opensource.org/licenses/mit-license.php" },
+  { N_("Artistic License 2.0"), "https://opensource.org/licenses/artistic-license-2.0.php" },
+  { N_("GNU General Public License, version 2 only"), "https://www.gnu.org/licenses/old-licenses/gpl-2.0.html" },
+  { N_("GNU General Public License, version 3 only"), "https://www.gnu.org/licenses/gpl-3.0.html" },
+  { N_("GNU Lesser General Public License, version 2.1 only"), "https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html" },
+  { N_("GNU Lesser General Public License, version 3 only"), "https://www.gnu.org/licenses/lgpl-3.0.html" },
+  { N_("GNU Affero General Public License, version 3 or later"), "https://www.gnu.org/licenses/agpl-3.0.html" }
 };
 
 typedef struct
@@ -317,14 +313,14 @@ gtk_about_dialog_class_init (GtkAboutDialogClass *klass)
    *
    * The signal which gets emitted to activate a URI.
    * Applications may connect to it to override the default behaviour,
-   * which is to call gtk_show_uri().
+   * which is to call gtk_show_uri_on_window().
    *
    * Returns: %TRUE if the link has been activated
    *
    * Since: 2.24
    */
   signals[ACTIVATE_LINK] =
-    g_signal_new ("activate-link",
+    g_signal_new (I_("activate-link"),
                   G_TYPE_FROM_CLASS (object_class),
                   G_SIGNAL_RUN_LAST,
                   G_STRUCT_OFFSET (GtkAboutDialogClass, activate_link),
@@ -787,9 +783,7 @@ gtk_about_dialog_finalize (GObject *object)
   g_strfreev (priv->artists);
 
   g_slist_free_full (priv->credit_sections, destroy_credit_section);
-
-  g_slist_foreach (priv->visited_links, (GFunc)g_free, NULL);
-  g_slist_free (priv->visited_links);
+  g_slist_free_full (priv->visited_links, g_free);
 
   G_OBJECT_CLASS (gtk_about_dialog_parent_class)->finalize (object);
 }
@@ -804,8 +798,8 @@ gtk_about_dialog_realize (GtkWidget *widget)
   GTK_WIDGET_CLASS (gtk_about_dialog_parent_class)->realize (widget);
 
   display = gtk_widget_get_display (widget);
-  priv->hand_cursor = gdk_cursor_new_for_display (display, GDK_HAND2);
-  priv->regular_cursor = gdk_cursor_new_for_display (display, GDK_XTERM);
+  priv->hand_cursor = gdk_cursor_new_from_name (display, "pointer");
+  priv->regular_cursor = gdk_cursor_new_from_name (display, "text");
 }
 
 static void
@@ -988,12 +982,9 @@ static gboolean
 gtk_about_dialog_activate_link (GtkAboutDialog *about,
                                 const gchar    *uri)
 {
-  GdkScreen *screen;
   GError *error = NULL;
 
-  screen = gtk_widget_get_screen (GTK_WIDGET (about));
-
-  if (!gtk_show_uri (screen, uri, gtk_get_current_event_time (), &error))
+  if (!gtk_show_uri_on_window (GTK_WINDOW (about), uri, gtk_get_current_event_time (), &error))
     {
       GtkWidget *dialog;
 
@@ -1921,9 +1912,13 @@ follow_if_link (GtkAboutDialog *about,
       if (uri && !g_slist_find_custom (priv->visited_links, uri, (GCompareFunc)strcmp))
         {
           GdkRGBA visited_link_color;
+          GtkStateFlags state;
           GtkStyleContext *context = gtk_widget_get_style_context (GTK_WIDGET (about));
-          GtkStateFlags state = gtk_widget_get_state_flags (GTK_WIDGET (about));
-          gtk_style_context_get_color (context, state | GTK_STATE_FLAG_VISITED, &visited_link_color);
+          gtk_style_context_save (context);
+          state = gtk_style_context_get_state (context) | GTK_STATE_FLAG_VISITED;
+          gtk_style_context_set_state (context, state);
+          gtk_style_context_get_color (context, state, &visited_link_color);
+          gtk_style_context_restore (context);
 
           g_object_set (G_OBJECT (tag), "foreground-rgba", &visited_link_color, NULL);
 
@@ -1931,8 +1926,7 @@ follow_if_link (GtkAboutDialog *about,
         }
     }
 
-  if (tags)
-    g_slist_free (tags);
+  g_slist_free (tags);
 }
 
 static gboolean
@@ -2034,8 +2028,7 @@ set_cursor_if_appropriate (GtkAboutDialog *about,
         gdk_window_set_device_cursor (gtk_text_view_get_window (text_view, GTK_TEXT_WINDOW_TEXT), device, priv->regular_cursor);
     }
 
-  if (tags)
-    g_slist_free (tags);
+  g_slist_free (tags);
 }
 
 static gboolean
@@ -2108,7 +2101,6 @@ text_buffer_new (GtkAboutDialog  *about,
               gchar *link;
               gchar *uri;
               const gchar *link_type;
-              GtkTextTag *tag;
 
               if (*q1 == '<')
                 {
@@ -2288,6 +2280,7 @@ add_credits_section (GtkAboutDialog  *about,
 
       label = gtk_label_new (str->str);
       gtk_label_set_use_markup (GTK_LABEL (label), TRUE);
+      gtk_label_set_selectable (GTK_LABEL (label), TRUE);
       g_signal_connect_swapped (label, "activate-link",
                                 G_CALLBACK (emit_activate_link), about);
       g_string_free (str, TRUE);
@@ -2488,7 +2481,10 @@ gtk_about_dialog_set_license_type (GtkAboutDialog *about,
             url = priv->website_url;
 
           str = g_string_sized_new (256);
-          g_string_append_printf (str, _(gtk_license_preamble), url, name);
+          /* Translators: this is the license preamble; the string at the end
+           * contains the name of the license as link text.
+           */
+          g_string_append_printf (str, _("This program comes with absolutely no warranty.\nSee the <a href=\"%s\">%s</a> for details."), url, name);
 
           g_free (priv->license);
           priv->license = g_string_free (str, FALSE);

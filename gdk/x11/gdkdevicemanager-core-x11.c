@@ -22,6 +22,7 @@
 #include "gdkx11device-core.h"
 
 #include "gdkdeviceprivate.h"
+#include "gdkseatdefaultprivate.h"
 #include "gdkdisplayprivate.h"
 #include "gdkeventtranslator.h"
 #include "gdkprivate-x11.h"
@@ -129,6 +130,18 @@ gdk_x11_device_manager_core_constructed (GObject *object)
 
   _gdk_device_set_associated_device (device_manager->core_pointer, device_manager->core_keyboard);
   _gdk_device_set_associated_device (device_manager->core_keyboard, device_manager->core_pointer);
+
+  /* We expect subclasses to handle their own seats */
+  if (G_OBJECT_TYPE (object) == GDK_TYPE_X11_DEVICE_MANAGER_CORE)
+    {
+      GdkSeat *seat;
+
+      seat = gdk_seat_default_new_for_master_pair (device_manager->core_pointer,
+                                                   device_manager->core_keyboard);
+
+      gdk_display_add_seat (display, seat);
+      g_object_unref (seat);
+  }
 }
 
 static void
@@ -147,6 +160,7 @@ translate_key_event (GdkDisplay              *display,
   event->key.state = (GdkModifierType) xevent->xkey.state;
   event->key.group = gdk_x11_keymap_get_group_for_state (keymap, xevent->xkey.state);
   event->key.hardware_keycode = xevent->xkey.keycode;
+  gdk_event_set_scancode (event, xevent->xkey.keycode);
 
   event->key.keyval = GDK_KEY_VoidSymbol;
 
@@ -166,7 +180,7 @@ translate_key_event (GdkDisplay              *display,
   _gdk_x11_event_translate_keyboard_string (&event->key);
 
 #ifdef G_ENABLE_DEBUG
-  if (_gdk_debug_flags & GDK_DEBUG_EVENTS)
+  if (GDK_DEBUG_CHECK (EVENTS))
     {
       g_message ("%s:\t\twindow: %ld     key: %12s  %d",
                  event->type == GDK_KEY_PRESS ? "key press  " : "key release",
@@ -807,6 +821,7 @@ _gdk_device_manager_core_handle_focus (GdkWindow *window,
                                        int        mode)
 {
   GdkToplevelX11 *toplevel;
+  GdkX11Screen *x11_screen;
   gboolean had_focus;
 
   g_return_if_fail (GDK_IS_WINDOW (window));
@@ -828,6 +843,7 @@ _gdk_device_manager_core_handle_focus (GdkWindow *window,
     return;
 
   had_focus = HAS_FOCUS (toplevel);
+  x11_screen = GDK_X11_SCREEN (gdk_window_get_screen (window));
 
   switch (detail)
     {
@@ -841,6 +857,7 @@ _gdk_device_manager_core_handle_focus (GdkWindow *window,
        * has_focus_window case.
        */
       if (toplevel->has_pointer &&
+          !x11_screen->wmspec_check_window &&
           mode != NotifyGrab &&
 #ifdef XINPUT_2
 	  mode != XINotifyPassiveGrab &&
@@ -871,7 +888,8 @@ _gdk_device_manager_core_handle_focus (GdkWindow *window,
        * but the pointer focus is ignored while a
        * grab is in effect
        */
-      if (mode != NotifyGrab &&
+      if (!x11_screen->wmspec_check_window &&
+          mode != NotifyGrab &&
 #ifdef XINPUT_2
 	  mode != XINotifyPassiveGrab &&
 	  mode != XINotifyPassiveUngrab &&

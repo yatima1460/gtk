@@ -29,11 +29,13 @@
 #include "gtkcontainerprivate.h"
 #include "gtkbuttonprivate.h"
 #include "gtktogglebuttonprivate.h"
+#include "gtkcheckbuttonprivate.h"
 #include "gtklabel.h"
 #include "gtkmarshalers.h"
 #include "gtkprivate.h"
 #include "gtkintl.h"
 #include "a11y/gtkradiobuttonaccessible.h"
+#include "gtkstylecontextprivate.h"
 
 /**
  * SECTION:gtkradiobutton
@@ -69,6 +71,27 @@
  *
  * The group list does not need to be freed, as each #GtkRadioButton will remove
  * itself and its list item when it is destroyed.
+ *
+ * # CSS nodes
+ *
+ * |[<!-- language="plain" -->
+ * radiobutton
+ * ├── radio
+ * ╰── <child>
+ * ]|
+ *
+ * A GtkRadioButton with indicator (see gtk_toggle_button_set_mode()) has a
+ * main CSS node with name radiobutton and a subnode with name radio.
+ *
+ * |[<!-- language="plain" -->
+ * button.radio
+ * ├── radio
+ * ╰── <child>
+ * ]|
+ *
+ * A GtkRadioButton without indicator changes the name of its main node
+ * to button and adds a .radio style class to it. The subnode is invisible
+ * in this case.
  *
  * ## How to create a group of two radio buttons.
  *
@@ -114,16 +137,16 @@ struct _GtkRadioButtonPrivate
 
 enum {
   PROP_0,
-  PROP_GROUP
+  PROP_GROUP,
+  LAST_PROP
 };
 
+static GParamSpec *radio_button_props[LAST_PROP] = { NULL, };
 
 static void     gtk_radio_button_destroy        (GtkWidget           *widget);
 static gboolean gtk_radio_button_focus          (GtkWidget           *widget,
 						 GtkDirectionType     direction);
 static void     gtk_radio_button_clicked        (GtkButton           *button);
-static void     gtk_radio_button_draw_indicator (GtkCheckButton      *check_button,
-						 cairo_t             *cr);
 static void     gtk_radio_button_set_property   (GObject             *object,
 						 guint                prop_id,
 						 const GValue        *value,
@@ -142,13 +165,11 @@ gtk_radio_button_class_init (GtkRadioButtonClass *class)
 {
   GObjectClass *gobject_class;
   GtkButtonClass *button_class;
-  GtkCheckButtonClass *check_button_class;
   GtkWidgetClass *widget_class;
 
   gobject_class = G_OBJECT_CLASS (class);
   widget_class = (GtkWidgetClass*) class;
   button_class = (GtkButtonClass*) class;
-  check_button_class = (GtkCheckButtonClass*) class;
 
   gobject_class->set_property = gtk_radio_button_set_property;
   gobject_class->get_property = gtk_radio_button_get_property;
@@ -158,19 +179,19 @@ gtk_radio_button_class_init (GtkRadioButtonClass *class)
    *
    * Sets a new group for a radio button.
    */
-  g_object_class_install_property (gobject_class,
-				   PROP_GROUP,
-				   g_param_spec_object ("group",
-							P_("Group"),
-							P_("The radio button whose group this widget belongs to."),
-							GTK_TYPE_RADIO_BUTTON,
-							GTK_PARAM_WRITABLE));
+  radio_button_props[PROP_GROUP] =
+      g_param_spec_object ("group",
+                           P_("Group"),
+                           P_("The radio button whose group this widget belongs to."),
+                           GTK_TYPE_RADIO_BUTTON,
+                           GTK_PARAM_WRITABLE);
+
+  g_object_class_install_properties (gobject_class, LAST_PROP, radio_button_props);
+
   widget_class->destroy = gtk_radio_button_destroy;
   widget_class->focus = gtk_radio_button_focus;
 
   button_class->clicked = gtk_radio_button_clicked;
-
-  check_button_class->draw_indicator = gtk_radio_button_draw_indicator;
 
   class->group_changed = NULL;
 
@@ -192,16 +213,18 @@ gtk_radio_button_class_init (GtkRadioButtonClass *class)
 				       G_SIGNAL_RUN_FIRST,
 				       G_STRUCT_OFFSET (GtkRadioButtonClass, group_changed),
 				       NULL, NULL,
-				       _gtk_marshal_VOID__VOID,
+				       NULL,
 				       G_TYPE_NONE, 0);
 
   gtk_widget_class_set_accessible_type (widget_class, GTK_TYPE_RADIO_BUTTON_ACCESSIBLE);
+  gtk_widget_class_set_css_name (widget_class, "radiobutton");
 }
 
 static void
 gtk_radio_button_init (GtkRadioButton *radio_button)
 {
   GtkRadioButtonPrivate *priv;
+  GtkCssNode *css_node;
 
   radio_button->priv = gtk_radio_button_get_instance_private (radio_button);
   priv = radio_button->priv;
@@ -211,6 +234,9 @@ gtk_radio_button_init (GtkRadioButton *radio_button)
   _gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON (radio_button), TRUE);
 
   priv->group = g_slist_prepend (NULL, radio_button);
+
+  css_node = gtk_check_button_get_indicator_node (GTK_CHECK_BUTTON (radio_button));
+  gtk_css_node_set_name (css_node, I_("radio"));
 }
 
 static void
@@ -323,7 +349,7 @@ gtk_radio_button_set_group (GtkRadioButton *radio_button,
 
   g_object_ref (radio_button);
   
-  g_object_notify (G_OBJECT (radio_button), "group");
+  g_object_notify_by_pspec (G_OBJECT (radio_button), radio_button_props[PROP_GROUP]);
   g_signal_emit (radio_button, group_changed_signal, 0);
   if (old_group_singleton)
     {
@@ -768,52 +794,4 @@ gtk_radio_button_clicked (GtkButton *button)
   gtk_widget_queue_draw (GTK_WIDGET (button));
 
   g_object_unref (button);
-}
-
-static void
-gtk_radio_button_draw_indicator (GtkCheckButton *check_button,
-				 cairo_t        *cr)
-{
-  GtkAllocation allocation;
-  GtkWidget *widget;
-  GtkButton *button;
-  GtkStyleContext *context;
-  gint x, y;
-  gint indicator_size, indicator_spacing;
-  gint baseline;
-  guint border_width;
-
-  widget = GTK_WIDGET (check_button);
-  button = GTK_BUTTON (check_button);
-  context = gtk_widget_get_style_context (widget);
-
-  border_width = gtk_container_get_border_width (GTK_CONTAINER (widget));
-  _gtk_check_button_get_props (check_button, &indicator_size, &indicator_spacing);
-
-  gtk_widget_get_allocation (widget, &allocation);
-  baseline = gtk_widget_get_allocated_baseline (widget);
-
-  x = indicator_spacing + border_width;
-  if (baseline == -1)
-    y = (allocation.height - indicator_size) / 2;
-  else
-    y = CLAMP (baseline - indicator_size * button->priv->baseline_align,
-	       0, allocation.height - indicator_size);
-
-  if (gtk_widget_get_direction (widget) == GTK_TEXT_DIR_RTL)
-    x = allocation.width - (indicator_size + x);
-
-  gtk_style_context_save (context);
-
-  gtk_render_background (context, cr,
-                         border_width, border_width,
-                         allocation.width - (2 * border_width),
-                         allocation.height - (2 * border_width));
-
-  gtk_style_context_add_class (context, GTK_STYLE_CLASS_RADIO);
-
-  gtk_render_option (context, cr,
-                     x, y, indicator_size, indicator_size);
-
-  gtk_style_context_restore (context);
 }

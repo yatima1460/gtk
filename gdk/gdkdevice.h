@@ -47,6 +47,11 @@ typedef struct _GdkTimeCoord GdkTimeCoord;
  *     as a touchscreen or tablet. This device type has been added in 3.4.
  * @GDK_SOURCE_TOUCHPAD: the device is an indirect touch device, such
  *     as a touchpad. This device type has been added in 3.4.
+ * @GDK_SOURCE_TRACKPOINT: the device is a trackpoint. This device type has been
+ *     added in 3.22
+ * @GDK_SOURCE_TABLET_PAD: the device is a "pad", a collection of buttons,
+ *     rings and strips found in drawing tablets. This device type has been
+ *     added in 3.22.
  *
  * An enumeration describing the type of an input device in general terms.
  */
@@ -58,7 +63,9 @@ typedef enum
   GDK_SOURCE_CURSOR,
   GDK_SOURCE_KEYBOARD,
   GDK_SOURCE_TOUCHSCREEN,
-  GDK_SOURCE_TOUCHPAD
+  GDK_SOURCE_TOUCHPAD,
+  GDK_SOURCE_TRACKPOINT,
+  GDK_SOURCE_TABLET_PAD
 } GdkInputSource;
 
 /**
@@ -79,33 +86,6 @@ typedef enum
   GDK_MODE_SCREEN,
   GDK_MODE_WINDOW
 } GdkInputMode;
-
-/**
- * GdkAxisUse:
- * @GDK_AXIS_IGNORE: the axis is ignored.
- * @GDK_AXIS_X: the axis is used as the x axis.
- * @GDK_AXIS_Y: the axis is used as the y axis.
- * @GDK_AXIS_PRESSURE: the axis is used for pressure information.
- * @GDK_AXIS_XTILT: the axis is used for x tilt information.
- * @GDK_AXIS_YTILT: the axis is used for y tilt information.
- * @GDK_AXIS_WHEEL: the axis is used for wheel information.
- * @GDK_AXIS_LAST: a constant equal to the numerically highest axis value.
- *
- * An enumeration describing the way in which a device
- * axis (valuator) maps onto the predefined valuator
- * types that GTK+ understands.
- */
-typedef enum
-{
-  GDK_AXIS_IGNORE,
-  GDK_AXIS_X,
-  GDK_AXIS_Y,
-  GDK_AXIS_PRESSURE,
-  GDK_AXIS_XTILT,
-  GDK_AXIS_YTILT,
-  GDK_AXIS_WHEEL,
-  GDK_AXIS_LAST
-} GdkAxisUse;
 
 /**
  * GdkDeviceType:
@@ -246,7 +226,7 @@ GList *      gdk_device_list_slave_devices    (GdkDevice     *device);
 GDK_AVAILABLE_IN_ALL
 GdkDeviceType gdk_device_get_device_type (GdkDevice *device);
 
-GDK_AVAILABLE_IN_ALL
+GDK_DEPRECATED_IN_3_20_FOR(gdk_seat_grab)
 GdkGrabStatus gdk_device_grab        (GdkDevice        *device,
                                       GdkWindow        *window,
                                       GdkGrabOwnership  grab_ownership,
@@ -255,7 +235,7 @@ GdkGrabStatus gdk_device_grab        (GdkDevice        *device,
                                       GdkCursor        *cursor,
                                       guint32           time_);
 
-GDK_AVAILABLE_IN_ALL
+GDK_DEPRECATED_IN_3_20_FOR(gdk_seat_ungrab)
 void          gdk_device_ungrab      (GdkDevice        *device,
                                       guint32           time_);
 
@@ -278,6 +258,12 @@ GDK_AVAILABLE_IN_3_16
 const gchar *gdk_device_get_vendor_id       (GdkDevice *device);
 GDK_AVAILABLE_IN_3_16
 const gchar *gdk_device_get_product_id      (GdkDevice *device);
+
+GDK_AVAILABLE_IN_3_20
+GdkSeat     *gdk_device_get_seat            (GdkDevice *device);
+
+GDK_AVAILABLE_IN_3_22
+GdkAxisFlags gdk_device_get_axes            (GdkDevice *device);
 
 G_END_DECLS
 

@@ -134,10 +134,11 @@ enum {
   PROP_PARAGRAPH_BACKGROUND_RGBA,
   PROP_FALLBACK,
   PROP_LETTER_SPACING,
+  PROP_FONT_FEATURES,
 
   /* Behavior args */
   PROP_ACCUMULATIVE_MARGIN,
-  
+
   /* Whether-a-style-arg-is-set args */
   PROP_BACKGROUND_SET,
   PROP_FOREGROUND_SET,
@@ -169,6 +170,7 @@ enum {
   PROP_PARAGRAPH_BACKGROUND_SET,
   PROP_FALLBACK_SET,
   PROP_LETTER_SPACING_SET,
+  PROP_FONT_FEATURES_SET,
 
   LAST_ARG
 };
@@ -676,6 +678,22 @@ gtk_text_tag_class_init (GtkTextTagClass *klass)
                                                      P_("Extra spacing between graphemes"),
                                                      0, G_MAXINT, 0,
                                                      GTK_PARAM_READWRITE));
+
+  /**
+   * GtkTextTag:font-features:
+   *
+   * OpenType font features, as a string.
+   *
+   * Since: 3.18
+   */
+  g_object_class_install_property (object_class,
+                                   PROP_FONT_FEATURES,
+                                   g_param_spec_string ("font-features",
+                                                        P_("Font Features"),
+                                                        P_("OpenType Font Features to use"),
+                                                        NULL,
+                                                        GTK_PARAM_READWRITE));
+
   /**
    * GtkTextTag:accumulative-margin:
    *
@@ -833,12 +851,16 @@ gtk_text_tag_class_init (GtkTextTagClass *klass)
                 P_("Letter spacing set"),
                 P_("Whether this tag affects letter spacing"));
 
+  ADD_SET_PROP ("font-features-set", PROP_FONT_FEATURES_SET,
+                P_("Font features set"),
+                P_("Whether this tag affects font features"));
+
   /**
    * GtkTextTag::event:
    * @tag: the #GtkTextTag on which the signal is emitted
    * @object: the object the event was fired from (typically a #GtkTextView)
    * @event: the event which triggered the signal
-   * @iter: a #GtkTextIter pointing at the location the event occured
+   * @iter: a #GtkTextIter pointing at the location the event occurred
    *
    * The ::event signal is emitted when an event occurs on a region of the
    * buffer marked with this tag.
@@ -858,6 +880,9 @@ gtk_text_tag_class_init (GtkTextTagClass *klass)
                   G_TYPE_OBJECT,
                   GDK_TYPE_EVENT | G_SIGNAL_TYPE_STATIC_SCOPE,
                   GTK_TYPE_TEXT_ITER);
+  g_signal_set_va_marshaller (signals[EVENT],
+                              G_OBJECT_CLASS_TYPE (object_class),
+                              _gtk_marshal_BOOLEAN__OBJECT_BOXED_BOXEDv);
 }
 
 static void
@@ -1322,7 +1347,7 @@ gtk_text_tag_set_property (GObject      *object,
         else if (gdk_rgba_parse (&rgba, g_value_get_string (value)))
           set_bg_rgba (text_tag, &rgba);
         else
-          g_warning ("Don't know color `%s'", g_value_get_string (value));
+          g_warning ("Don't know color '%s'", g_value_get_string (value));
 
         g_object_notify (object, "background-gdk");
       }
@@ -1337,7 +1362,7 @@ gtk_text_tag_set_property (GObject      *object,
         else if (gdk_rgba_parse (&rgba, g_value_get_string (value)))
           set_fg_rgba (text_tag, &rgba);
         else
-          g_warning ("Don't know color `%s'", g_value_get_string (value));
+          g_warning ("Don't know color '%s'", g_value_get_string (value));
 
         g_object_notify (object, "foreground-gdk");
       }
@@ -1609,7 +1634,7 @@ gtk_text_tag_set_property (GObject      *object,
         else if (gdk_rgba_parse (&rgba, g_value_get_string (value)))
           set_pg_bg_rgba (text_tag, &rgba);
         else
-          g_warning ("Don't know color `%s'", g_value_get_string (value));
+          g_warning ("Don't know color '%s'", g_value_get_string (value));
 
         g_object_notify (object, "paragraph-background-gdk");
       }
@@ -1641,6 +1666,12 @@ gtk_text_tag_set_property (GObject      *object,
       priv->letter_spacing_set = TRUE;
       priv->values->letter_spacing = g_value_get_int (value);
       g_object_notify (object, "letter-spacing-set");
+      break;
+
+    case PROP_FONT_FEATURES:
+      priv->font_features_set = TRUE;
+      priv->values->font_features = g_value_dup_string (value);
+      g_object_notify (object, "font-features-set");
       break;
 
     case PROP_ACCUMULATIVE_MARGIN:
@@ -1785,25 +1816,21 @@ gtk_text_tag_set_property (GObject      *object,
       priv->letter_spacing_set = g_value_get_boolean (value);
       break;
 
+    case PROP_FONT_FEATURES_SET:
+      priv->font_features_set = g_value_get_boolean (value);
+      break;
+
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
     }
 
-  /* FIXME I would like to do this after all set_property in a single
-   * g_object_set () have been called. But an idle function won't
-   * work; we need to emit when the tag is changed, not when we get
-   * around to the event loop. So blah, we eat some inefficiency.
+  /* The signal is emitted for each set_property(). A possible optimization is
+   * to send the signal only once when several properties are set at the same
+   * time with e.g. g_object_set(). The signal could be emitted when the notify
+   * signal is thawed.
    */
-
-  /* This is also somewhat weird since we emit another object's
-   * signal here, but the two objects are already tightly bound.
-   */
-
-  if (priv->table)
-    g_signal_emit_by_name (priv->table,
-                           "tag_changed",
-                           text_tag, size_changed);
+  gtk_text_tag_changed (text_tag, size_changed);
 }
 
 static void
@@ -2002,6 +2029,10 @@ gtk_text_tag_get_property (GObject      *object,
       g_value_set_int (value, priv->values->letter_spacing);
       break;
 
+    case PROP_FONT_FEATURES:
+      g_value_set_string (value, priv->values->font_features);
+      break;
+
     case PROP_ACCUMULATIVE_MARGIN:
       g_value_set_boolean (value, priv->accumulative_margin);
       break;
@@ -2116,6 +2147,10 @@ gtk_text_tag_get_property (GObject      *object,
 
     case PROP_LETTER_SPACING_SET:
       g_value_set_boolean (value, priv->letter_spacing_set);
+      break;
+
+    case PROP_FONT_FEATURES_SET:
+      g_value_set_boolean (value, priv->font_features_set);
       break;
 
     case PROP_BACKGROUND:
@@ -2252,6 +2287,40 @@ gtk_text_tag_event (GtkTextTag        *tag,
                  &retval);
 
   return retval;
+}
+
+/**
+ * gtk_text_tag_changed:
+ * @tag: a #GtkTextTag.
+ * @size_changed: whether the change affects the #GtkTextView layout.
+ *
+ * Emits the #GtkTextTagTable::tag-changed signal on the #GtkTextTagTable where
+ * the tag is included.
+ *
+ * The signal is already emitted when setting a #GtkTextTag property. This
+ * function is useful for a #GtkTextTag subclass.
+ *
+ * Since: 3.20
+ */
+void
+gtk_text_tag_changed (GtkTextTag *tag,
+                      gboolean    size_changed)
+{
+  GtkTextTagPrivate *priv;
+
+  g_return_if_fail (GTK_IS_TEXT_TAG (tag));
+
+  priv = tag->priv;
+
+  /* This is somewhat weird since we emit another object's signal here, but the
+   * two objects are already tightly bound. If a GtkTextTag::changed signal is
+   * added, this would increase significantly the number of signal connections.
+   */
+  if (priv->table != NULL)
+    g_signal_emit_by_name (priv->table,
+                           "tag-changed",
+                           tag,
+                           size_changed);
 }
 
 static int

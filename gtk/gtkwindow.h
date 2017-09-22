@@ -65,6 +65,8 @@ struct _GtkWindow
  * @activate_default: Activates the default widget for the window.
  * @keys_changed: Signal gets emitted when the set of accelerators or
  *   mnemonics that are associated with window changes.
+ * @enable_debugging: Class handler for the #GtkWindow::enable-debugging
+ *   keybinding signal. Since: 3.14
  */
 struct _GtkWindowClass
 {
@@ -148,7 +150,7 @@ void       gtk_window_set_title                (GtkWindow           *window,
 						const gchar         *title);
 GDK_AVAILABLE_IN_ALL
 const gchar * gtk_window_get_title             (GtkWindow           *window);
-GDK_AVAILABLE_IN_ALL
+GDK_DEPRECATED_IN_3_22
 void       gtk_window_set_wmclass              (GtkWindow           *window,
 						const gchar         *wmclass_name,
 						const gchar         *wmclass_class);
@@ -385,6 +387,10 @@ GDK_AVAILABLE_IN_ALL
 void     gtk_window_fullscreen    (GtkWindow *window);
 GDK_AVAILABLE_IN_ALL
 void     gtk_window_unfullscreen  (GtkWindow *window);
+GDK_AVAILABLE_IN_3_18
+void     gtk_window_fullscreen_on_monitor(GtkWindow *window,
+                                          GdkScreen *screen,
+                                          gint monitor);
 GDK_AVAILABLE_IN_3_10
 void     gtk_window_close         (GtkWindow *window);
 GDK_AVAILABLE_IN_ALL
@@ -433,15 +439,15 @@ GDK_AVAILABLE_IN_ALL
 void     gtk_window_get_position     (GtkWindow   *window,
                                       gint        *root_x,
                                       gint        *root_y);
-GDK_AVAILABLE_IN_ALL
+GDK_DEPRECATED_IN_3_20
 gboolean gtk_window_parse_geometry   (GtkWindow   *window,
                                       const gchar *geometry);
 
-GDK_AVAILABLE_IN_ALL
+GDK_DEPRECATED_IN_3_20_FOR(gtk_window_set_default_size)
 void gtk_window_set_default_geometry (GtkWindow *window,
                                       gint       width,
                                       gint       height);
-GDK_AVAILABLE_IN_ALL
+GDK_DEPRECATED_IN_3_20_FOR(gtk_window_resize)
 void gtk_window_resize_to_geometry   (GtkWindow *window,
                                       gint       width,
                                       gint       height);
@@ -490,6 +496,9 @@ gboolean gtk_window_is_maximized           (GtkWindow    *window);
 
 GDK_AVAILABLE_IN_3_14
 void     gtk_window_set_interactive_debugging (gboolean enable);
+
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(GtkWindow, g_object_unref)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(GtkWindowGroup, g_object_unref)
 
 G_END_DECLS
 

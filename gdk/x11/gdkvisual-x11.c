@@ -45,27 +45,10 @@ struct _GdkX11VisualClass
 };
 
 static void     gdk_visual_add            (GdkVisual *visual);
-static void     gdk_visual_decompose_mask (gulong     mask,
-					   gint      *shift,
-					   gint      *prec);
 static guint    gdk_visual_hash           (Visual    *key);
 static gboolean gdk_visual_equal          (Visual    *a,
 					   Visual    *b);
 
-
-#ifdef G_ENABLE_DEBUG
-
-static const gchar *const visual_names[] =
-{
-  "static gray",
-  "grayscale",
-  "static color",
-  "pseudo color",
-  "true color",
-  "direct color",
-};
-
-#endif /* G_ENABLE_DEBUG */
 
 G_DEFINE_TYPE (GdkX11Visual, gdk_x11_visual, GDK_TYPE_VISUAL)
 
@@ -192,34 +175,12 @@ _gdk_x11_screen_init_visuals (GdkScreen *screen)
 	  visuals[nvisuals]->bits_per_rgb = visual_list[i].bits_per_rgb;
 	  GDK_X11_VISUAL (visuals[nvisuals])->xvisual = visual_list[i].visual;
 
-	  if ((visuals[nvisuals]->type == GDK_VISUAL_TRUE_COLOR) ||
-	      (visuals[nvisuals]->type == GDK_VISUAL_DIRECT_COLOR))
-	    {
-	      gdk_visual_decompose_mask (visuals[nvisuals]->red_mask,
-					 &visuals[nvisuals]->red_shift,
-					 &visuals[nvisuals]->red_prec);
-
-	      gdk_visual_decompose_mask (visuals[nvisuals]->green_mask,
-					 &visuals[nvisuals]->green_shift,
-					 &visuals[nvisuals]->green_prec);
-
-	      gdk_visual_decompose_mask (visuals[nvisuals]->blue_mask,
-					 &visuals[nvisuals]->blue_shift,
-					 &visuals[nvisuals]->blue_prec);
-	    }
-	  else
+	  if ((visuals[nvisuals]->type != GDK_VISUAL_TRUE_COLOR) &&
+	      (visuals[nvisuals]->type != GDK_VISUAL_DIRECT_COLOR))
 	    {
 	      visuals[nvisuals]->red_mask = 0;
-	      visuals[nvisuals]->red_shift = 0;
-	      visuals[nvisuals]->red_prec = 0;
-
 	      visuals[nvisuals]->green_mask = 0;
-	      visuals[nvisuals]->green_shift = 0;
-	      visuals[nvisuals]->green_prec = 0;
-
 	      visuals[nvisuals]->blue_mask = 0;
-	      visuals[nvisuals]->blue_shift = 0;
-	      visuals[nvisuals]->blue_prec = 0;
 	    }
 
 	  nvisuals += 1;
@@ -287,7 +248,7 @@ _gdk_x11_screen_init_visuals (GdkScreen *screen)
     }
 
 #ifdef G_ENABLE_DEBUG
-  if (_gdk_debug_flags & GDK_DEBUG_MISC)
+  if (GDK_DEBUG_CHECK (MISC))
     {
       static const gchar *const visual_names[] =
       {
@@ -513,33 +474,6 @@ gdk_visual_add (GdkVisual *visual)
                                                 (GEqualFunc) gdk_visual_equal);
 
   g_hash_table_insert (x11_screen->visual_hash, GDK_X11_VISUAL (visual)->xvisual, visual);
-}
-
-static void
-gdk_visual_decompose_mask (gulong  mask,
-                           gint   *shift,
-                           gint   *prec)
-{
-  *shift = 0;
-  *prec = 0;
-
-  if (mask == 0)
-    {
-      g_warning ("Mask is 0 in visual. Server bug ?");
-      return;
-    }
-
-  while (!(mask & 0x1))
-    {
-      (*shift)++;
-      mask >>= 1;
-    }
-
-  while (mask & 0x1)
-    {
-      (*prec)++;
-      mask >>= 1;
-    }
 }
 
 static guint

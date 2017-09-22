@@ -7,7 +7,6 @@
 #include <glib/gi18n.h>
 #include <gtk/gtk.h>
 
-static GtkWidget *window = NULL;
 static GtkWidget *spinner_sensitive = NULL;
 static GtkWidget *spinner_unsensitive = NULL;
 
@@ -28,6 +27,7 @@ on_stop_clicked (GtkButton *button, gpointer user_data)
 GtkWidget *
 do_spinner (GtkWidget *do_widget)
 {
+  static GtkWidget *window = NULL;
   GtkWidget *content_area;
   GtkWidget *vbox;
   GtkWidget *hbox;
@@ -36,7 +36,7 @@ do_spinner (GtkWidget *do_widget)
 
   if (!window)
   {
-    window = gtk_dialog_new_with_buttons ("GtkSpinner",
+    window = gtk_dialog_new_with_buttons ("Spinner",
                                           GTK_WINDOW (do_widget),
                                           0,
                                           _("_Close"),

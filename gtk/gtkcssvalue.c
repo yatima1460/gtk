@@ -48,7 +48,7 @@ _gtk_css_value_ref (GtkCssValue *value)
 {
   gtk_internal_return_val_if_fail (value != NULL, NULL);
 
-  g_atomic_int_add (&value->ref_count, 1);
+  value->ref_count += 1;
 
   return value;
 }
@@ -59,7 +59,8 @@ _gtk_css_value_unref (GtkCssValue *value)
   if (value == NULL)
     return;
 
-  if (!g_atomic_int_dec_and_test (&value->ref_count))
+  value->ref_count -= 1;
+  if (value->ref_count > 0)
     return;
 
   value->class->free (value);
@@ -70,8 +71,8 @@ _gtk_css_value_unref (GtkCssValue *value)
  * @value: the value to compute from
  * @property_id: the ID of the property to compute
  * @provider: Style provider for looking up extra information
- * @values: values to compute for
- * @parent_values: parent values to use for inherited values
+ * @style: Style to compute for
+ * @parent_style: parent style to use for inherited values
  *
  * Converts the specified @value into the computed value for the CSS
  * property given by @property_id using the information in @context.
@@ -135,7 +136,9 @@ _gtk_css_value_transition (GtkCssValue *start,
   gtk_internal_return_val_if_fail (start != NULL, FALSE);
   gtk_internal_return_val_if_fail (end != NULL, FALSE);
 
-  if (start->class != end->class)
+  /* We compare functions here instead of classes so that number
+   * values can all transition to each other */
+  if (start->class->transition != end->class->transition)
     return NULL;
 
   return start->class->transition (start, end, property_id, progress);

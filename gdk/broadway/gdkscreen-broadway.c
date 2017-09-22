@@ -91,7 +91,9 @@ _gdk_broadway_screen_size_changed (GdkScreen                       *screen,
                                    BroadwayInputScreenResizeNotify *msg)
 {
   GdkBroadwayScreen *broadway_screen = GDK_BROADWAY_SCREEN (screen);
+  GdkMonitor *monitor;
   gint width, height;
+  GList *toplevels, *l;
 
   width = gdk_screen_get_width (screen);
   height = gdk_screen_get_height (screen);
@@ -99,9 +101,27 @@ _gdk_broadway_screen_size_changed (GdkScreen                       *screen,
   broadway_screen->width   = msg->width;
   broadway_screen->height  = msg->height;
 
-  if (width != gdk_screen_get_width (screen) ||
-      height != gdk_screen_get_height (screen))
-    g_signal_emit_by_name (screen, "size-changed");
+  if (width == gdk_screen_get_width (screen) &&
+      height == gdk_screen_get_height (screen))
+    return;
+
+  monitor = GDK_BROADWAY_DISPLAY (broadway_screen->display)->monitor;
+
+  gdk_monitor_set_size (monitor, msg->width, msg->height);
+  gdk_monitor_set_physical_size (monitor, msg->width * 25.4 / 96, msg->height * 25.4 / 96);
+
+  g_signal_emit_by_name (screen, "size-changed");
+  toplevels = gdk_screen_get_toplevel_windows (screen);
+  for (l = toplevels; l != NULL; l = l->next)
+    {
+      GdkWindow *toplevel = l->data;
+      GdkWindowImplBroadway *toplevel_impl = GDK_WINDOW_IMPL_BROADWAY (toplevel->impl);
+
+      if (toplevel_impl->maximized)
+	gdk_window_move_resize (toplevel, 0, 0,
+				gdk_screen_get_width (screen),
+				gdk_screen_get_height (screen));
+    }
 }
 
 static void
@@ -130,55 +150,6 @@ gdk_broadway_screen_finalize (GObject *object)
   g_free (broadway_screen->visuals);
 
   G_OBJECT_CLASS (gdk_broadway_screen_parent_class)->finalize (object);
-}
-
-static gint
-gdk_broadway_screen_get_n_monitors (GdkScreen *screen)
-{
-  return 1;
-}
-
-static gint
-gdk_broadway_screen_get_primary_monitor (GdkScreen *screen)
-{
-  return 0;
-}
-
-static gint
-gdk_broadway_screen_get_monitor_width_mm (GdkScreen *screen,
-					  gint       monitor_num)
-{
-  return gdk_screen_get_width_mm (screen);
-}
-
-static gint
-gdk_broadway_screen_get_monitor_height_mm (GdkScreen *screen,
-					   gint       monitor_num)
-{
-  return gdk_screen_get_height_mm (screen);
-}
-
-static gchar *
-gdk_broadway_screen_get_monitor_plug_name (GdkScreen *screen,
-					   gint       monitor_num)
-{
-  return g_strdup ("browser");
-}
-
-static void
-gdk_broadway_screen_get_monitor_geometry (GdkScreen    *screen,
-					  gint          monitor_num,
-					  GdkRectangle *dest)
-{
-  GdkBroadwayScreen *broadway_screen = GDK_BROADWAY_SCREEN (screen);
-
-  if (dest)
-    {
-      dest->x = 0;
-      dest->y = 0;
-      dest->width = broadway_screen->width;
-      dest->height = broadway_screen->height;
-    }
 }
 
 static GdkVisual *
@@ -276,13 +247,6 @@ gdk_broadway_screen_class_init (GdkBroadwayScreenClass *klass)
   screen_class->get_height_mm = gdk_broadway_screen_get_height_mm;
   screen_class->get_number = gdk_broadway_screen_get_number;
   screen_class->get_root_window = gdk_broadway_screen_get_root_window;
-  screen_class->get_n_monitors = gdk_broadway_screen_get_n_monitors;
-  screen_class->get_primary_monitor = gdk_broadway_screen_get_primary_monitor;
-  screen_class->get_monitor_width_mm = gdk_broadway_screen_get_monitor_width_mm;
-  screen_class->get_monitor_height_mm = gdk_broadway_screen_get_monitor_height_mm;
-  screen_class->get_monitor_plug_name = gdk_broadway_screen_get_monitor_plug_name;
-  screen_class->get_monitor_geometry = gdk_broadway_screen_get_monitor_geometry;
-  screen_class->get_monitor_workarea = gdk_broadway_screen_get_monitor_geometry;
   screen_class->is_composited = gdk_broadway_screen_is_composited;
   screen_class->make_display_name = gdk_broadway_screen_make_display_name;
   screen_class->get_active_window = gdk_broadway_screen_get_active_window;

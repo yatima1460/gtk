@@ -33,11 +33,10 @@
  * @See_also: #GtkFontChooserDialog, #GtkFontChooserWidget, #GtkFontButton
  *
  * #GtkFontChooser is an interface that can be implemented by widgets
- * displaying the list of fonts.  In GTK+, the main objects
+ * displaying the list of fonts. In GTK+, the main objects
  * that implement this interface are #GtkFontChooserWidget,
- * #GtkFontChooserDialog and #GtkFontButton.
- *
- * Since: 3.2
+ * #GtkFontChooserDialog and #GtkFontButton. The GtkFontChooser interface
+ * has been introducted in GTK+ 3.2.
  */
 
 enum
@@ -117,7 +116,7 @@ gtk_font_chooser_default_init (GtkFontChooserInterface *iface)
    * Space, Shift+Space, Return or Enter.
     */
   chooser_signals[SIGNAL_FONT_ACTIVATED] =
-    g_signal_new ("font-activated",
+    g_signal_new (I_("font-activated"),
                   GTK_TYPE_FONT_CHOOSER,
                   G_SIGNAL_RUN_FIRST,
                   G_STRUCT_OFFSET (GtkFontChooserIface, font_activated),
@@ -136,7 +135,7 @@ gtk_font_chooser_default_init (GtkFontChooserInterface *iface)
  *
  * If the selected font is not installed, returns %NULL.
  *
- * Returns: (transfer none): A #PangoFontFamily representing the
+ * Returns: (nullable) (transfer none): A #PangoFontFamily representing the
  *     selected font family, or %NULL. The returned object is owned by @fontchooser
  *     and must not be modified or freed.
  *
@@ -159,7 +158,7 @@ gtk_font_chooser_get_font_family (GtkFontChooser *fontchooser)
  *
  * If the selected font is not installed, returns %NULL.
  *
- * Returns: (transfer none): A #PangoFontFace representing the
+ * Returns: (nullable) (transfer none): A #PangoFontFace representing the
  *     selected font group details, or %NULL. The returned object is owned by
  *     @fontchooser and must not be modified or freed.
  *
@@ -207,7 +206,7 @@ gtk_font_chooser_get_font_size (GtkFontChooser *fontchooser)
  * Use pango_font_description_equal() if you want to compare two
  * font descriptions.
  *
- * Returns: (transfer full) (allow-none): A string with the name
+ * Returns: (nullable) (transfer full): A string with the name
  *     of the current font, or %NULL if  no font is selected. You must
  *     free this string with g_free().
  *
@@ -260,7 +259,7 @@ gtk_font_chooser_set_font (GtkFontChooser *fontchooser,
  * Use pango_font_description_equal() if you want to compare two
  * font descriptions.
  *
- * Returns: (transfer full) (allow-none): A #PangoFontDescription for the
+ * Returns: (nullable) (transfer full): A #PangoFontDescription for the
  *     current font, or %NULL if  no font is selected.
  *
  * Since: 3.2
@@ -414,4 +413,71 @@ _gtk_font_chooser_font_activated (GtkFontChooser *chooser,
   g_return_if_fail (GTK_IS_FONT_CHOOSER (chooser));
 
   g_signal_emit (chooser, chooser_signals[SIGNAL_FONT_ACTIVATED], 0, fontname);
+}
+
+/**
+ * gtk_font_chooser_set_font_map:
+ * @fontchooser: a #GtkFontChooser
+ * @fontmap: (allow-none): a #PangoFontMap
+ *
+ * Sets a custom font map to use for this font chooser widget.
+ * A custom font map can be used to present application-specific
+ * fonts instead of or in addition to the normal system fonts.
+ *
+ * |[<!-- language="C" -->
+ * FcConfig *config;
+ * PangoFontMap *fontmap;
+ *
+ * config = FcInitLoadConfigAndFonts ();
+ * FcConfigAppFontAddFile (config, my_app_font_file);
+ *
+ * fontmap = pango_cairo_font_map_new_for_font_type (CAIRO_FONT_TYPE_FT);
+ * pango_fc_font_map_set_config (PANGO_FC_FONT_MAP (fontmap), config);
+ *
+ * gtk_font_chooser_set_font_map (font_chooser, fontmap);
+ * ]|
+ *
+ * Note that other GTK+ widgets will only be able to use the application-specific
+ * font if it is present in the font map they use:
+ *
+ * |[
+ * context = gtk_widget_get_pango_context (label);
+ * pango_context_set_font_map (context, fontmap);
+ * ]|
+ *
+ * Since: 3.18
+ */
+void
+gtk_font_chooser_set_font_map (GtkFontChooser *fontchooser,
+                               PangoFontMap   *fontmap)
+{
+  g_return_if_fail (GTK_IS_FONT_CHOOSER (fontchooser));
+  g_return_if_fail (fontmap == NULL || PANGO_IS_FONT_MAP (fontmap));
+
+  if (GTK_FONT_CHOOSER_GET_IFACE (fontchooser)->set_font_map)
+    GTK_FONT_CHOOSER_GET_IFACE (fontchooser)->set_font_map (fontchooser, fontmap);
+}
+
+/**
+ * gtk_font_chooser_get_font_map:
+ * @fontchooser: a #GtkFontChooser
+ *
+ * Gets the custom font map of this font chooser widget,
+ * or %NULL if it does not have one.
+ *
+ * Returns: (nullable) (transfer full): a #PangoFontMap, or %NULL
+ *
+ * Since: 3.18
+ */
+PangoFontMap *
+gtk_font_chooser_get_font_map (GtkFontChooser *fontchooser)
+{
+  PangoFontMap *fontmap = NULL;
+
+  g_return_val_if_fail (GTK_IS_FONT_CHOOSER (fontchooser), NULL);
+
+  if (GTK_FONT_CHOOSER_GET_IFACE (fontchooser)->get_font_map)
+    fontmap = GTK_FONT_CHOOSER_GET_IFACE (fontchooser)->get_font_map (fontchooser);
+
+  return fontmap;
 }

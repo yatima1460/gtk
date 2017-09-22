@@ -28,8 +28,11 @@
 #include "gtk/gtkcssimagegradientprivate.h"
 #include "gtk/gtkcssimageiconthemeprivate.h"
 #include "gtk/gtkcssimagelinearprivate.h"
+#include "gtk/gtkcssimageradialprivate.h"
 #include "gtk/gtkcssimageurlprivate.h"
 #include "gtk/gtkcssimagescaledprivate.h"
+#include "gtk/gtkcssimagerecolorprivate.h"
+#include "gtk/gtkcssimagefallbackprivate.h"
 #include "gtk/gtkcssimagewin32private.h"
 
 G_DEFINE_ABSTRACT_TYPE (GtkCssImage, _gtk_css_image, G_TYPE_OBJECT)
@@ -87,6 +90,8 @@ gtk_css_image_real_transition (GtkCssImage *start,
     return g_object_ref (start);
   else if (progress >= 1.0)
     return end ? g_object_ref (end) : NULL;
+  else if (_gtk_css_image_equal (start, end))
+    return g_object_ref (start);
   else
     return _gtk_css_image_cross_fade_new (start, end, progress);
 }
@@ -302,13 +307,13 @@ _gtk_css_image_get_concrete_size (GtkCssImage *image,
         {
           if (image_aspect * default_height > default_width)
             {
-              *concrete_width = default_height * image_aspect;
-              *concrete_height = default_height;
+              *concrete_width = default_width;
+              *concrete_height = default_width / image_aspect;
             }
           else
             {
-              *concrete_width = default_width;
-              *concrete_height = default_width / image_aspect;
+              *concrete_width = default_height * image_aspect;
+              *concrete_height = default_height;
             }
         }
       else
@@ -388,14 +393,11 @@ _gtk_css_image_get_surface (GtkCssImage     *image,
   g_return_val_if_fail (surface_width > 0, NULL);
   g_return_val_if_fail (surface_height > 0, NULL);
 
-
   if (target)
-    {
-      result = cairo_surface_create_similar (target,
-					     CAIRO_CONTENT_COLOR_ALPHA,
-					     surface_width,
-					     surface_height);
-    }
+    result = cairo_surface_create_similar (target,
+                                           CAIRO_CONTENT_COLOR_ALPHA,
+                                           surface_width,
+                                           surface_height);
   else
     result = cairo_image_surface_create (CAIRO_FORMAT_ARGB32,
                                          surface_width,
@@ -419,10 +421,14 @@ gtk_css_image_get_parser_type (GtkCssParser *parser)
     { "-gtk-gradient", _gtk_css_image_gradient_get_type },
     { "-gtk-icontheme", _gtk_css_image_icon_theme_get_type },
     { "-gtk-scaled", _gtk_css_image_scaled_get_type },
+    { "-gtk-recolor", _gtk_css_image_recolor_get_type },
     { "-gtk-win32-theme-part", _gtk_css_image_win32_get_type },
     { "linear-gradient", _gtk_css_image_linear_get_type },
     { "repeating-linear-gradient", _gtk_css_image_linear_get_type },
-    { "cross-fade", _gtk_css_image_cross_fade_get_type }
+    { "radial-gradient", _gtk_css_image_radial_get_type },
+    { "repeating-radial-gradient", _gtk_css_image_radial_get_type },
+    { "cross-fade", _gtk_css_image_cross_fade_get_type },
+    { "image", _gtk_css_image_fallback_get_type }
   };
   guint i;
 

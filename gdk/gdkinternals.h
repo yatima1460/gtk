@@ -99,7 +99,9 @@ typedef enum {
   GDK_GL_ALWAYS                 = 1 << 1,
   GDK_GL_SOFTWARE_DRAW_GL       = 1 << 2,
   GDK_GL_SOFTWARE_DRAW_SURFACE  = 1 << 3,
-  GDK_GL_TEXTURE_RECTANGLE      = 1 << 4
+  GDK_GL_TEXTURE_RECTANGLE      = 1 << 4,
+  GDK_GL_LEGACY                 = 1 << 5,
+  GDK_GL_GLES                   = 1 << 6
 } GdkGLFlags;
 
 extern GList            *_gdk_default_filters;
@@ -112,12 +114,15 @@ extern gboolean _gdk_debug_updates;
 
 #ifdef G_ENABLE_DEBUG
 
-#define GDK_NOTE(type,action)                G_STMT_START { \
-    if (_gdk_debug_flags & GDK_DEBUG_##type)                \
+#define GDK_DEBUG_CHECK(type) G_UNLIKELY (_gdk_debug_flags & GDK_DEBUG_##type)
+
+#define GDK_NOTE(type,action)                G_STMT_START {     \
+    if (GDK_DEBUG_CHECK (type))                                 \
        { action; };                          } G_STMT_END
 
 #else /* !G_ENABLE_DEBUG */
 
+#define GDK_DEBUG_CHECK(type) 0
 #define GDK_NOTE(type,action)
 
 #endif /* G_ENABLE_DEBUG */
@@ -184,6 +189,9 @@ struct _GdkEventPrivate
   gpointer   windowing_data;
   GdkDevice *device;
   GdkDevice *source_device;
+  GdkSeat   *seat;
+  GdkDeviceTool *tool;
+  guint16    key_scancode;
 };
 
 typedef struct _GdkWindowPaint GdkWindowPaint;
@@ -195,6 +203,7 @@ struct _GdkWindow
   GdkWindowImpl *impl; /* window-system-specific delegate object */
 
   GdkWindow *parent;
+  GdkWindow *transient_for;
   GdkVisual *visual;
 
   gpointer user_data;
@@ -212,7 +221,9 @@ struct _GdkWindow
 
   GList *filters;
   GList *children;
+  GList children_list_node;
   GList *native_children;
+
 
   cairo_pattern_t *background;
 
@@ -308,12 +319,14 @@ struct _GdkWindow
   /* We store the old expose areas to support buffer-age optimizations */
   cairo_region_t *old_updated_area[2];
 
+  GdkWindowState old_state;
   GdkWindowState state;
 
   guint8 alpha;
   guint8 fullscreen_mode;
 
   guint input_only : 1;
+  guint pass_through : 1;
   guint modal_hint : 1;
   guint composited : 1;
   guint has_alpha_background : 1;
@@ -344,6 +357,10 @@ struct _GdkWindow
 
   gint abs_x, abs_y; /* Absolute offset in impl */
   gint width, height;
+  gint shadow_top;
+  gint shadow_left;
+  gint shadow_right;
+  gint shadow_bottom;
 
   guint num_offscreen_children;
 
@@ -367,6 +384,10 @@ struct _GdkWindow
 
   GdkFrameClock *frame_clock; /* NULL to use from parent or default */
   GdkWindowInvalidateHandlerFunc invalidate_handler;
+
+  GdkDrawingContext *drawing_context;
+
+  cairo_region_t *opaque_region;
 };
 
 #define GDK_WINDOW_TYPE(d) ((((GdkWindow *)(d)))->window_type)
@@ -382,16 +403,19 @@ GdkEvent* _gdk_event_unqueue (GdkDisplay *display);
 void _gdk_event_filter_unref        (GdkWindow      *window,
 				     GdkEventFilter *filter);
 
-void     _gdk_event_set_pointer_emulated (GdkEvent *event,
-                                          gboolean  emulated);
-gboolean _gdk_event_get_pointer_emulated (GdkEvent *event);
+void     gdk_event_set_pointer_emulated (GdkEvent *event,
+                                         gboolean  emulated);
+
+void     gdk_event_set_scancode        (GdkEvent *event,
+                                        guint16 scancode);
+
+void     gdk_event_set_seat              (GdkEvent *event,
+                                          GdkSeat  *seat);
 
 void   _gdk_event_emit               (GdkEvent   *event);
 GList* _gdk_event_queue_find_first   (GdkDisplay *display);
 void   _gdk_event_queue_remove_link  (GdkDisplay *display,
                                       GList      *node);
-GList* _gdk_event_queue_prepend      (GdkDisplay *display,
-                                      GdkEvent   *event);
 GList* _gdk_event_queue_append       (GdkDisplay *display,
                                       GdkEvent   *event);
 GList* _gdk_event_queue_insert_after (GdkDisplay *display,
@@ -427,12 +451,15 @@ typedef struct {
 void           gdk_gl_texture_quads               (GdkGLContext *paint_context,
                                                    guint texture_target,
                                                    int n_quads,
-                                                   GdkTexturedQuad *quads);
+                                                   GdkTexturedQuad *quads,
+                                                   gboolean flip_colors);
 
 void            gdk_cairo_surface_mark_as_direct (cairo_surface_t *surface,
                                                   GdkWindow       *window);
 cairo_region_t *gdk_cairo_region_from_clip       (cairo_t         *cr);
 
+void            gdk_cairo_set_drawing_context    (cairo_t           *cr,
+                                                  GdkDrawingContext *context);
 
 /*************************************
  * Interfaces used by windowing code *
@@ -451,6 +478,10 @@ GdkGLContext * gdk_window_get_paint_gl_context (GdkWindow *window,
 void gdk_window_get_unscaled_size (GdkWindow *window,
                                    int *unscaled_width,
                                    int *unscaled_height);
+
+GdkDrawingContext *gdk_window_get_drawing_context (GdkWindow *window);
+
+cairo_region_t *gdk_window_get_current_paint_region (GdkWindow *window);
 
 void       _gdk_window_process_updates_recurse (GdkWindow *window,
                                                 cairo_region_t *expose_region);

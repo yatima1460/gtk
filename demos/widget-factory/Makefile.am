@@ -19,13 +19,13 @@ gtk3_widget_factory_CPPFLAGS = 		\
 	-I$(top_srcdir)			\
 	$(GTK_DEBUG_FLAGS)		\
 	$(GTK_DEP_CFLAGS)		\
-	$(LIBCANBERRA_CFLAGS)
+	$(NULL)
 
 gtk3_widget_factory_LDADD = 		\
 	$(top_builddir)/gdk/libgdk-3.la \
 	$(top_builddir)/gtk/libgtk-3.la \
 	$(GTK_DEP_LIBS)			\
-	$(LIBCANBERRA_LIBS)
+	$(NULL)
 
 widget_factory_resources.c: widget-factory.gresource.xml $(shell $(GLIB_COMPILE_RESOURCES) --sourcedir=$(srcdir) --generate-dependencies $(srcdir)/widget-factory.gresource.xml)
 	$(AM_V_GEN) $(GLIB_COMPILE_RESOURCES) --target=$@ --sourcedir=$(srcdir) --generate-source $<
@@ -47,7 +47,7 @@ dist_appsicon32_DATA = data/32x32/gtk3-widget-factory.png data/32x32/gtk3-widget
 dist_appsicon48_DATA = data/48x48/gtk3-widget-factory.png data/48x48/gtk3-widget-factory-symbolic.symbolic.png
 dist_appsicon256_DATA = data/256x256/gtk3-widget-factory.png data/256x256/gtk3-widget-factory-symbolic.symbolic.png
 
-update_icon_cache = gtk-update-icon-cache --ignore-theme-index --force
+update_icon_cache = $(top_builddir)/gtk/gtk-update-icon-cache$(EXEEXT) --ignore-theme-index --force
 
 install-data-hook: install-update-icon-cache
 uninstall-hook: uninstall-update-icon-cache
@@ -64,6 +64,7 @@ EXTRA_DIST += 				\
 	widget-factory.ui 		\
 	widget-factory.css		\
 	menus.ui 			\
+	help-overlay.ui			\
 	widget-factory.gresource.xml	\
 	data/source.svg			\
 	data/symbolic-source.svg

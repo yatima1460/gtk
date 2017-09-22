@@ -19,12 +19,15 @@
 
 #include <config.h>
 
-#include "gtk/gtkallocatedbitmaskprivate.h"
+#include "gtkallocatedbitmaskprivate.h"
+#include "gtkprivate.h"
+
 
 #define VALUE_TYPE gsize
 
 #define VALUE_SIZE_BITS (sizeof (VALUE_TYPE) * 8)
 #define VALUE_BIT(idx) (((VALUE_TYPE) 1) << (idx))
+#define ALL_BITS (~((VALUE_TYPE) 0))
 
 struct _GtkBitmask {
   gsize len;
@@ -48,6 +51,9 @@ gtk_allocated_bitmask_resize (GtkBitmask *mask,
                               gsize       size)
 {
   gsize i;
+
+  if (size == mask->len)
+    return mask;
 
   mask = g_realloc (mask, sizeof (GtkBitmask) + sizeof(VALUE_TYPE) * (size - 1));
 
@@ -85,7 +91,7 @@ _gtk_allocated_bitmask_copy (const GtkBitmask *mask)
 {
   GtkBitmask *copy;
 
-  g_return_val_if_fail (mask != NULL, NULL);
+  gtk_internal_return_val_if_fail (mask != NULL, NULL);
 
   copy = gtk_allocated_bitmask_new_for_bits (0);
   
@@ -95,7 +101,7 @@ _gtk_allocated_bitmask_copy (const GtkBitmask *mask)
 void
 _gtk_allocated_bitmask_free (GtkBitmask *mask)
 {
-  g_return_if_fail (mask != NULL);
+  gtk_internal_return_if_fail (mask != NULL);
 
   g_free (mask);
 }
@@ -107,8 +113,8 @@ _gtk_allocated_bitmask_print (const GtkBitmask *mask,
   GtkBitmask mask_allocated;
   int i;
 
-  g_return_if_fail (mask != NULL);
-  g_return_if_fail (string != NULL);
+  gtk_internal_return_if_fail (mask != NULL);
+  gtk_internal_return_if_fail (string != NULL);
 
   ENSURE_ALLOCATED (mask, mask_allocated);
 
@@ -165,16 +171,19 @@ _gtk_allocated_bitmask_intersect (GtkBitmask       *mask,
   GtkBitmask other_allocated;
   guint i;
 
-  g_return_val_if_fail (mask != NULL, NULL);
-  g_return_val_if_fail (other != NULL, NULL);
+  gtk_internal_return_val_if_fail (mask != NULL, NULL);
+  gtk_internal_return_val_if_fail (other != NULL, NULL);
 
   mask = gtk_bitmask_ensure_allocated (mask);
   ENSURE_ALLOCATED (other, other_allocated);
 
-  mask = gtk_allocated_bitmask_resize (mask, MIN (mask->len, other->len));
-  for (i = 0; i < mask->len; i++)
+  for (i = 0; i < MIN (mask->len, other->len); i++)
     {
       mask->data[i] &= other->data[i];
+    }
+  for (; i < mask->len; i++)
+    {
+      mask->data[i] = 0;
     }
 
   return gtk_allocated_bitmask_shrink (mask);
@@ -187,8 +196,8 @@ _gtk_allocated_bitmask_union (GtkBitmask       *mask,
   GtkBitmask other_allocated;
   guint i;
 
-  g_return_val_if_fail (mask != NULL, NULL);
-  g_return_val_if_fail (other != NULL, NULL);
+  gtk_internal_return_val_if_fail (mask != NULL, NULL);
+  gtk_internal_return_val_if_fail (other != NULL, NULL);
 
   mask = gtk_bitmask_ensure_allocated (mask);
   ENSURE_ALLOCATED (other, other_allocated);
@@ -209,8 +218,8 @@ _gtk_allocated_bitmask_subtract (GtkBitmask       *mask,
   GtkBitmask other_allocated;
   guint i, len;
 
-  g_return_val_if_fail (mask != NULL, NULL);
-  g_return_val_if_fail (other != NULL, NULL);
+  gtk_internal_return_val_if_fail (mask != NULL, NULL);
+  gtk_internal_return_val_if_fail (other != NULL, NULL);
 
   mask = gtk_bitmask_ensure_allocated (mask);
   ENSURE_ALLOCATED (other, other_allocated);
@@ -224,7 +233,7 @@ _gtk_allocated_bitmask_subtract (GtkBitmask       *mask,
   return gtk_allocated_bitmask_shrink (mask);
 }
 
-static void
+static inline void
 gtk_allocated_bitmask_indexes (guint index_,
                                guint *array_index,
                                guint *bit_index)
@@ -239,7 +248,7 @@ _gtk_allocated_bitmask_get (const GtkBitmask *mask,
 {
   guint array_index, bit_index;
 
-  g_return_val_if_fail (mask != NULL, FALSE);
+  gtk_internal_return_val_if_fail (mask != NULL, FALSE);
 
   gtk_allocated_bitmask_indexes (index_, &array_index, &bit_index);
 
@@ -256,7 +265,7 @@ _gtk_allocated_bitmask_set (GtkBitmask *mask,
 {
   guint array_index, bit_index;
 
-  g_return_val_if_fail (mask != NULL, NULL);
+  gtk_internal_return_val_if_fail (mask != NULL, NULL);
 
   mask = gtk_bitmask_ensure_allocated (mask);
   gtk_allocated_bitmask_indexes (index_, &array_index, &bit_index);
@@ -286,17 +295,27 @@ _gtk_allocated_bitmask_invert_range (GtkBitmask *mask,
                                      guint       end)
 {
   guint i;
+  guint start_word, start_bit;
+  guint end_word, end_bit;
 
-  g_return_val_if_fail (mask != NULL, NULL);
-  g_return_val_if_fail (start < end, NULL);
+  gtk_internal_return_val_if_fail (mask != NULL, NULL);
+  gtk_internal_return_val_if_fail (start < end, NULL);
 
   mask = gtk_bitmask_ensure_allocated (mask);
 
-  /* I CAN HAS SPEEDUP? */
-  for (i = start; i < end; i++)
-    mask = _gtk_allocated_bitmask_set (mask, i, !_gtk_allocated_bitmask_get (mask, i));
+  gtk_allocated_bitmask_indexes (start, &start_word, &start_bit);
+  gtk_allocated_bitmask_indexes (end - 1, &end_word, &end_bit);
 
-  return mask;
+  if (end_word >= mask->len)
+    mask = gtk_allocated_bitmask_resize (mask, end_word + 1);
+
+  for (i = start_word; i <= end_word; i++)
+    mask->data[i] ^= ALL_BITS;
+  mask->data[start_word] ^= (((VALUE_TYPE) 1) << start_bit) - 1;
+  if (end_bit != VALUE_SIZE_BITS - 1)
+    mask->data[end_word] ^= ALL_BITS << (end_bit + 1);
+
+  return gtk_allocated_bitmask_shrink (mask);
 }
 
 gboolean
@@ -305,8 +324,8 @@ _gtk_allocated_bitmask_equals (const GtkBitmask  *mask,
 {
   guint i;
 
-  g_return_val_if_fail (mask != NULL, FALSE);
-  g_return_val_if_fail (other != NULL, FALSE);
+  gtk_internal_return_val_if_fail (mask != NULL, FALSE);
+  gtk_internal_return_val_if_fail (other != NULL, FALSE);
 
   if (mask->len != other->len)
     return FALSE;
@@ -327,8 +346,8 @@ _gtk_allocated_bitmask_intersects (const GtkBitmask *mask,
   GtkBitmask mask_allocated, other_allocated;
   int i;
 
-  g_return_val_if_fail (mask != NULL, FALSE);
-  g_return_val_if_fail (other != NULL, FALSE);
+  gtk_internal_return_val_if_fail (mask != NULL, FALSE);
+  gtk_internal_return_val_if_fail (other != NULL, FALSE);
 
   ENSURE_ALLOCATED (mask, mask_allocated);
   ENSURE_ALLOCATED (other, other_allocated);

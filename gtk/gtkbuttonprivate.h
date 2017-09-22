@@ -22,6 +22,7 @@
 #include "gtkactionhelper.h"
 #include "gtkgesturesingle.h"
 #include "deprecated/gtkaction.h"
+#include "gtkcssgadgetprivate.h"
 
 G_BEGIN_DECLS
 
@@ -31,6 +32,7 @@ struct _GtkButtonPrivate
   GtkAction             *action;
   GtkWidget             *image;
   GtkActionHelper       *action_helper;
+  GtkCssGadget          *gadget;
 
   GdkDevice             *grab_keyboard;
   GdkWindow             *event_window;
@@ -46,14 +48,12 @@ struct _GtkButtonPrivate
   gfloat                 baseline_align;
 
   guint                  activate_timeout;
-  guint32                grab_time;
 
   GtkPositionType        image_position;
 
   guint          align_set             : 1;
   guint          button_down           : 1;
   guint          constructed           : 1;
-  guint          focus_on_click        : 1;
   guint          image_is_stock        : 1;
   guint          in_button             : 1;
   guint          use_action_appearance : 1;

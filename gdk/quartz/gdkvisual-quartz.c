@@ -38,27 +38,6 @@ static GdkVisual *system_visual;
 static GdkVisual *rgba_visual;
 static GdkVisual *gray_visual;
 
-static void
-gdk_visual_decompose_mask (gulong  mask,
-			   gint   *shift,
-			   gint   *prec)
-{
-  *shift = 0;
-  *prec = 0;
-
-  while (!(mask & 0x1))
-    {
-      (*shift)++;
-      mask >>= 1;
-    }
-
-  while (mask & 0x1)
-    {
-      (*prec)++;
-      mask >>= 1;
-    }
-}
-
 static GdkVisual *
 create_standard_visual (GdkScreen *screen,
                         gint       depth)
@@ -76,16 +55,6 @@ create_standard_visual (GdkScreen *screen,
   visual->red_mask = 0xff0000;
   visual->green_mask = 0xff00;
   visual->blue_mask = 0xff;
-  
-  gdk_visual_decompose_mask (visual->red_mask,
-			     &visual->red_shift,
-			     &visual->red_prec);
-  gdk_visual_decompose_mask (visual->green_mask,
-			     &visual->green_shift,
-			     &visual->green_prec);
-  gdk_visual_decompose_mask (visual->blue_mask,
-			     &visual->blue_shift,
-			     &visual->blue_prec);
 
   return visual;
 }

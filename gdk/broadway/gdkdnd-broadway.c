@@ -87,7 +87,9 @@ gdk_broadway_drag_context_finalize (GObject *object)
 GdkDragContext *
 _gdk_broadway_window_drag_begin (GdkWindow *window,
 				 GdkDevice *device,
-				 GList     *targets)
+				 GList     *targets,
+                                 gint       x_root,
+                                 gint       y_root)
 {
   GdkDragContext *new_context;
 
@@ -96,6 +98,7 @@ _gdk_broadway_window_drag_begin (GdkWindow *window,
 
   new_context = g_object_new (GDK_TYPE_BROADWAY_DRAG_CONTEXT,
 			      NULL);
+  new_context->display = gdk_window_get_display (window);
 
   return new_context;
 }

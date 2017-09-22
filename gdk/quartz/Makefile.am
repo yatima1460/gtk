@@ -5,6 +5,7 @@ libgdkquartzincludedir = $(includedir)/gtk-3.0/gdk/quartz
 
 AM_CPPFLAGS = 				\
 	-DG_LOG_DOMAIN=\"Gdk\"		\
+	-DG_LOG_USE_STRUCTURED=1	\
 	-DGDK_COMPILATION		\
 	-I$(top_srcdir)			\
 	-I$(top_srcdir)/gdk		\
@@ -28,13 +29,18 @@ libgdk_quartz_la_SOURCES =    	\
 	gdkdevicemanager-core-quartz.c	\
 	gdkdevicemanager-core-quartz.h	\
 	gdkdisplay-quartz.c	\
+	gdkdisplay-quartz.h	\
 	gdkdisplaymanager-quartz.c	\
 	gdkdnd-quartz.c		\
 	gdkdnd-quartz.h		\
 	gdkevents-quartz.c	\
 	gdkeventloop-quartz.c	\
+	gdkglcontext-quartz.c	\
+	gdkglcontext-quartz.h	\
 	gdkglobals-quartz.c	\
 	gdkkeys-quartz.c	\
+	gdkmonitor-quartz.c     \
+	gdkmonitor-quartz.h     \
 	gdkprivate-quartz.h	\
 	gdkproperty-quartz.c	\
 	gdkquartz.h		\
@@ -59,6 +65,7 @@ libgdkquartzinclude_HEADERS =		\
 	gdkquartzdisplaymanager.h	\
 	gdkquartzdnd.h			\
 	gdkquartzkeys.h			\
+	gdkquartzmonitor.h		\
 	gdkquartzscreen.h		\
 	gdkquartzutils.h		\
 	gdkquartzvisual.h		\

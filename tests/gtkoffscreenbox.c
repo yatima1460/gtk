@@ -252,7 +252,6 @@ gtk_offscreen_box_realize (GtkWidget *widget)
 {
   GtkOffscreenBox *offscreen_box = GTK_OFFSCREEN_BOX (widget);
   GtkAllocation allocation, child_area;
-  GtkStyleContext *context;
   GdkWindow *window;
   GdkWindowAttr attributes;
   gint attributes_mask;
@@ -345,11 +344,6 @@ gtk_offscreen_box_realize (GtkWidget *widget)
   g_signal_connect (offscreen_box->offscreen_window2, "from-embedder",
 		    G_CALLBACK (offscreen_window_from_parent2), offscreen_box);
 
-  context = gtk_widget_get_style_context (widget);
-  gtk_style_context_set_background (context, window);
-  gtk_style_context_set_background (context, offscreen_box->offscreen_window1);
-  gtk_style_context_set_background (context, offscreen_box->offscreen_window2);
-
   gdk_window_show (offscreen_box->offscreen_window1);
   gdk_window_show (offscreen_box->offscreen_window2);
 }
@@ -392,7 +386,7 @@ gtk_offscreen_box_add (GtkContainer *container,
   else if (!offscreen_box->child2)
     gtk_offscreen_box_add2 (offscreen_box, widget);
   else
-    g_warning ("GtkOffscreenBox cannot have more than 2 children\n");
+    g_warning ("GtkOffscreenBox cannot have more than 2 children");
 }
 
 void

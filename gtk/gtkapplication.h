@@ -162,6 +162,8 @@ GDK_AVAILABLE_IN_3_14
 GMenu *          gtk_application_get_menu_by_id                  (GtkApplication       *application,
                                                                   const gchar          *id);
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(GtkApplication, g_object_unref)
+
 G_END_DECLS
 
 #endif /* __GTK_APPLICATION_H__ */

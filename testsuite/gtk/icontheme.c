@@ -122,15 +122,35 @@ assert_icon_lookup_fails (const char         *icon_name,
 
 static GList *lookups = NULL;
 
-static void
-print_func (const gchar *string)
+static GLogWriterOutput
+log_writer (GLogLevelFlags   log_level,
+            const GLogField *fields,
+            gsize            n_fields,
+            gpointer         user_data)
 {
-  if (g_str_has_prefix (string, "\tlookup name: "))
+  const char *domain = NULL;
+  const char *msg = NULL;
+  int i;
+
+  for (i = 0; i < n_fields; i++)
+    {
+      if (strcmp (fields[i].key, "GLIB_DOMAIN") == 0)
+        domain = fields[i].value;
+      if (strcmp (fields[i].key, "MESSAGE") == 0)
+        msg = fields[i].value;
+    }
+
+  if (log_level != G_LOG_LEVEL_MESSAGE || g_strcmp0 (domain, "Gtk") != 0)
+    return g_log_writer_default (log_level, fields, n_fields, user_data);
+
+  if (g_str_has_prefix (msg, "\tlookup name: "))
     {
       gchar *s;
-      s = g_strchomp (g_strdup (string + strlen ("\tlookup name: ")));
+      s = g_strchomp (g_strdup (msg + strlen ("\tlookup name: ")));
       lookups = g_list_append (lookups, s);
     }
+
+  return G_LOG_WRITER_HANDLED;
 }
 
 static void
@@ -141,7 +161,6 @@ assert_lookup_order (const char         *icon_name,
                      ...)
 {
   guint debug_flags;
-  GPrintFunc old_print_func;
   va_list args;
   const gchar *s;
   GtkIconInfo *info;
@@ -149,10 +168,10 @@ assert_lookup_order (const char         *icon_name,
 
   debug_flags = gtk_get_debug_flags ();
   gtk_set_debug_flags (debug_flags | GTK_DEBUG_ICONTHEME);
-  old_print_func = g_set_print_handler (print_func);
+  g_log_set_writer_func (log_writer, NULL, NULL);
 
   g_assert (lookups == NULL);
-  
+
   info = gtk_icon_theme_lookup_icon (get_test_icontheme (FALSE), icon_name, size, flags);
   if (info)
     g_object_unref (info);
@@ -173,7 +192,7 @@ assert_lookup_order (const char         *icon_name,
   g_list_free_full (lookups, g_free);
   lookups = NULL;
 
-  g_set_print_handler (old_print_func);
+  g_log_set_writer_func (g_log_writer_default, NULL, NULL);
   gtk_set_debug_flags (debug_flags);
 }
 
@@ -182,15 +201,6 @@ test_basics (void)
 {
   /* just a basic boring lookup so we know everything works */
   assert_icon_lookup ("simple", 16, 0, "/icons/16x16/simple.png");
-
-  /* The first time an icon is looked up that doesn't exist, GTK spews a 
-   * warning.
-   * We make that happen right here, so we can get rid of the warning 
-   * and do failing lookups in other tests.
-   */
-  g_test_expect_message ("Gtk", G_LOG_LEVEL_WARNING, "Could not find the icon*");
-  assert_icon_lookup_fails ("this-icon-totally-does-not-exist", 16, 0);
-  g_test_assert_expected_messages ();
 }
 
 static void
@@ -698,10 +708,86 @@ test_inherit (void)
                       "/icons2/scalable/one-two-symbolic-rtl.svg");
 }
 
+static void
+test_nonsquare_symbolic (void)
+{
+  gint width, height;
+  GtkIconTheme *icon_theme;
+  GtkIconInfo *info;
+  GFile *file;
+  GIcon *icon;
+  GdkRGBA black = { 0.0, 0.0, 0.0, 1.0 };
+  gboolean was_symbolic = FALSE;
+  GError *error = NULL;
+  gchar *path = g_build_filename (g_test_get_dir (G_TEST_DIST),
+				  "icons",
+				  "scalable",
+				  "nonsquare-symbolic.svg",
+				  NULL);
+
+  /* load the original image for reference */
+  GdkPixbuf *pixbuf = gdk_pixbuf_new_from_file (path, &error);
+  g_assert_no_error (error);
+  g_assert_nonnull (pixbuf);
+
+  width = gdk_pixbuf_get_width (pixbuf);
+  height = gdk_pixbuf_get_height (pixbuf);
+  g_assert_cmpint (width, !=, height);
+
+  /* now load it through GtkIconTheme */
+  icon_theme = gtk_icon_theme_get_default ();
+  file = g_file_new_for_path (path);
+  icon = g_file_icon_new (file);
+  info = gtk_icon_theme_lookup_by_gicon_for_scale (icon_theme, icon,
+						   height, 1, 0);
+  g_assert_nonnull (info);
+
+  g_object_unref (pixbuf);
+  pixbuf = gtk_icon_info_load_symbolic (info, &black, NULL, NULL, NULL,
+					&was_symbolic, &error);
+
+  /* we are loaded successfully */
+  g_assert_no_error (error);
+  g_assert_nonnull (pixbuf);
+  g_assert_true (was_symbolic);
+
+  /* the original dimensions have been preserved */
+  g_assert_cmpint (gdk_pixbuf_get_width (pixbuf), ==, width);
+  g_assert_cmpint (gdk_pixbuf_get_height (pixbuf), ==, height);
+
+  g_free (path);
+  g_object_unref (pixbuf);
+  g_object_unref (file);
+  g_object_unref (icon);
+  g_object_unref (info);
+}
+
+static GLogWriterOutput
+log_writer_drop_warnings (GLogLevelFlags   log_level,
+                          const GLogField *fields,
+                          gsize            n_fields,
+                          gpointer         user_data)
+{
+  gboolean *ignore_warnings = user_data;
+
+  if (log_level == G_LOG_LEVEL_WARNING && *ignore_warnings)
+    return G_LOG_WRITER_HANDLED;
+
+  return g_log_writer_default (log_level, fields, n_fields, user_data);
+}
+
 int
 main (int argc, char *argv[])
 {
+  gboolean ignore_warnings = TRUE;
+
   gtk_test_init (&argc, &argv);
+
+  /* Ignore the one-time warning that the fallback icon theme can’t be found
+   * (because we’ve changed the search paths). */
+  g_log_set_writer_func (log_writer_drop_warnings, &ignore_warnings, NULL);
+  assert_icon_lookup_fails ("this-icon-totally-does-not-exist", 16, 0);
+  ignore_warnings = FALSE;
 
   g_test_add_func ("/icontheme/basics", test_basics);
   g_test_add_func ("/icontheme/lookup-order", test_lookup_order);
@@ -716,6 +802,7 @@ main (int argc, char *argv[])
   g_test_add_func ("/icontheme/list", test_list);
   g_test_add_func ("/icontheme/async", test_async);
   g_test_add_func ("/icontheme/inherit", test_inherit);
+  g_test_add_func ("/icontheme/nonsquare-symbolic", test_nonsquare_symbolic);
 
   return g_test_run();
 }

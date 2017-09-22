@@ -25,13 +25,21 @@
 #error "Only <gtk/gtk.h> can be included directly."
 #endif
 
+#include <gtk/gtkwindow.h>
+
 G_BEGIN_DECLS
 
-GDK_AVAILABLE_IN_ALL
+GDK_DEPRECATED_IN_3_22_FOR(gtk_show_uri_on_window)
 gboolean gtk_show_uri  (GdkScreen   *screen,
                         const gchar *uri,
                         guint32      timestamp,
                         GError     **error);
+
+GDK_AVAILABLE_IN_3_22
+gboolean gtk_show_uri_on_window (GtkWindow   *parent,
+                                 const char  *uri,
+                                 guint32      timestamp,
+                                 GError     **error);
 
 G_END_DECLS
 

@@ -34,6 +34,7 @@
 #include <math.h>
 #include "gtkgesturezoom.h"
 #include "gtkgesturezoomprivate.h"
+#include "gtkintl.h"
 
 typedef struct _GtkGestureZoomPrivate GtkGestureZoomPrivate;
 
@@ -75,6 +76,7 @@ static gboolean
 _gtk_gesture_zoom_get_distance (GtkGestureZoom *zoom,
                                 gdouble        *distance)
 {
+  const GdkEvent *last_event;
   gdouble x1, y1, x2, y2;
   GtkGesture *gesture;
   GList *sequences;
@@ -86,15 +88,32 @@ _gtk_gesture_zoom_get_distance (GtkGestureZoom *zoom,
     return FALSE;
 
   sequences = gtk_gesture_get_sequences (gesture);
-  g_assert (sequences && sequences->next);
+  if (!sequences)
+    return FALSE;
 
-  gtk_gesture_get_point (gesture, sequences->data, &x1, &y1);
-  gtk_gesture_get_point (gesture, sequences->next->data, &x2, &y2);
-  g_list_free (sequences);
+  last_event = gtk_gesture_get_last_event (gesture, sequences->data);
 
-  dx = x1 - x2;
-  dy = y1 - y2;;
-  *distance = sqrt ((dx * dx) + (dy * dy));
+  if (last_event->type == GDK_TOUCHPAD_PINCH &&
+      (last_event->touchpad_pinch.phase == GDK_TOUCHPAD_GESTURE_PHASE_BEGIN ||
+       last_event->touchpad_pinch.phase == GDK_TOUCHPAD_GESTURE_PHASE_UPDATE ||
+       last_event->touchpad_pinch.phase == GDK_TOUCHPAD_GESTURE_PHASE_END))
+    {
+      /* Touchpad pinch */
+      *distance = last_event->touchpad_pinch.scale;
+    }
+  else
+    {
+      if (!sequences->next)
+        return FALSE;
+
+      gtk_gesture_get_point (gesture, sequences->data, &x1, &y1);
+      gtk_gesture_get_point (gesture, sequences->next->data, &x2, &y2);
+      g_list_free (sequences);
+
+      dx = x1 - x2;
+      dy = y1 - y2;;
+      *distance = sqrt ((dx * dx) + (dy * dy));
+    }
 
   return TRUE;
 }
@@ -119,6 +138,22 @@ _gtk_gesture_zoom_check_emit (GtkGestureZoom *gesture)
   return TRUE;
 }
 
+static gboolean
+gtk_gesture_zoom_filter_event (GtkEventController *controller,
+                               const GdkEvent     *event)
+{
+  /* Let 2-finger touchpad pinch events go through */
+  if (event->type == GDK_TOUCHPAD_PINCH)
+    {
+      if (event->touchpad_pinch.n_fingers == 2)
+        return FALSE;
+      else
+        return TRUE;
+    }
+
+  return GTK_EVENT_CONTROLLER_CLASS (gtk_gesture_zoom_parent_class)->filter_event (controller, event);
+}
+
 static void
 gtk_gesture_zoom_begin (GtkGesture       *gesture,
                         GdkEventSequence *sequence)
@@ -141,9 +176,12 @@ static void
 gtk_gesture_zoom_class_init (GtkGestureZoomClass *klass)
 {
   GObjectClass *object_class = G_OBJECT_CLASS (klass);
+  GtkEventControllerClass *event_controller_class = GTK_EVENT_CONTROLLER_CLASS (klass);
   GtkGestureClass *gesture_class = GTK_GESTURE_CLASS (klass);
 
   object_class->constructor = gtk_gesture_zoom_constructor;
+
+  event_controller_class->filter_event = gtk_gesture_zoom_filter_event;
 
   gesture_class->begin = gtk_gesture_zoom_begin;
   gesture_class->update = gtk_gesture_zoom_update;
@@ -159,7 +197,7 @@ gtk_gesture_zoom_class_init (GtkGestureZoomClass *klass)
    * Since: 3.14
    */
   signals[SCALE_CHANGED] =
-    g_signal_new ("scale-changed",
+    g_signal_new (I_("scale-changed"),
                   GTK_TYPE_GESTURE_ZOOM,
                   G_SIGNAL_RUN_FIRST,
                   G_STRUCT_OFFSET (GtkGestureZoomClass, scale_changed),

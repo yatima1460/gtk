@@ -12,6 +12,7 @@ msgstr ""
 "PO-Revision-Date: 2010-10-04 16:32+0100\n"
 "Last-Translator: Kibavuidi Nsiangani <lundombe01@zaya-dio.com>\n"
 "Language-Team: GNOME kikongo Team <lundombe01@zaya-dio.com>\n"
+"Language: kg\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
@@ -1675,7 +1676,7 @@ msgstr "solae nitu"
 #.
 #: ../gtk/gtkcustompaperunixdialog.c:118
 msgid "default:mm"
-msgstr "wankulu:fiafu fianla"
+msgstr "default:mm"
 
 #. And show the custom paper dialog
 #: ../gtk/gtkcustompaperunixdialog.c:373
@@ -2453,7 +2454,7 @@ msgstr "bendila muna londa GTK+(ku sasila bio ko)"
 #.
 #: ../gtk/gtkmain.c:713
 msgid "default:LTR"
-msgstr "mankulu:LTR"
+msgstr "default:LTR"
 
 #: ../gtk/gtkmain.c:778
 #, c-format

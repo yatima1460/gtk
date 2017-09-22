@@ -3,41 +3,48 @@ include $(top_srcdir)/Makefile.decl
 EXTRA_DIST +=	\
 	README.txt	\
 	gtk+.sln	\
-	gtk-prebuild.vcxproj	\
-	gdk-win32.vcxproj	\
-	gdk-win32.vcxproj.filters	\
-	gdk.vcxproj	\
-	gdk.vcxproj.filters	\
-	gtk.vcxproj	\
-	gtk.vcxproj.filters	\
+	gtk3-prebuild.vcxproj	\
+	gtk3-prebuild.vcxproj.filters	\
+	gdk3-win32.vcxproj	\
+	gdk3-win32.vcxproj.filters	\
+	gdk-3.vcxproj	\
+	gdk-3.vcxproj.filters	\
+	gtk-3.vcxproj	\
+	gtk-3.vcxproj.filters	\
+	gtk-builder-tool.vcxproj		\
+	gtk-builder-tool.vcxproj.filters	\
 	gtk-encode-symbolic-svg.vcxproj	\
 	gtk-encode-symbolic-svg.vcxproj.filters	\
+	gtk-update-icon-cache.vcxproj		\
+	gtk-update-icon-cache.vcxproj.filters	\
+	gtk-query-settings.vcxproj		\
+	gtk-query-settings.vcxproj.filters	\
 	gtk3-demo.vcxproj	\
 	gtk3-demo.vcxproj.filters	\
 	gtk3-demo-application.vcxproj	\
 	gtk3-demo-application.vcxproj.filters	\
 	gtk3-icon-browser.vcxproj	\
 	gtk3-icon-browser.vcxproj.filters	\
-	gailutil.vcxproj	\
-	gailutil.vcxproj.filters	\
-	gtk-install.vcxproj	\
+	gailutil-3.vcxproj	\
+	gailutil-3.vcxproj.filters	\
+	gtk3-install.vcxproj	\
+	gtk3-install.vcxproj.filters	\
+	gtk3-introspect.vcxproj		\
 	broadwayd.vcxproj	\
 	broadwayd.vcxproj.filters	\
-	gdk-broadway.vcxproj	\
-	gdk-broadway.vcxproj.filters	\
-	gtk-build-defines.props	\
-	gtk-copy-gdk-broadway.props	\
-	gtk-gen-srcs.props	\
-	gtk-ignore-broadway.props	\
-	gtk-install.props	\
-	gtk-version-paths.props
+	gdk3-broadway.vcxproj	\
+	gdk3-broadway.vcxproj.filters	\
+	gtk3-build-defines.props	\
+	gtk3-copy-gdk-broadway.props	\
+	gtk3-gen-srcs.props	\
+	gtk3-ignore-broadway.props	\
+	gtk3-install.props	\
+	gtk3-version-paths.props
 
 DISTCLEANFILES = $(EXTRA_DIST)
 
-MSVC_SLN = gtk+
-
 MSVC_VER = 11
-
+MSVC_FORMAT_VER = 12
 MSVC_VER_LONG = 2012
 
 include $(top_srcdir)/build/Makefile-newvs.am

@@ -111,7 +111,7 @@ count_toggles_at_iter (GtkTextIter *iter,
       else if (of_tag == tmp->data)
         ++count;
       
-      tmp = g_slist_next (tmp);
+      tmp = tmp->next;
     }
   
   g_slist_free (tags);
@@ -200,7 +200,7 @@ check_specific_tag_in_range (GtkTextBuffer     *buffer,
 
           last_offset = this_offset;
           
-          if (gtk_text_iter_begins_tag (&iter, tag))
+          if (gtk_text_iter_starts_tag (&iter, tag))
             {
               if (state)
                 g_error ("Tag %p is already on, and was toggled on?", tag);
@@ -220,7 +220,7 @@ check_specific_tag_in_range (GtkTextBuffer     *buffer,
     }
 
   if (count != buffer_count)
-    g_error ("Counted %d tags iterating by char, %d iterating forward by tag toggle\n",
+    g_error ("Counted %d tags iterating by char, %d iterating forward by tag toggle",
              buffer_count, count);
   
   state = FALSE;
@@ -244,7 +244,7 @@ check_specific_tag_in_range (GtkTextBuffer     *buffer,
           
           last_offset = this_offset;
 
-          if (gtk_text_iter_begins_tag (&iter, tag))
+          if (gtk_text_iter_starts_tag (&iter, tag))
             {
               if (!state)
                 g_error ("Tag %p wasn't on when we got to the on toggle going backward?", tag);
@@ -480,7 +480,7 @@ run_tests (GtkTextBuffer *buffer)
 
               g_hash_table_insert (tag_states, tag, GINT_TO_POINTER (TRUE));
           
-              tmp = g_slist_next (tmp);
+              tmp = tmp->next;
             }
 
           g_slist_free (tags);
@@ -503,7 +503,7 @@ run_tests (GtkTextBuffer *buffer)
 
               g_hash_table_remove (tag_states, tag);
           
-              tmp = g_slist_next (tmp);
+              tmp = tmp->next;
             }
 
           g_slist_free (tags);
@@ -556,7 +556,7 @@ run_tests (GtkTextBuffer *buffer)
           
               g_hash_table_insert (tag_states, tag, GINT_TO_POINTER (TRUE));
           
-              tmp = g_slist_next (tmp);
+              tmp = tmp->next;
             }
 
           g_slist_free (tags);
@@ -579,7 +579,7 @@ run_tests (GtkTextBuffer *buffer)
 
               g_hash_table_remove (tag_states, tag);
           
-              tmp = g_slist_next (tmp);
+              tmp = tmp->next;
             }
 
           g_slist_free (tags);
@@ -593,7 +593,7 @@ run_tests (GtkTextBuffer *buffer)
   g_hash_table_destroy (tag_states);
 
   if (count != buffer_count)
-    g_error ("Counted %d tags iterating by char, %d iterating by tag toggle\n",
+    g_error ("Counted %d tags iterating by char, %d iterating by tag toggle",
              buffer_count, count);
 
   check_specific_tag (buffer, "fg_red");
@@ -1035,7 +1035,7 @@ test_logical_motion (void)
   while (gtk_text_iter_forward_cursor_position (&iter));
 
   if (!gtk_text_iter_is_end (&iter))
-    g_error ("Expected to stop at the end iterator\n");
+    g_error ("Expected to stop at the end iterator");
 
   if (!gtk_text_iter_is_cursor_position (&iter))
     g_error ("Should be a cursor position before the end iterator");
@@ -1063,10 +1063,10 @@ test_logical_motion (void)
   while (gtk_text_iter_backward_cursor_position (&iter));
 
   if (i != -1)
-    g_error ("Expected %d steps, there were actually %d\n", expected_steps - i, i);
+    g_error ("Expected %d steps, there were actually %d", expected_steps - i, i);
 
   if (!gtk_text_iter_is_start (&iter))
-    g_error ("Expected to stop at the start iterator\n");
+    g_error ("Expected to stop at the start iterator");
 
 
   /* Check sentence boundaries */
@@ -1108,10 +1108,10 @@ test_logical_motion (void)
   while (gtk_text_iter_forward_sentence_end (&iter));
 
   if (i != expected_steps)
-    g_error ("Expected %d steps, there were actually %d\n", expected_steps, i);
+    g_error ("Expected %d steps, there were actually %d", expected_steps, i);
 
   if (!gtk_text_iter_is_end (&iter))
-    g_error ("Expected to stop at the end iterator\n");
+    g_error ("Expected to stop at the end iterator");
   
   gtk_text_buffer_set_text (buffer, "Hi.\nHi. \nHi! Hi. Hi? Hi.", -1);
 
@@ -1151,10 +1151,10 @@ test_logical_motion (void)
   while (gtk_text_iter_backward_sentence_start (&iter));
 
   if (i != expected_steps)
-    g_error ("Expected %d steps, there were actually %d\n", expected_steps, i);
+    g_error ("Expected %d steps, there were actually %d", expected_steps, i);
 
   if (gtk_text_iter_get_offset (&iter) != 0)
-    g_error ("Expected to stop at the start iterator\n");
+    g_error ("Expected to stop at the start iterator");
   
   g_object_unref (buffer);
 }
@@ -1434,6 +1434,128 @@ test_clipboard (void)
   g_object_unref (buffer);
 }
 
+static void
+test_get_iter (void)
+{
+  GtkTextBuffer *buffer;
+  GtkTextIter iter;
+  gint offset;
+
+  buffer = gtk_text_buffer_new (NULL);
+
+  /* ß takes 2 bytes in UTF-8 */
+  gtk_text_buffer_set_text (buffer, "ab\nßd\r\nef", -1);
+
+  /* Test get_iter_at_line() */
+  gtk_text_buffer_get_iter_at_line (buffer, &iter, 0);
+  g_assert (gtk_text_iter_is_start (&iter));
+
+  gtk_text_buffer_get_iter_at_line (buffer, &iter, 1);
+  offset = gtk_text_iter_get_offset (&iter);
+  g_assert_cmpint (offset, ==, 3);
+
+  gtk_text_buffer_get_iter_at_line (buffer, &iter, 2);
+  offset = gtk_text_iter_get_offset (&iter);
+  g_assert_cmpint (offset, ==, 7);
+
+  gtk_text_buffer_get_iter_at_line (buffer, &iter, 3);
+  g_assert (gtk_text_iter_is_end (&iter));
+
+  /* Test get_iter_at_line_offset() */
+  gtk_text_buffer_get_iter_at_line_offset (buffer, &iter, 0, 0);
+  g_assert (gtk_text_iter_is_start (&iter));
+
+  gtk_text_buffer_get_iter_at_line_offset (buffer, &iter, 0, 1);
+  offset = gtk_text_iter_get_offset (&iter);
+  g_assert_cmpint (offset, ==, 1);
+
+  gtk_text_buffer_get_iter_at_line_offset (buffer, &iter, 0, 2);
+  offset = gtk_text_iter_get_offset (&iter);
+  g_assert_cmpint (offset, ==, 2);
+
+  gtk_text_buffer_get_iter_at_line_offset (buffer, &iter, 0, 3);
+  offset = gtk_text_iter_get_offset (&iter);
+  g_assert_cmpint (offset, ==, 2);
+
+  gtk_text_buffer_get_iter_at_line_offset (buffer, &iter, 1, 1);
+  offset = gtk_text_iter_get_offset (&iter);
+  g_assert_cmpint (offset, ==, 4);
+
+  gtk_text_buffer_get_iter_at_line_offset (buffer, &iter, 2, 1);
+  offset = gtk_text_iter_get_offset (&iter);
+  g_assert_cmpint (offset, ==, 8);
+
+  gtk_text_buffer_get_iter_at_line_offset (buffer, &iter, 2, 2);
+  g_assert (gtk_text_iter_is_end (&iter));
+
+  gtk_text_buffer_get_iter_at_line_offset (buffer, &iter, 2, 3);
+  g_assert (gtk_text_iter_is_end (&iter));
+
+  gtk_text_buffer_get_iter_at_line_offset (buffer, &iter, 3, 1);
+  g_assert (gtk_text_iter_is_end (&iter));
+
+  /* Test get_iter_at_line_index() */
+  gtk_text_buffer_get_iter_at_line_index (buffer, &iter, 0, 0);
+  g_assert (gtk_text_iter_is_start (&iter));
+
+  gtk_text_buffer_get_iter_at_line_index (buffer, &iter, 0, 1);
+  offset = gtk_text_iter_get_offset (&iter);
+  g_assert_cmpint (offset, ==, 1);
+
+  gtk_text_buffer_get_iter_at_line_index (buffer, &iter, 0, 2);
+  offset = gtk_text_iter_get_offset (&iter);
+  g_assert_cmpint (offset, ==, 2);
+
+  gtk_text_buffer_get_iter_at_line_index (buffer, &iter, 0, 3);
+  offset = gtk_text_iter_get_offset (&iter);
+  g_assert_cmpint (offset, ==, 2);
+
+  gtk_text_buffer_get_iter_at_line_index (buffer, &iter, 1, 0);
+  offset = gtk_text_iter_get_offset (&iter);
+  g_assert_cmpint (offset, ==, 3);
+
+  gtk_text_buffer_get_iter_at_line_index (buffer, &iter, 1, 2);
+  offset = gtk_text_iter_get_offset (&iter);
+  g_assert_cmpint (offset, ==, 4);
+
+  gtk_text_buffer_get_iter_at_line_index (buffer, &iter, 1, 3);
+  offset = gtk_text_iter_get_offset (&iter);
+  g_assert_cmpint (offset, ==, 5);
+
+  gtk_text_buffer_get_iter_at_line_index (buffer, &iter, 2, 2);
+  g_assert (gtk_text_iter_is_end (&iter));
+
+  gtk_text_buffer_get_iter_at_line_index (buffer, &iter, 2, 3);
+  g_assert (gtk_text_iter_is_end (&iter));
+
+  gtk_text_buffer_get_iter_at_line_index (buffer, &iter, 3, 1);
+  g_assert (gtk_text_iter_is_end (&iter));
+
+  /* Test get_iter_at_offset() */
+  gtk_text_buffer_get_iter_at_offset (buffer, &iter, 0);
+  g_assert (gtk_text_iter_is_start (&iter));
+
+  gtk_text_buffer_get_iter_at_offset (buffer, &iter, 1);
+  offset = gtk_text_iter_get_offset (&iter);
+  g_assert_cmpint (offset, ==, 1);
+
+  gtk_text_buffer_get_iter_at_offset (buffer, &iter, 8);
+  offset = gtk_text_iter_get_offset (&iter);
+  g_assert_cmpint (offset, ==, 8);
+  g_assert (!gtk_text_iter_is_end (&iter));
+
+  gtk_text_buffer_get_iter_at_offset (buffer, &iter, 9);
+  g_assert (gtk_text_iter_is_end (&iter));
+
+  gtk_text_buffer_get_iter_at_offset (buffer, &iter, 100);
+  g_assert (gtk_text_iter_is_end (&iter));
+
+  gtk_text_buffer_get_iter_at_offset (buffer, &iter, -1);
+  g_assert (gtk_text_iter_is_end (&iter));
+
+  g_object_unref (buffer);
+}
+
 int
 main (int argc, char** argv)
 {
@@ -1452,6 +1574,7 @@ main (int argc, char** argv)
   g_test_add_func ("/TextBuffer/Fill and Empty", test_fill_empty);
   g_test_add_func ("/TextBuffer/Tag", test_tag);
   g_test_add_func ("/TextBuffer/Clipboard", test_clipboard);
+  g_test_add_func ("/TextBuffer/Get iter", test_get_iter);
 
   return g_test_run();
 }

@@ -20,12 +20,12 @@
 #include <string.h>
 
 #include "gtkbuildable.h"
+#include "gtkbuilderprivate.h"
 #include "gtkcontainer.h"
 #include "gtkintl.h"
 #include "gtktypebuiltins.h"
 #include "gtkprivate.h"
 #include "gtksizegroup-private.h"
-#include "gtksizerequestcacheprivate.h"
 #include "gtkwidgetprivate.h"
 #include "gtkcontainerprivate.h"
 
@@ -151,10 +151,10 @@ G_DEFINE_TYPE_WITH_CODE (GtkSizeGroup, gtk_size_group, G_TYPE_OBJECT,
 						gtk_size_group_buildable_init))
 
 static void
-add_widget_to_closure (GHashTable     *widgets,
-                       GHashTable     *groups,
-                       GtkWidget      *widget,
-		       GtkOrientation  orientation)
+add_widget_to_closure (GHashTable *widgets,
+                       GHashTable *groups,
+                       GtkWidget  *widget,
+		       gint        orientation)
 {
   GSList *tmp_groups, *tmp_widgets;
   gboolean hidden;
@@ -176,7 +176,7 @@ add_widget_to_closure (GHashTable     *widgets,
       if (tmp_priv->ignore_hidden && hidden)
         continue;
 
-      if (!(tmp_priv->mode & (1 << orientation)))
+      if (orientation >= 0 && !(tmp_priv->mode & (1 << orientation)))
         continue;
 
       g_hash_table_add (groups, tmp_group);
@@ -192,8 +192,8 @@ _gtk_size_group_get_widget_peers (GtkWidget      *for_widget,
 {
   GHashTable *widgets, *groups;
 
-  widgets = g_hash_table_new (g_direct_hash, g_direct_equal);
-  groups = g_hash_table_new (g_direct_hash, g_direct_equal);
+  widgets = g_hash_table_new (NULL, NULL);
+  groups = g_hash_table_new (NULL, NULL);
 
   add_widget_to_closure (widgets, groups, for_widget, orientation);
 
@@ -201,112 +201,17 @@ _gtk_size_group_get_widget_peers (GtkWidget      *for_widget,
 
   return widgets;
 }
-                                     
-static void
-real_queue_resize (GtkWidget          *widget,
-		   GtkQueueResizeFlags flags)
-{
-  GtkWidget *container;
-
-  _gtk_widget_set_alloc_needed (widget, TRUE);
-  _gtk_size_request_cache_clear (_gtk_widget_peek_request_cache (widget));
-
-  container = gtk_widget_get_parent (widget);
-  if (!container &&
-      gtk_widget_is_toplevel (widget) && GTK_IS_CONTAINER (widget))
-    container = widget;
-
-  if (container)
-    {
-      if (flags & GTK_QUEUE_RESIZE_INVALIDATE_ONLY)
-	_gtk_container_resize_invalidate (GTK_CONTAINER (container));
-      else
-	_gtk_container_queue_resize (GTK_CONTAINER (container));
-    }
-}
 
 static void
-queue_resize_on_widget (GtkWidget          *widget,
-			gboolean            check_siblings,
-			GtkQueueResizeFlags flags)
-{
-  GtkWidget *parent = widget;
-
-  while (parent)
-    {
-      GSList *widget_groups;
-      GHashTable *widgets;
-      GHashTableIter iter;
-      gpointer current;
-      
-      if (widget == parent && !check_siblings)
-	{
-	  real_queue_resize (widget, flags);
-          parent = gtk_widget_get_parent (parent);
-	  continue;
-	}
-      
-      widget_groups = _gtk_widget_get_sizegroups (parent);
-      if (!widget_groups)
-	{
-	  if (widget == parent)
-	    real_queue_resize (widget, flags);
-
-          parent = gtk_widget_get_parent (parent);
-	  continue;
-	}
-
-      widgets = _gtk_size_group_get_widget_peers (parent, GTK_ORIENTATION_HORIZONTAL);
-
-      g_hash_table_iter_init (&iter, widgets);
-      while (g_hash_table_iter_next (&iter, &current, NULL))
-	{
-	  if (current == parent)
-	    {
-	      if (widget == parent)
-		real_queue_resize (parent, flags);
-	    }
-	  else if (current == widget)
-            {
-              g_warning ("A container and its child are part of this SizeGroup");
-            }
-	  else
-	    queue_resize_on_widget (current, FALSE, flags);
-	}
-      
-      g_hash_table_destroy (widgets);
-      
-      widgets = _gtk_size_group_get_widget_peers (parent, GTK_ORIENTATION_VERTICAL);
-
-      g_hash_table_iter_init (&iter, widgets);
-      while (g_hash_table_iter_next (&iter, &current, NULL))
-	{
-	  if (current == parent)
-	    {
-	      if (widget == parent)
-		real_queue_resize (parent, flags);
-	    }
-	  else if (current == widget)
-            {
-              g_warning ("A container and its child are part of this SizeGroup");
-            }
-	  else
-	    queue_resize_on_widget (current, FALSE, flags);
-	}
-      
-      g_hash_table_destroy (widgets);
-
-      parent = gtk_widget_get_parent (parent);
-    }
-}
-
-static void
-queue_resize_on_group (GtkSizeGroup       *size_group)
+queue_resize_on_group (GtkSizeGroup *size_group)
 {
   GtkSizeGroupPrivate *priv = size_group->priv;
+  GSList *list;
 
-  if (priv->widgets)
-    queue_resize_on_widget (priv->widgets->data, TRUE, 0);
+  for (list = priv->widgets; list; list = list->next)
+    {
+      gtk_widget_queue_resize (list->data);
+    }
 }
 
 static void
@@ -330,10 +235,17 @@ gtk_size_group_class_init (GtkSizeGroupClass *klass)
   /**
    * GtkSizeGroup:ignore-hidden:
    *
-   * If %TRUE, unmapped widgets are ignored when determining 
+   * If %TRUE, unmapped widgets are ignored when determining
    * the size of the group.
    *
    * Since: 2.8
+   *
+   * Deprecated: 3.22: Measuring the size of hidden widgets has not worked
+   *     reliably for a long time. In most cases, they will report a size
+   *     of 0 nowadays, and thus, their size will not affect the other
+   *     size group members. In effect, size groups will always operate
+   *     as if this property was %TRUE. Use a #GtkStack instead to hide
+   *     widgets while still having their size taken into account.
    */
   g_object_class_install_property (gobject_class,
                                    PROP_IGNORE_HIDDEN,
@@ -342,7 +254,7 @@ gtk_size_group_class_init (GtkSizeGroupClass *klass)
                                                          P_("If TRUE, unmapped widgets are ignored "
                                                             "when determining the size of the group"),
                                                          FALSE,
-                                                         GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY));
+                                                         GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY|G_PARAM_DEPRECATED));
 }
 
 static void
@@ -379,7 +291,9 @@ gtk_size_group_set_property (GObject      *object,
       gtk_size_group_set_mode (size_group, g_value_get_enum (value));
       break;
     case PROP_IGNORE_HIDDEN:
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
       gtk_size_group_set_ignore_hidden (size_group, g_value_get_boolean (value));
+G_GNUC_END_IGNORE_DEPRECATIONS
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -484,11 +398,18 @@ gtk_size_group_get_mode (GtkSizeGroup *size_group)
  * @size_group: a #GtkSizeGroup
  * @ignore_hidden: whether unmapped widgets should be ignored
  *   when calculating the size
- * 
+ *
  * Sets whether unmapped widgets should be ignored when
  * calculating the size.
  *
- * Since: 2.8 
+ * Since: 2.8
+ *
+ * Deprecated: 3.22: Measuring the size of hidden widgets has not worked
+ *     reliably for a long time. In most cases, they will report a size
+ *     of 0 nowadays, and thus, their size will not affect the other
+ *     size group members. In effect, size groups will always operate
+ *     as if this property was %TRUE. Use a #GtkStack instead to hide
+ *     widgets while still having their size taken into account.
  */
 void
 gtk_size_group_set_ignore_hidden (GtkSizeGroup *size_group,
@@ -519,6 +440,13 @@ gtk_size_group_set_ignore_hidden (GtkSizeGroup *size_group,
  * Returns: %TRUE if invisible widgets are ignored.
  *
  * Since: 2.8
+ *
+ * Deprecated: 3.22: Measuring the size of hidden widgets has not worked
+ *     reliably for a long time. In most cases, they will report a size
+ *     of 0 nowadays, and thus, their size will not affect the other
+ *     size group members. In effect, size groups will always operate
+ *     as if this property was %TRUE. Use a #GtkStack instead to hide
+ *     widgets while still having their size taken into account.
  */
 gboolean
 gtk_size_group_get_ignore_hidden (GtkSizeGroup *size_group)
@@ -526,13 +454,6 @@ gtk_size_group_get_ignore_hidden (GtkSizeGroup *size_group)
   g_return_val_if_fail (GTK_IS_SIZE_GROUP (size_group), FALSE);
 
   return size_group->priv->ignore_hidden;
-}
-
-static void
-gtk_size_group_widget_destroyed (GtkWidget    *widget,
-				 GtkSizeGroup *size_group)
-{
-  gtk_size_group_remove_widget (size_group, widget);
 }
 
 /**
@@ -550,8 +471,8 @@ gtk_size_group_widget_destroyed (GtkWidget    *widget,
  * be removed from the size group.
  */
 void
-gtk_size_group_add_widget (GtkSizeGroup     *size_group,
-			   GtkWidget        *widget)
+gtk_size_group_add_widget (GtkSizeGroup *size_group,
+			   GtkWidget    *widget)
 {
   GtkSizeGroupPrivate *priv;
   GSList *groups;
@@ -568,10 +489,6 @@ gtk_size_group_add_widget (GtkSizeGroup     *size_group,
       _gtk_widget_add_sizegroup (widget, size_group);
 
       priv->widgets = g_slist_prepend (priv->widgets, widget);
-
-      g_signal_connect (widget, "destroy",
-			G_CALLBACK (gtk_size_group_widget_destroyed),
-			size_group);
 
       g_object_ref (size_group);
     }
@@ -599,10 +516,6 @@ gtk_size_group_remove_widget (GtkSizeGroup *size_group,
 
   g_return_if_fail (g_slist_find (priv->widgets, widget));
 
-  g_signal_handlers_disconnect_by_func (widget,
-					gtk_size_group_widget_destroyed,
-					size_group);
-  
   _gtk_widget_remove_sizegroup (widget, size_group);
 
   priv->widgets = g_slist_remove (priv->widgets, widget);
@@ -629,51 +542,73 @@ gtk_size_group_get_widgets (GtkSizeGroup *size_group)
   return size_group->priv->widgets;
 }
 
-/**
- * _gtk_size_group_queue_resize:
- * @widget: a #GtkWidget
- * 
- * Queue a resize on a widget, and on all other widgets grouped with this widget.
- **/
-void
-_gtk_size_group_queue_resize (GtkWidget           *widget,
-			      GtkQueueResizeFlags  flags)
+typedef struct {
+  gchar *name;
+  gint line;
+  gint col;
+} ItemData;
+
+static void
+item_data_free (gpointer data)
 {
-  queue_resize_on_widget (widget, TRUE, flags);
+  ItemData *item_data = data;
+
+  g_free (item_data->name);
+  g_free (item_data);
 }
 
 typedef struct {
   GObject *object;
+  GtkBuilder *builder;
   GSList *items;
 } GSListSubParserData;
 
 static void
-size_group_start_element (GMarkupParseContext *context,
-			  const gchar         *element_name,
-			  const gchar        **names,
-			  const gchar        **values,
-			  gpointer            user_data,
-			  GError            **error)
+size_group_start_element (GMarkupParseContext  *context,
+                          const gchar          *element_name,
+                          const gchar         **names,
+                          const gchar         **values,
+                          gpointer              user_data,
+                          GError              **error)
 {
-  guint i;
   GSListSubParserData *data = (GSListSubParserData*)user_data;
 
   if (strcmp (element_name, "widget") == 0)
     {
-      for (i = 0; names[i]; i++)
+      const gchar *name;
+      ItemData *item_data;
+
+      if (!_gtk_builder_check_parent (data->builder, context, "widgets", error))
+        return;
+
+      if (!g_markup_collect_attributes (element_name, names, values, error,
+                                        G_MARKUP_COLLECT_STRING, "name", &name,
+                                        G_MARKUP_COLLECT_INVALID))
         {
-          if (strcmp (names[i], "name") == 0)
-            data->items = g_slist_prepend (data->items, g_strdup (values[i]));
+          _gtk_builder_prefix_error (data->builder, context, error);
+          return;
         }
+
+      item_data = g_new (ItemData, 1);
+      item_data->name = g_strdup (name);
+      g_markup_parse_context_get_position (context, &item_data->line, &item_data->col);
+      data->items = g_slist_prepend (data->items, item_data);
     }
   else if (strcmp (element_name, "widgets") == 0)
     {
-      return;
+      if (!_gtk_builder_check_parent (data->builder, context, "object", error))
+        return;
+
+      if (!g_markup_collect_attributes (element_name, names, values, error,
+                                        G_MARKUP_COLLECT_INVALID, NULL, NULL,
+                                        G_MARKUP_COLLECT_INVALID))
+        _gtk_builder_prefix_error (data->builder, context, error);
     }
   else
     {
-      g_warning ("Unsupported type tag for GtkSizeGroup: %s\n",
-                 element_name);
+      _gtk_builder_error_unhandled_tag (data->builder, context,
+                                        "GtkSizeGroup", element_name,
+                                        error);
     }
 }
 
@@ -684,25 +619,27 @@ static const GMarkupParser size_group_parser =
 
 static gboolean
 gtk_size_group_buildable_custom_tag_start (GtkBuildable  *buildable,
-					   GtkBuilder    *builder,
-					   GObject       *child,
-					   const gchar   *tagname,
-					   GMarkupParser *parser,
-					   gpointer      *data)
+                                           GtkBuilder    *builder,
+                                           GObject       *child,
+                                           const gchar   *tagname,
+                                           GMarkupParser *parser,
+                                           gpointer      *parser_data)
 {
-  GSListSubParserData *parser_data;
+  GSListSubParserData *data;
 
   if (child)
     return FALSE;
 
   if (strcmp (tagname, "widgets") == 0)
     {
-      parser_data = g_slice_new0 (GSListSubParserData);
-      parser_data->items = NULL;
-      parser_data->object = G_OBJECT (buildable);
+      data = g_slice_new0 (GSListSubParserData);
+      data->items = NULL;
+      data->object = G_OBJECT (buildable);
+      data->builder = builder;
 
       *parser = size_group_parser;
-      *data = parser_data;
+      *parser_data = data;
+
       return TRUE;
     }
 
@@ -711,35 +648,29 @@ gtk_size_group_buildable_custom_tag_start (GtkBuildable  *buildable,
 
 static void
 gtk_size_group_buildable_custom_finished (GtkBuildable  *buildable,
-					  GtkBuilder    *builder,
-					  GObject       *child,
-					  const gchar   *tagname,
-					  gpointer       user_data)
+                                          GtkBuilder    *builder,
+                                          GObject       *child,
+                                          const gchar   *tagname,
+                                          gpointer       user_data)
 {
   GSList *l;
   GSListSubParserData *data;
   GObject *object;
 
-  if (strcmp (tagname, "widgets"))
+  if (strcmp (tagname, "widgets") != 0)
     return;
-  
+
   data = (GSListSubParserData*)user_data;
   data->items = g_slist_reverse (data->items);
 
   for (l = data->items; l; l = l->next)
     {
-      object = gtk_builder_get_object (builder, l->data);
+      ItemData *item_data = l->data;
+      object = _gtk_builder_lookup_object (builder, item_data->name, item_data->line, item_data->col);
       if (!object)
-	{
-	  g_warning ("Unknown object %s specified in sizegroup %s",
-		     (const gchar*)l->data,
-		     gtk_buildable_get_name (GTK_BUILDABLE (data->object)));
-	  continue;
-	}
-      gtk_size_group_add_widget (GTK_SIZE_GROUP (data->object),
-				 GTK_WIDGET (object));
-      g_free (l->data);
+        continue;
+      gtk_size_group_add_widget (GTK_SIZE_GROUP (data->object), GTK_WIDGET (object));
     }
-  g_slist_free (data->items);
+  g_slist_free_full (data->items, item_data_free);
   g_slice_free (GSListSubParserData, data);
 }

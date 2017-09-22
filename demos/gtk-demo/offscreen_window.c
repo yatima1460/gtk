@@ -230,7 +230,6 @@ gtk_rotated_bin_realize (GtkWidget *widget)
 {
   GtkRotatedBin *bin = GTK_ROTATED_BIN (widget);
   GtkAllocation allocation;
-  GtkStyleContext *context;
   GdkWindow *window;
   GdkWindowAttr attributes;
   gint attributes_mask;
@@ -290,9 +289,6 @@ gtk_rotated_bin_realize (GtkWidget *widget)
   g_signal_connect (bin->offscreen_window, "from-embedder",
                     G_CALLBACK (offscreen_window_from_parent), bin);
 
-  context = gtk_widget_get_style_context (widget);
-  gtk_style_context_set_background (context, window);
-  gtk_style_context_set_background (context, bin->offscreen_window);
   gdk_window_show (bin->offscreen_window);
 }
 
@@ -332,7 +328,7 @@ gtk_rotated_bin_add (GtkContainer *container,
       bin->child = widget;
     }
   else
-    g_warning ("GtkRotatedBin cannot have more than one child\n");
+    g_warning ("GtkRotatedBin cannot have more than one child");
 }
 
 static void
@@ -565,11 +561,11 @@ scale_changed (GtkRange      *range,
   gtk_rotated_bin_set_angle (bin, gtk_range_get_value (range));
 }
 
-static GtkWidget *window = NULL;
-
 GtkWidget *
 do_offscreen_window (GtkWidget *do_widget)
 {
+  static GtkWidget *window = NULL;
+
   if (!window)
     {
       GtkWidget *bin, *vbox, *scale, *button;
@@ -577,7 +573,7 @@ do_offscreen_window (GtkWidget *do_widget)
       window = gtk_window_new (GTK_WINDOW_TOPLEVEL);
       gtk_window_set_screen (GTK_WINDOW (window),
                              gtk_widget_get_screen (do_widget));
-      gtk_window_set_title (GTK_WINDOW (window), "Rotated widget");
+      gtk_window_set_title (GTK_WINDOW (window), "Rotated Button");
 
       g_signal_connect (window, "destroy",
                         G_CALLBACK (gtk_widget_destroyed), &window);
@@ -603,10 +599,7 @@ do_offscreen_window (GtkWidget *do_widget)
   if (!gtk_widget_get_visible (window))
     gtk_widget_show_all (window);
   else
-    {
-      gtk_widget_destroy (window);
-      window = NULL;
-    }
+    gtk_widget_destroy (window);
 
   return window;
 }

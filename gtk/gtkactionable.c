@@ -39,8 +39,8 @@
  *
  * The action will be looked up in action groups that are found among
  * the widgets ancestors. Most commonly, these will be the actions with
- * the "win" or "app" prefix that are associated with the #GtkApplicationWindow
- * or "GtkApplication, but other action groups that are added with
+ * the “win.” or “app.” prefix that are associated with the #GtkApplicationWindow
+ * or #GtkApplication, but other action groups that are added with
  * gtk_widget_insert_action_group() will be consulted as well.
  *
  * Since: 3.4
@@ -54,10 +54,10 @@
 
 /**
  * GtkActionableInterface:
- * @get_action_name: virtual pointer for gtk_actionable_get_action_name()
- * @set_action_name: virtual pointer for gtk_actionable_set_action_name()
- * @get_action_target_value: virtual pointer for gtk_actionable_get_action_target_value()
- * @set_action_target_value: virtual pointer for gtk_actionable_set_action_target_value()
+ * @get_action_name: virtual function for gtk_actionable_get_action_name()
+ * @set_action_name: virtual function for gtk_actionable_set_action_name()
+ * @get_action_target_value: virtual function for gtk_actionable_get_action_target_value()
+ * @set_action_target_value: virtual function for gtk_actionable_set_action_target_value()
  *
  * The interface vtable for #GtkActionable.
  **/
@@ -68,12 +68,12 @@ static void
 gtk_actionable_default_init (GtkActionableInterface *iface)
 {
   g_object_interface_install_property (iface,
-    g_param_spec_string ("action-name", P_("action name"),
+    g_param_spec_string ("action-name", P_("Action name"),
                          P_("The name of the associated action, like 'app.quit'"),
                          NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_interface_install_property (iface,
-    g_param_spec_variant ("action-target", P_("action target value"),
+    g_param_spec_variant ("action-target", P_("Action target value"),
                           P_("The parameter for action invocations"),
                           G_VARIANT_TYPE_ANY, NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
@@ -86,7 +86,7 @@ gtk_actionable_default_init (GtkActionableInterface *iface)
  *
  * See gtk_actionable_set_action_name() for more information.
  *
- * Returns: the action name, or %NULL if none is set
+ * Returns: (nullable): the action name, or %NULL if none is set
  *
  * Since: 3.4
  **/
@@ -102,7 +102,7 @@ gtk_actionable_get_action_name (GtkActionable *actionable)
 /**
  * gtk_actionable_set_action_name:
  * @actionable: a #GtkActionable widget
- * @action_name: an action name, or %NULL
+ * @action_name: (nullable): an action name, or %NULL
  *
  * Specifies the name of the action with which this widget should be
  * associated.  If @action_name is %NULL then the widget will be
@@ -132,7 +132,7 @@ gtk_actionable_set_action_name (GtkActionable *actionable,
  * gtk_actionable_get_action_target_value:
  * @actionable: a #GtkActionable widget
  *
- * Gets the current target value of @actionabe.
+ * Gets the current target value of @actionable.
  *
  * See gtk_actionable_set_action_target_value() for more information.
  *
@@ -161,7 +161,7 @@ gtk_actionable_get_action_target_value (GtkActionable *actionable)
  * The target value has two purposes.  First, it is used as the
  * parameter to activation of the action associated with the
  * #GtkActionable widget. Second, it is used to determine if the widget
- * should be rendered as “active” - the widget is active if the state
+ * should be rendered as “active” — the widget is active if the state
  * is equal to the given target.
  *
  * Consider the example of associating a set of buttons with a #GAction
@@ -258,3 +258,4 @@ gtk_actionable_set_detailed_action_name (GtkActionable *actionable,
     gtk_actionable_set_action_target_value (actionable, NULL);
   g_strfreev (parts);
 }
+
