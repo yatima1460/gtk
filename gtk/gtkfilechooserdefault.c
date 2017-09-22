@@ -7375,9 +7375,9 @@ file_system_model_set (GtkFileSystemModel *model,
         }
       else
         g_value_set_boolean (value, TRUE);
+      break;
     case MODEL_COL_LIST_PIXBUF:
     case MODEL_COL_ICON_PIXBUF:
-      break;
       if (info)
         {
           GtkTreeModel *tree_model;
@@ -8101,7 +8101,7 @@ maybe_select (GtkTreeModel *model,
   if (is_sensitive &&
       ((is_folder && impl->action == GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER) ||
        (!is_folder && impl->action == GTK_FILE_CHOOSER_ACTION_OPEN)))
-  current_selection_select_iter (impl, iter);
+    current_selection_select_iter (impl, iter);
   else
     current_selection_unselect_iter (impl, iter);
     
@@ -10755,15 +10755,11 @@ update_cell_renderer_attributes (GtkFileChooserDefault *impl)
 {
   GtkTreeViewColumn *column;
   GtkCellRenderer *renderer;
-  GList *walk, *list;
-  gboolean always_sensitive;
-
   /* only applicable in the tree view (i.e. list view) */
   if (!impl->browse_files_tree_view)
     return;
 
-  always_sensitive = impl->action != GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER &&
-                     impl->action != GTK_FILE_CHOOSER_ACTION_CREATE_FOLDER;
+  GList *walk, *list;
 
   /* Keep the following column numbers in sync with create_file_list() */
 
