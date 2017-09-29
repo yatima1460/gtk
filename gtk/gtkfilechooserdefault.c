@@ -5246,7 +5246,7 @@ icon_view_scale_create (GtkFileChooserDefault *impl)
   gtk_box_pack_start (GTK_BOX (impl->icon_view_scale_hbox), impl->icon_view_scale_zoom_out_icon, FALSE, FALSE, 0);
   gtk_widget_show (impl->icon_view_scale_zoom_out_icon);
 
-  adj = gtk_adjustment_new (32, 32, 112, 16, 16, 0);
+  adj = gtk_adjustment_new (32, 32, 256, 16, 16, 0);
   impl->icon_view_scale = gtk_hscale_new (GTK_ADJUSTMENT (adj));
   gtk_scale_set_draw_value (GTK_SCALE (impl->icon_view_scale), FALSE);
   gtk_widget_set_size_request (impl->icon_view_scale, 100, -1);
