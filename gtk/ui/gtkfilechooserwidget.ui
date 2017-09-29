@@ -8,7 +8,35 @@
       <object class="GtkBox" id="browse_widgets_box">
         <property name="visible">1</property>
         <property name="orientation">vertical</property>
+	<child>
+	  <object class="GtkAdjustment" id="adjustment1">
+	    <property name="upper">256</property>
+            <property name="lower">16</property>  
+	    <property name="value">48</property>
+	    <property name="step_increment">16</property>
+            <signal name="value-changed" handler="icon_view_scale_value_changed_cb" swapped="no"/>
+          </object>
+        </child>
         <child>
+	<!--  <object class="GtkRange">
+	    <signal name="change-value" handler="icon_view_scale_value_changed_cb" swapped="no"/>
+	    <child>         --> 
+	      <object class="GtkScale" id="icon_view_scale">
+                <property name="visible">1</property>
+                <property name="orientation">horizontal</property>
+	        <property name="can_focus">1</property>
+	        <property name="adjustment">adjustment1</property>
+	        <property name="digits">0</property>
+	        <property name="draw_value">False</property>
+		<!--     </object>
+	    </child> -->
+          </object>
+	  <packing>
+            <property name="fill">0</property>
+            <property name="pack-type">start</property>
+          </packing>
+        </child>
+	<child>
           <object class="GtkPaned" id="browse_widgets_hpaned">
             <property name="visible">1</property>
             <child>

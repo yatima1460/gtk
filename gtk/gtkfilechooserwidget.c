@@ -81,6 +81,8 @@
 #include "gtkdebug.h"
 
 #include <cairo-gobject.h>
+#include <gtk/gtk.h>
+#include <math.h>
 
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
@@ -353,7 +355,10 @@ struct _GtkFileChooserWidgetPrivate {
 
   GSource *focus_entry_idle;
 
-
+  GtkWidget *icon_view_scale_box;
+  GtkWidget *icon_view_scale;
+  GtkWidget *icon_view_scale_zoom_in_icon;
+  GtkWidget *icon_view_scale_zoom_out_icon;
   ViewMode view_mode;
 
   GtkCellRenderer *icon_view_name_renderer;
@@ -603,6 +608,9 @@ static void update_cell_renderer_attributes (GtkFileChooserWidget *impl);
 
 static void load_remove_timer (GtkFileChooserWidget *impl, LoadState new_load_state);
 static void browse_files_center_selected_row (GtkFileChooserWidget *impl);
+
+static void icon_view_scale_value_changed_cb (GtkAdjustment        *range,
+                                              GtkFileChooserWidget *impl);
 
 static void view_mode_set (GtkFileChooserWidget *impl, ViewMode view_mode);
 
@@ -3045,9 +3053,6 @@ create_browse_files_icon_view (GtkFileChooserWidget *impl)
   return priv->browse_files_icon_view;
 }
 
-
-
-/* Callback used when view mode combo box active item is changed */
 static void
 view_mode_set (GtkFileChooserWidget *impl, ViewMode view_mode)
 {
@@ -3101,6 +3106,63 @@ view_notebook_switch_page_cb (GtkNotebook *notebook,
   GtkFileChooserWidget *impl = GTK_FILE_CHOOSER_WIDGET (user_data);
   view_mode_set (impl, page_num);
   return TRUE;
+}
+
+static void
+icon_view_scale_value_changed_cb (GtkAdjustment        *adj,
+                                  GtkFileChooserWidget *impl)
+{
+  GtkFileChooserWidgetPrivate *priv = impl->priv;
+  double value = gtk_adjustment_get_value (adj);
+  value = round (value / 16) * 16;
+
+  if (priv->icon_size_for_icon_view == (gint)value)
+    return;
+
+  priv->icon_size_for_icon_view = (gint)value;
+
+  if (priv->view_mode != VIEW_MODE_ICON)
+    return;
+
+  set_icon_cell_renderer_fixed_size (impl);
+
+  if (priv->browse_files_model)
+    _gtk_file_system_model_clear_cache (priv->browse_files_model, MODEL_COL_ICON_PIXBUF);
+  if (priv->search_model)
+    _gtk_file_system_model_clear_cache (priv->search_model, MODEL_COL_ICON_PIXBUF);
+  if (priv->recent_model)
+    _gtk_file_system_model_clear_cache (priv->recent_model, MODEL_COL_ICON_PIXBUF);
+
+  gtk_widget_queue_resize (priv->browse_files_current_view);
+}
+
+static void
+icon_view_scale_create (GtkFileChooserWidget *impl)
+{
+  GtkFileChooserWidgetPrivate *priv = impl->priv;
+  GObject *adj;
+  
+  priv->icon_view_scale_box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 12);
+  /* priv->icon_view_scale_zoom_out_icon = gtk_image_new_from_icon_name (Zoom_Out, GTK_ICON_SIZE_BUTTON); */
+  gtk_size_group_add_widget (priv->browse_path_bar_size_group, priv->icon_view_scale_zoom_out_icon);
+  gtk_box_pack_start (GTK_BOX (priv->icon_view_scale_box), priv->icon_view_scale_zoom_out_icon, FALSE, FALSE, 0);
+  gtk_widget_show (priv->icon_view_scale_zoom_out_icon);
+
+  adj = gtk_adjustment_new (32, 32, 256, 16, 16, 0);
+  priv->icon_view_scale = gtk_scale_new (GTK_ORIENTATION_HORIZONTAL, GTK_ADJUSTMENT (adj));
+  gtk_scale_set_draw_value (GTK_SCALE (priv->icon_view_scale), FALSE);
+  gtk_widget_set_size_request (priv->icon_view_scale, 100, -1);
+  gtk_box_pack_start (GTK_BOX (priv->icon_view_scale_box), priv->icon_view_scale, FALSE, FALSE, 0);
+  gtk_widget_show (priv->icon_view_scale);
+
+  /* priv->icon_view_scale_zoom_in_icon = gtk_image_new_from_icon_name (ZOOM_IN, GTK_ICON_SIZE_BUTTON); */
+  gtk_size_group_add_widget (priv->browse_path_bar_size_group, priv->icon_view_scale_zoom_in_icon);
+  gtk_box_pack_start (GTK_BOX (priv->icon_view_scale_box), priv->icon_view_scale_zoom_in_icon, FALSE, FALSE, 0);
+  gtk_widget_show (priv->icon_view_scale_zoom_in_icon);
+
+  g_signal_connect (priv->icon_view_scale, "value-changed",
+                    G_CALLBACK (icon_view_scale_value_changed_cb), impl);
+
 }
 
 static void
@@ -4087,7 +4149,7 @@ settings_load (GtkFileChooserWidget *impl)
   gboolean show_size_column;
   gboolean sort_directories_first;
   DateFormat date_format;
-  gint sort_column;
+  gint sort_column, icon_view_scale;
   GtkSortType sort_order;
   StartupMode startup_mode;
   gint sidebar_width;
@@ -4096,6 +4158,7 @@ settings_load (GtkFileChooserWidget *impl)
   settings = _gtk_file_chooser_get_settings_for_widget (GTK_WIDGET (impl));
 
   view_mode = g_settings_get_enum (settings, SETTINGS_KEY_VIEW_MODE);
+  icon_view_scale = g_settings_get_enum (settings, SETTINGS_KEY_ICON_VIEW_SCALE);
   show_hidden = g_settings_get_boolean (settings, SETTINGS_KEY_SHOW_HIDDEN);
   show_size_column = g_settings_get_boolean (settings, SETTINGS_KEY_SHOW_SIZE_COLUMN);
   sort_column = g_settings_get_enum (settings, SETTINGS_KEY_SORT_COLUMN);
@@ -4104,7 +4167,11 @@ settings_load (GtkFileChooserWidget *impl)
   startup_mode = g_settings_get_enum (settings, SETTINGS_KEY_STARTUP_MODE);
   sort_directories_first = g_settings_get_boolean (settings, SETTINGS_KEY_SORT_DIRECTORIES_FIRST);
   date_format = g_settings_get_enum (settings, SETTINGS_KEY_DATE_FORMAT);
+
   view_mode_set (impl, view_mode);
+
+  gtk_range_set_value (GTK_RANGE (priv->icon_view_scale), icon_view_scale);
+  priv->icon_size_for_icon_view = icon_view_scale;
 
   if (!priv->show_hidden_set)
     set_show_hidden (impl, show_hidden);
@@ -4139,6 +4206,7 @@ settings_save (GtkFileChooserWidget *impl)
 
   g_settings_set_enum (settings, SETTINGS_KEY_LOCATION_MODE, priv->location_mode);
   g_settings_set_enum (settings, SETTINGS_KEY_VIEW_MODE, priv->view_mode);
+  g_settings_set_enum (settings, SETTINGS_KEY_ICON_VIEW_SCALE, priv->icon_view_scale);
   g_settings_set_boolean (settings, SETTINGS_KEY_SHOW_HIDDEN,
                           gtk_file_chooser_get_show_hidden (GTK_FILE_CHOOSER (impl)));
   g_settings_set_boolean (settings, SETTINGS_KEY_SHOW_SIZE_COLUMN, priv->show_size_column);
@@ -8871,6 +8939,7 @@ gtk_file_chooser_widget_class_init (GtkFileChooserWidgetClass *class)
   gtk_widget_class_bind_template_callback (widget_class, list_selection_changed);
   gtk_widget_class_bind_template_callback (widget_class, list_cursor_changed);
   gtk_widget_class_bind_template_callback (widget_class, icon_item_activated);
+  gtk_widget_class_bind_template_callback (widget_class, icon_view_scale_value_changed_cb);
   gtk_widget_class_bind_template_callback (widget_class, view_notebook_switch_page_cb);
   gtk_widget_class_bind_template_callback (widget_class, filter_combo_changed);
   gtk_widget_class_bind_template_callback (widget_class, path_bar_clicked);
