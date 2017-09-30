@@ -9,27 +9,39 @@
         <property name="visible">1</property>
         <property name="orientation">vertical</property>
 	<child>
+          <object class="GtkComboBoxText" id="view_mode_combo_box">
+            <items>
+              <item translatable="yes" id="browse_files_tree_view">List View</item>
+              <item translatable="yes" id="browse_files_icon_view">Icon View</item>
+            </items>
+            <property name="visible">1</property>
+            <property name="tooltip-text" translatable="yes">Select filechooser view</property>
+            <property name="focus-on-click">0</property>
+            <property name="entry-text-column">1</property>
+            <property name="id-column">1</property>
+            <property name="halign">start</property>
+            <property name="valign">start</property>
+            <property name="has-entry">TRUE</property>
+            <signal name="changed" handler="view_mode_combo_box_changed_cb" swapped="no"/>
+          </object>
+        </child>
+        <child>
 	  <object class="GtkAdjustment" id="adjustment1">
 	    <property name="upper">256</property>
-            <property name="lower">16</property>  
-	    <property name="value">48</property>
+            <property name="lower">32</property>  
+	    <property name="value">32</property>
 	    <property name="step_increment">16</property>
             <signal name="value-changed" handler="icon_view_scale_value_changed_cb" swapped="no"/>
           </object>
         </child>
         <child>
-	<!--  <object class="GtkRange">
-	    <signal name="change-value" handler="icon_view_scale_value_changed_cb" swapped="no"/>
-	    <child>         --> 
-	      <object class="GtkScale" id="icon_view_scale">
-                <property name="visible">1</property>
-                <property name="orientation">horizontal</property>
-	        <property name="can_focus">1</property>
-	        <property name="adjustment">adjustment1</property>
-	        <property name="digits">0</property>
-	        <property name="draw_value">False</property>
-		<!--     </object>
-	    </child> -->
+	  <object class="GtkScale" id="icon_view_scale">
+            <property name="visible">1</property>
+            <property name="orientation">horizontal</property>
+	    <property name="can_focus">1</property>
+	    <property name="adjustment">adjustment1</property>
+	    <property name="digits">0</property>
+	    <property name="draw_value">False</property>
           </object>
 	  <packing>
             <property name="fill">0</property>
@@ -185,6 +197,7 @@
                             <child>
                               <object class="GtkNotebook" id="view_notebook">
                                 <property name="visible">1</property>
+				<property name="show-tabs">FALSE</property>
                                 <signal name="switch-page" handler="view_notebook_switch_page_cb" swapped="no"/>
                                 <child>
                                   <object class="GtkScrolledWindow" id="browse_files_list_swin">
@@ -307,7 +320,7 @@
                                         <signal name="query-tooltip" handler="file_list_query_tooltip_cb" swapped="no"/>
                                         <signal name="selection-changed" handler="list_selection_changed" swapped="no"/>
                                         <child>
-                                          <object class="GtkCellRendererText" id="icon_view_name_renderer">
+                                          <object class="GtkCellRendererText" id="list_icon_renderer">
                                           </object>
                                         </child>
 					<child>
