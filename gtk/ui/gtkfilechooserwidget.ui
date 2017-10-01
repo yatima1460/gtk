@@ -8,7 +8,7 @@
       <object class="GtkBox" id="browse_widgets_box">
         <property name="visible">1</property>
         <property name="orientation">vertical</property>
-	<child>
+        <child>
           <object class="GtkComboBoxText" id="view_mode_combo_box">
             <items>
               <item translatable="yes" id="browse_files_tree_view">List View</item>
@@ -25,42 +25,42 @@
             <property name="has-entry">True</property>
             <signal name="changed" handler="view_mode_combo_box_changed_cb" swapped="no"/>
           </object>
-	  <packing>
+          <packing>
             <property name="expand">False</property>
-	    <property name="position">0</property>
-	    <property name="pack-type">start</property>
+            <property name="position">0</property>
+            <property name="pack-type">start</property>
           </packing>
         </child>
         <child>
-	  <object class="GtkAdjustment" id="adjustment1">
-	    <property name="upper">256</property>
+        <object class="GtkAdjustment" id="adjustment1">
+            <property name="upper">256</property>
             <property name="lower">32</property>  
-	    <property name="value">32</property>
-	    <property name="step_increment">16</property>
+            <property name="value">32</property>
+            <property name="step_increment">16</property>
             <signal name="value-changed" handler="icon_view_scale_value_changed_cb" swapped="no"/>
           </object>
         </child>
         <child>
-	  <object class="GtkScale" id="icon_view_scale">
+          <object class="GtkScale" id="icon_view_scale">
             <property name="visible">1</property>
             <property name="orientation">horizontal</property>
-	    <property name="can_focus">1</property>
-	    <property name="halign">end</property>
-	    <property name="valign">start</property>
+            <property name="can_focus">1</property>
+            <property name="halign">end</property>
+            <property name="valign">start</property>
             <property name="margin_right">10</property>
-	    <property name="width-request">100</property>
-	    <property name="adjustment">adjustment1</property>
-	    <property name="digits">0</property>
-	    <property name="draw_value">False</property>
-	    <signal name="hide" handler="icon_view_scale_toggle_cb" swapped="no"/>
+            <property name="width-request">100</property>
+            <property name="adjustment">adjustment1</property>
+            <property name="digits">0</property>
+            <property name="draw_value">False</property>
+            <signal name="hide" handler="icon_view_scale_toggle_cb" swapped="no"/>
           </object>
-	  <packing>
-	    <property name="position">1</property>
+          <packing>
+            <property name="position">1</property>
             <property name="fill">0</property>
             <property name="pack-type">start</property>
           </packing>
         </child>
-	<child>
+        <child>
           <object class="GtkPaned" id="browse_widgets_hpaned">
             <property name="visible">1</property>
             <child>
@@ -209,7 +209,7 @@
                             <child>
                               <object class="GtkNotebook" id="view_notebook">
                                 <property name="visible">1</property>
-				<property name="show-tabs">False</property>
+                                <property name="show-tabs">False</property>
                                 <signal name="switch-page" handler="view_notebook_switch_page_cb" swapped="no"/>
                                 <child>
                                   <object class="GtkScrolledWindow" id="browse_files_list_swin">
@@ -316,15 +316,13 @@
                                     <property name="visible">True</property>
                                     <property name="can_focus">True</property>
                                     <property name="shadow_type">in</property>    
-				    <property name="hscrollbar-policy">GTK_POLICY_AUTOMATIC</property>
-				    <property name="vscrollbar-policy">GTK_POILCY_ALWAYS</property>
-				    <child>
+                                    <property name="hscrollbar-policy">GTK_POLICY_AUTOMATIC</property>
+                                    <property name="vscrollbar-policy">GTK_POILCY_ALWAYS</property>
+                                    <child>
                                       <object class="GtkIconView" id="browse_files_icon_view">
                                         <property name="visible">True</property>
                                         <property name="can_focus">True</property>
                                         <property name="has_tooltip">True</property>
-					<property name="margin">1</property>
-					<property name="column_spacing">1</property>
                                         <signal name="button-press-event" handler="list_button_press_event_cb" swapped="no"/>
                                         <signal name="drag-data-received" handler="file_list_drag_data_received_cb" swapped="no"/>
                                         <signal name="drag-drop" handler="file_list_drag_drop_cb" swapped="no"/>
@@ -337,11 +335,11 @@
                                           <object class="GtkCellRendererText" id="list_icon_renderer">
                                           </object>
                                         </child>
-					<child>
+                                        <child>
                                           <object class="GtkCellRendererPixbuf" id="icon_view_pixbuf_renderer"/>
-				        </child>
-				      </object>
-			            </child>
+                                        </child>
+                                      </object>
+                                    </child>
                                   </object>
                                   <packing>
                                     <property name="position">1</property>
