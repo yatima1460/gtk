@@ -616,6 +616,7 @@ static void icon_view_scale_value_changed_cb (GtkAdjustment        *range,
 static void view_mode_set (GtkFileChooserWidget *impl, ViewMode view_mode);
 static void view_mode_combo_box_changed_cb (GtkComboBox          *combo,
                                             GtkFileChooserWidget *impl);
+static void icon_view_scale_toggle_cb (GtkFileChooserWidget *impl, gpointer user_data);
 
 static void location_switch_to_path_bar (GtkFileChooserWidget *impl);
 
@@ -3077,7 +3078,8 @@ view_mode_set (GtkFileChooserWidget *impl, ViewMode view_mode)
       create_browse_files_icon_view (impl);
       priv->browse_files_current_view = priv->browse_files_icon_view;
       old_view = priv->browse_files_tree_view;
-    } else if (view_mode == VIEW_MODE_LIST)
+    } 
+  else if (view_mode == VIEW_MODE_LIST)
     {
       priv->browse_files_current_view = priv->browse_files_tree_view;
       old_view = priv->browse_files_icon_view;
@@ -3091,20 +3093,8 @@ view_mode_set (GtkFileChooserWidget *impl, ViewMode view_mode)
   copy_old_selection_to_current_view (impl, old_view_mode);
 
   /* Hide the old view */
-  if (view_mode == VIEW_MODE_ICON)
-  {
-    g_object_set (old_view, "model", NULL, NULL);
-    gtk_widget_hide (old_view);
-    gtk_widget_show (priv->icon_view_scale_box); 
-  } 
-  else if (view_mode == VIEW_MODE_LIST)
-  {
-    g_object_set (old_view, "model", NULL, NULL);
-    gtk_widget_hide (old_view);
-    gtk_widget_hide (priv->icon_view_scale_box);
-  }
-  else
-    g_assert_not_reached ();
+  g_object_set (old_view, "model", NULL, NULL);
+  gtk_widget_hide (old_view);
 
   /* Show the new view */
   gtk_widget_show (priv->browse_files_current_view);
@@ -3162,32 +3152,21 @@ icon_view_scale_value_changed_cb (GtkAdjustment        *adj,
 }
 
 static void
-icon_view_scale_create (GtkFileChooserWidget *impl)
+//toggle not working
+icon_view_scale_toggle_cb (GtkFileChooserWidget *impl, gpointer user_data)
 {
   GtkFileChooserWidgetPrivate *priv = impl->priv;
-  GObject *adj;
-  
-  priv->icon_view_scale_box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 12);
-  /* priv->icon_view_scale_zoom_out_icon = gtk_image_new_from_icon_name (Zoom_Out, GTK_ICON_SIZE_BUTTON); */
-  gtk_size_group_add_widget (priv->browse_path_bar_size_group, priv->icon_view_scale_zoom_out_icon);
-  gtk_box_pack_start (GTK_BOX (priv->icon_view_scale_box), priv->icon_view_scale_zoom_out_icon, FALSE, FALSE, 0);
-  gtk_widget_show (priv->icon_view_scale_zoom_out_icon);
 
-  adj = gtk_adjustment_new (32, 32, 256, 16, 16, 0);
-  priv->icon_view_scale = gtk_scale_new (GTK_ORIENTATION_HORIZONTAL, GTK_ADJUSTMENT (adj));
-  gtk_scale_set_draw_value (GTK_SCALE (priv->icon_view_scale), FALSE);
-  gtk_widget_set_size_request (priv->icon_view_scale, 100, -1);
-  gtk_box_pack_start (GTK_BOX (priv->icon_view_scale_box), priv->icon_view_scale, FALSE, FALSE, 0);
-  gtk_widget_show (priv->icon_view_scale);
-
-  /* priv->icon_view_scale_zoom_in_icon = gtk_image_new_from_icon_name (ZOOM_IN, GTK_ICON_SIZE_BUTTON); */
-  gtk_size_group_add_widget (priv->browse_path_bar_size_group, priv->icon_view_scale_zoom_in_icon);
-  gtk_box_pack_start (GTK_BOX (priv->icon_view_scale_box), priv->icon_view_scale_zoom_in_icon, FALSE, FALSE, 0);
-  gtk_widget_show (priv->icon_view_scale_zoom_in_icon);
-
-  g_signal_connect (priv->icon_view_scale, "value-changed",
-                    G_CALLBACK (icon_view_scale_value_changed_cb), impl);
-
+  if (priv->view_mode == VIEW_MODE_ICON)
+    {
+      gtk_widget_show (priv->icon_view_scale_box);
+    }
+  else if (priv->view_mode == VIEW_MODE_LIST)
+    {
+      gtk_widget_hide (priv->icon_view_scale_box);
+    }
+  else
+    g_assert_not_reached ();
 }
 
 static void
@@ -4195,7 +4174,7 @@ settings_load (GtkFileChooserWidget *impl)
 
   view_mode_set (impl, view_mode);
 
-  gtk_range_set_value (GTK_RANGE (priv->icon_view_scale), icon_view_scale);
+  /* gtk_range_set_value (GTK_RANGE (priv->icon_view_scale), icon_view_scale); */
   priv->icon_view_icon_size = icon_view_scale;
 
   if (!priv->show_hidden_set)
@@ -8965,6 +8944,7 @@ gtk_file_chooser_widget_class_init (GtkFileChooserWidgetClass *class)
   gtk_widget_class_bind_template_callback (widget_class, list_cursor_changed);
   gtk_widget_class_bind_template_callback (widget_class, icon_item_activated);
   gtk_widget_class_bind_template_callback (widget_class, icon_view_scale_value_changed_cb);
+  gtk_widget_class_bind_template_callback (widget_class, icon_view_scale_toggle_cb); 
   gtk_widget_class_bind_template_callback (widget_class, view_mode_combo_box_changed_cb);
   gtk_widget_class_bind_template_callback (widget_class, view_notebook_switch_page_cb);
   gtk_widget_class_bind_template_callback (widget_class, filter_combo_changed);
@@ -9467,7 +9447,7 @@ gtk_file_chooser_widget_add_choice (GtkFileChooser  *chooser,
       widget = check;
     }
 
-  gtk_widget_show_all (widget);
+  gtk_widget_show_all (widget); 
   gtk_container_add (GTK_CONTAINER (priv->choice_box), widget);
 }
 
