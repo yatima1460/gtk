@@ -48,10 +48,6 @@
     <value nick='icon-view' value='1'/>
   </enum>
 
-  <enum id='org.gtk.Settings.FileChooser.IconViewScale'>
-    <value nick='icon-size-for-icon-view' value='0'/>
-  </enum>
-
   <enum id='org.gtk.Settings.FileChooser.DateFormat'>
     <value nick='regular' value='0'/>
     <value nick='with-time' value='1'/>
@@ -72,9 +68,17 @@
     </key>
     <key name='view-mode' enum='org.gtk.Settings.FileChooser.ViewMode'>
       <default>'list-view'</default>
+      <summary>Change view mode</summary>
+      <description>
+        Controls the view mode used.
+      </description>
     </key>
-    <key name='icon-view-scale' enum='org.gtk.Settings.FileChooser.IconViewScale'>
-      <default>'icon-size-for-icon-view'</default>
+    <key name='icon-view-scale' type='i'>
+      <default>32</default>
+      <summary>Change icon size</summary>
+      <description>
+        Controls the size of the icons in icon view mode.
+      </description>
     </key>
     <key name='show-hidden' type='b'>
       <default>false</default>

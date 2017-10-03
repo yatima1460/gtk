@@ -33,6 +33,7 @@
 #include "gtktreeview.h"
 #include "gtkbox.h"
 #include "gtkiconview.h"
+#include "gtkscale.h"
 
 G_BEGIN_DECLS
 

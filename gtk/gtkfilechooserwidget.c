@@ -22,6 +22,7 @@
 #include "gtkfilechooserwidget.h"
 #include "gtkfilechooserwidgetprivate.h"
 
+#include "gtkadjustment.h"
 #include "gtkbindings.h"
 #include "gtkbutton.h"
 #include "gtkcelllayout.h"
@@ -43,6 +44,7 @@
 #include "gtkfilesystemmodel.h"
 #include "gtkgrid.h"
 #include "gtkicontheme.h"
+#include "gtkiconview.h"
 #include "gtklabel.h"
 #include "gtkmarshalers.h"
 #include "gtkmessagedialog.h"
@@ -55,6 +57,7 @@
 #include "gtkplacesviewprivate.h"
 #include "gtkprivate.h"
 #include "gtkrecentmanager.h"
+#include "gtkscale.h"
 #include "gtksearchentry.h"
 #include "gtkseparatormenuitem.h"
 #include "gtksettings.h"
@@ -81,7 +84,6 @@
 #include "gtkdebug.h"
 
 #include <cairo-gobject.h>
-#include <gtk/gtk.h>
 #include <math.h>
 
 #ifdef HAVE_UNISTD_H
@@ -4153,16 +4155,17 @@ settings_load (GtkFileChooserWidget *impl)
   gboolean show_size_column;
   gboolean sort_directories_first;
   DateFormat date_format;
-  gint sort_column, icon_view_scale;
+  gint sort_column; 
   GtkSortType sort_order;
   StartupMode startup_mode;
   gint sidebar_width;
+  gint icon_view_scale;
   GSettings *settings;
 
   settings = _gtk_file_chooser_get_settings_for_widget (GTK_WIDGET (impl));
 
   view_mode = g_settings_get_enum (settings, SETTINGS_KEY_VIEW_MODE);
-  icon_view_scale = g_settings_get_enum (settings, SETTINGS_KEY_ICON_VIEW_SCALE);
+  icon_view_scale = g_settings_get_int (settings, SETTINGS_KEY_ICON_VIEW_SCALE);
   show_hidden = g_settings_get_boolean (settings, SETTINGS_KEY_SHOW_HIDDEN);
   show_size_column = g_settings_get_boolean (settings, SETTINGS_KEY_SHOW_SIZE_COLUMN);
   sort_column = g_settings_get_enum (settings, SETTINGS_KEY_SORT_COLUMN);
@@ -4173,9 +4176,7 @@ settings_load (GtkFileChooserWidget *impl)
   date_format = g_settings_get_enum (settings, SETTINGS_KEY_DATE_FORMAT);
 
   view_mode_set (impl, view_mode);
-
-  /* gtk_range_set_value (GTK_RANGE (priv->icon_view_scale), icon_view_scale); */
-  priv->icon_view_icon_size = icon_view_scale;
+  priv->icon_view_icon_size = icon_view_scale; 
 
   if (!priv->show_hidden_set)
     set_show_hidden (impl, show_hidden);
@@ -4210,7 +4211,7 @@ settings_save (GtkFileChooserWidget *impl)
 
   g_settings_set_enum (settings, SETTINGS_KEY_LOCATION_MODE, priv->location_mode);
   g_settings_set_enum (settings, SETTINGS_KEY_VIEW_MODE, priv->view_mode);
-  g_settings_set_enum (settings, SETTINGS_KEY_ICON_VIEW_SCALE, priv->icon_view_scale);
+  g_settings_set_int (settings, SETTINGS_KEY_ICON_VIEW_SCALE, priv->icon_view_icon_size);
   g_settings_set_boolean (settings, SETTINGS_KEY_SHOW_HIDDEN,
                           gtk_file_chooser_get_show_hidden (GTK_FILE_CHOOSER (impl)));
   g_settings_set_boolean (settings, SETTINGS_KEY_SHOW_SIZE_COLUMN, priv->show_size_column);
