@@ -8235,7 +8235,7 @@ list_row_activated (GtkTreeView          *tree_view,
 static void
 icon_item_activated (GtkIconView           *icon_view,
                      GtkTreePath           *path,
-		     GtkFileChooserWidget  *impl)
+                     GtkFileChooserWidget  *impl)
 {
   GtkTreeModel *model;
   model = gtk_icon_view_get_model (icon_view);
@@ -8266,14 +8266,14 @@ item_activated (GtkTreeModel          *model,
   if (is_sensitive && is_folder && file)
     {
       change_folder_and_display_error (impl, file, FALSE);
-      return;
+      goto out;
     }
 
   if (priv->action == GTK_FILE_CHOOSER_ACTION_OPEN ||
       priv->action == GTK_FILE_CHOOSER_ACTION_SAVE)
     g_signal_emit_by_name (impl, "file-activated");
 
- /* out: */
+  out: 
 
   if (file)
     g_object_unref (file);
