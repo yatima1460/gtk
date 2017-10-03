@@ -17,15 +17,12 @@
                   <item translatable="yes" id="browse_files_tree_view">List View</item>
                   <item translatable="yes" id="browse_files_icon_view">Icon View</item>
                 </items>
-		<!-- <property name="active">0</property> -->
+		<property name="active">0</property>
                 <property name="visible">1</property>
                 <property name="tooltip-text" translatable="yes">Select filechooser view</property>
-                <property name="focus-on-click">0</property>
-                <property name="entry-text-column">1</property>
-                <property name="id-column">0</property>
                 <property name="halign">start</property>
                 <property name="valign">start</property>
-		<!-- <property name="has-entry">True</property>  -->
+		<!-- <property name="has-entry">True</property> -->
                 <signal name="changed" handler="view_mode_combo_box_changed_cb" swapped="no"/>
               </object>
               <packing>
@@ -44,7 +41,7 @@
             </child>
             <child>
               <object class="GtkScale" id="icon_view_scale_widget">
-                <property name="visible">1</property>
+                <property name="visible">0</property>
                 <property name="orientation">horizontal</property>
                 <property name="can_focus">1</property>
                 <property name="halign">end</property>
@@ -54,7 +51,6 @@
                 <property name="adjustment">adjustment1</property>
                 <property name="digits">0</property>
                 <property name="draw_value">False</property>
-		<!-- <signal name="hide" handler="icon_view_scale_toggle_cb" swapped="no"/> -->
               </object>
               <packing>
                 <property name="position">1</property>

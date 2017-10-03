@@ -3066,6 +3066,8 @@ view_mode_set (GtkFileChooserWidget *impl, ViewMode view_mode)
     return;
 
   priv->view_mode = view_mode;
+  gtk_combo_box_set_active (GTK_COMBO_BOX (priv->view_mode_combo_box),
+                            view_mode);
 
   /* Creating the target view */
   if (view_mode == VIEW_MODE_ICON)
@@ -8903,6 +8905,7 @@ gtk_file_chooser_widget_class_init (GtkFileChooserWidgetClass *class)
   gtk_widget_class_bind_template_child_private (widget_class, GtkFileChooserWidget, rename_file_error_label);
   gtk_widget_class_bind_template_child_private (widget_class, GtkFileChooserWidget, rename_file_popover);
   gtk_widget_class_bind_template_child_private (widget_class, GtkFileChooserWidget, remote_warning_bar);
+  gtk_widget_class_bind_template_child_private (widget_class, GtkFileChooserWidget, view_mode_combo_box);
 
   /* And a *lot* of callbacks to bind ... */
   gtk_widget_class_bind_template_callback (widget_class, browse_files_key_press_event_cb);
