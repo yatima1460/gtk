@@ -358,10 +358,7 @@ struct _GtkFileChooserWidgetPrivate {
   GSource *focus_entry_idle;
 
   GtkWidget *view_mode_combo_box;
-  GtkWidget *icon_view_scale_box;
-  GtkWidget *icon_view_scale;
-  GtkWidget *icon_view_scale_zoom_in_icon;
-  GtkWidget *icon_view_scale_zoom_out_icon;
+  GtkWidget *icon_view_scale_widget;
   ViewMode view_mode;
 
   GtkCellRenderer *list_icon_renderer;
@@ -618,7 +615,6 @@ static void icon_view_scale_value_changed_cb (GtkAdjustment        *range,
 static void view_mode_set (GtkFileChooserWidget *impl, ViewMode view_mode);
 static void view_mode_combo_box_changed_cb (GtkComboBox          *combo,
                                             GtkFileChooserWidget *impl);
-static void icon_view_scale_toggle_cb (GtkFileChooserWidget *impl, gpointer user_data);
 
 static void location_switch_to_path_bar (GtkFileChooserWidget *impl);
 
@@ -677,7 +673,7 @@ static void     set_model_filter             (GtkFileChooserWidget *impl,
                                               GtkFileFilter        *filter);
 static void     switch_to_home_dir           (GtkFileChooserWidget *impl);
 
-
+
 
 G_DEFINE_TYPE_WITH_CODE (GtkFileChooserWidget, gtk_file_chooser_widget, GTK_TYPE_BOX,
                          G_ADD_PRIVATE (GtkFileChooserWidget)
@@ -3070,9 +3066,6 @@ view_mode_set (GtkFileChooserWidget *impl, ViewMode view_mode)
     return;
 
   priv->view_mode = view_mode;
-  /* gtk_combo_box_text_get_active_text (GTK_COMBO_BOX_TEXT (priv->view_mode_combo_box));
-  gtk_combo_box_set_active (GTK_COMBO_BOX (priv->view_mode_combo_box),
-                            view_mode); */
 
   /* Creating the target view */
   if (view_mode == VIEW_MODE_ICON)
@@ -3080,11 +3073,13 @@ view_mode_set (GtkFileChooserWidget *impl, ViewMode view_mode)
       create_browse_files_icon_view (impl);
       priv->browse_files_current_view = priv->browse_files_icon_view;
       old_view = priv->browse_files_tree_view;
+      gtk_widget_show (priv->icon_view_scale_widget);
     } 
   else if (view_mode == VIEW_MODE_LIST)
     {
       priv->browse_files_current_view = priv->browse_files_tree_view;
       old_view = priv->browse_files_icon_view;
+      gtk_widget_hide (priv->icon_view_scale_widget);
     }
   else
     g_assert_not_reached ();
@@ -3151,24 +3146,6 @@ icon_view_scale_value_changed_cb (GtkAdjustment        *adj,
     _gtk_file_system_model_clear_cache (priv->recent_model, MODEL_COL_ICON_PIXBUF);
 
   gtk_widget_queue_resize (priv->browse_files_current_view);
-}
-
-static void
-//toggle not working
-icon_view_scale_toggle_cb (GtkFileChooserWidget *impl, gpointer user_data)
-{
-  GtkFileChooserWidgetPrivate *priv = impl->priv;
-
-  if (priv->view_mode == VIEW_MODE_ICON)
-    {
-      gtk_widget_show (priv->icon_view_scale_box);
-    }
-  else if (priv->view_mode == VIEW_MODE_LIST)
-    {
-      gtk_widget_hide (priv->icon_view_scale_box);
-    }
-  else
-    g_assert_not_reached ();
 }
 
 static void
@@ -4018,7 +3995,6 @@ change_icon_theme (GtkFileChooserWidget *impl)
 
   if (gtk_icon_size_lookup (GTK_ICON_SIZE_DIALOG, &width, &height))
     {
-      // FIXME: Appropriate size? Dialog icons are a bit small for thumbnails...
       priv->icon_view_icon_size = MAX (width, height);
     }
   else
@@ -8900,6 +8876,7 @@ gtk_file_chooser_widget_class_init (GtkFileChooserWidgetClass *class)
   gtk_widget_class_bind_template_child_private (widget_class, GtkFileChooserWidget, browse_path_bar);
   gtk_widget_class_bind_template_child_private (widget_class, GtkFileChooserWidget, filter_combo_hbox);
   gtk_widget_class_bind_template_child_private (widget_class, GtkFileChooserWidget, filter_combo);
+  gtk_widget_class_bind_template_child_private (widget_class, GtkFileChooserWidget, icon_view_scale_widget);
   gtk_widget_class_bind_template_child_private (widget_class, GtkFileChooserWidget, preview_box);
   gtk_widget_class_bind_template_child_private (widget_class, GtkFileChooserWidget, extra_align);
   gtk_widget_class_bind_template_child_private (widget_class, GtkFileChooserWidget, extra_and_filters);
@@ -8942,7 +8919,6 @@ gtk_file_chooser_widget_class_init (GtkFileChooserWidgetClass *class)
   gtk_widget_class_bind_template_callback (widget_class, list_cursor_changed);
   gtk_widget_class_bind_template_callback (widget_class, icon_item_activated);
   gtk_widget_class_bind_template_callback (widget_class, icon_view_scale_value_changed_cb);
-  gtk_widget_class_bind_template_callback (widget_class, icon_view_scale_toggle_cb); 
   gtk_widget_class_bind_template_callback (widget_class, view_mode_combo_box_changed_cb);
   gtk_widget_class_bind_template_callback (widget_class, view_notebook_switch_page_cb);
   gtk_widget_class_bind_template_callback (widget_class, filter_combo_changed);
