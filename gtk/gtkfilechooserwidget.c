@@ -6602,14 +6602,13 @@ get_selected_file_info_from_file_list (GtkFileChooserWidget *impl,
   GtkTreeSelection *selection;
   GtkTreeIter iter;
   GFileInfo *info;
-  GtkTreeModel *model;
 
   g_assert (!priv->select_multiple);
 
   if (priv->view_mode == VIEW_MODE_LIST)
     {
       selection = gtk_tree_view_get_selection (GTK_TREE_VIEW (priv->browse_files_tree_view));
-            if (!gtk_tree_selection_get_selected (selection, NULL, &iter))
+      if (!gtk_tree_selection_get_selected (selection, NULL, &iter))
         {
           *had_selection = FALSE;
           return NULL;
@@ -6629,8 +6628,8 @@ get_selected_file_info_from_file_list (GtkFileChooserWidget *impl,
   else
     g_assert_not_reached();
 
-    info = _gtk_file_system_model_get_info (GTK_FILE_SYSTEM_MODEL (model), &iter);
-    return info;
+  info = _gtk_file_system_model_get_info (GTK_FILE_SYSTEM_MODEL (priv->current_model), &iter);
+  return info;
 }
 
 /* Gets the display name of the selected file in the file list; assumes single
