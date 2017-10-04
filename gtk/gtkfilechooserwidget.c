@@ -1,4 +1,4 @@
-/* -*- Mode: C; c-file-style: "gnu"; tab-width: 8 -*- */
+/* -*- Mode: C; c-file-style: "gnu"; indent-tabs-mode: nil; tab-width: 8 -*- */
 /* GTK - The GIMP Toolkit
  * gtkfilechooserwidget.c: Embeddable file selector widget
  * Copyright (C) 2003, Red Hat, Inc.
