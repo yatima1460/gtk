@@ -6028,15 +6028,13 @@ gtk_file_chooser_widget_unselect_file (GtkFileChooser *chooser,
                                        GFile          *file)
 {
   GtkFileChooserWidget *impl = GTK_FILE_CHOOSER_WIDGET (chooser);
-  GtkTreeView *tree_view;
-  GtkTreeModel *model;
+  GtkFileChooserWidgetPrivate *priv = impl->priv;
   GtkTreeIter iter;
   
-  model = gtk_tree_view_get_model (tree_view);
-  if (!model)
+  if (!priv->current_model)
     return;
 
-  if (!_gtk_file_system_model_get_iter_for_file (GTK_FILE_SYSTEM_MODEL (model), &iter, file))
+  if (!_gtk_file_system_model_get_iter_for_file (GTK_FILE_SYSTEM_MODEL (priv->current_model), &iter, file))
     return;
 
   current_selection_unselect_iter (impl, &iter);
