@@ -911,9 +911,8 @@ gtk_combo_box_class_init (GtkComboBoxClass *klass)
   /**
    * GtkComboBox:wrap-width:
    *
-   * If wrap-width is set to a positive value, the list will be
-   * displayed in multiple columns, the number of columns is
-   * determined by wrap-width.
+   * If wrap-width is set to a positive value, items in the popup will be laid
+   * out along multiple columns, starting a new row on reaching the wrap width.
    *
    * Since: 2.4
    */
@@ -932,11 +931,9 @@ gtk_combo_box_class_init (GtkComboBoxClass *klass)
    * GtkComboBox:row-span-column:
    *
    * If this is set to a non-negative value, it must be the index of a column
-   * of type %G_TYPE_INT in the model.
-   *
-   * The values of that column are used to determine how many rows a value in
-   * the list will span. Therefore, the values in the model column pointed to
-   * by this property must be greater than zero and not larger than wrap-width.
+   * of type %G_TYPE_INT in the model. The value in that column for each item
+   * will determine how many rows that item will span in the popup. Therefore,
+   * values in this column must be greater than zero.
    *
    * Since: 2.4
    */
@@ -955,10 +952,10 @@ gtk_combo_box_class_init (GtkComboBoxClass *klass)
    * GtkComboBox:column-span-column:
    *
    * If this is set to a non-negative value, it must be the index of a column
-   * of type %G_TYPE_INT in the model.
-   *
-   * The values of that column are used to determine how many columns a value
-   * in the list will span.
+   * of type %G_TYPE_INT in the model. The value in that column for each item
+   * will determine how many columns that item will span in the popup.
+   * Therefore, values in this column must be greater than zero, and the sum of
+   * an item’s column position + span should not exceed #GtkComboBox:wrap-width.
    *
    * Since: 2.4
    */
@@ -2442,9 +2439,11 @@ gtk_combo_box_popdown (GtkComboBox *combo_box)
     return;
 
   if (priv->grab_pointer)
-    gdk_seat_ungrab (gdk_device_get_seat (priv->grab_pointer));
+    {
+      gdk_seat_ungrab (gdk_device_get_seat (priv->grab_pointer));
+      gtk_device_grab_remove (priv->popup_window, priv->grab_pointer);
+    }
 
-  gtk_device_grab_remove (priv->popup_window, priv->grab_pointer);
   gtk_widget_hide (priv->popup_window);
   gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON (priv->button),
                                 FALSE);
