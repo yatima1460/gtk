@@ -3041,17 +3041,6 @@ create_browse_files_icon_view (GtkFileChooserWidget *impl)
   gtk_icon_view_set_item_width (GTK_ICON_VIEW (priv->browse_files_icon_view),
                                 ICON_VIEW_ITEM_WIDTH);
 
-
-  // FIXME iconview editing is not working properly
-//  priv->list_icon_renderer = gtk_cell_renderer_text_new ();
-//  g_object_set (priv->list_icon_renderer,
-//                "ellipsize", PANGO_ELLIPSIZE_END,
-//                NULL);
-//  g_object_set (priv->list_icon_renderer, "editable", TRUE, NULL);
-//  gtk_cell_layout_pack_start (GTK_CELL_LAYOUT (priv->browse_files_icon_view),
-//                              priv->list_icon_renderer,
-//                              TRUE);
-
   return priv->browse_files_icon_view;
 }
 
@@ -3185,7 +3174,6 @@ set_extra_widget (GtkFileChooserWidget *impl,
   if (extra_widget)
     {
       g_object_ref (extra_widget);
-      /* FIXME: is this right ? */
       gtk_widget_show (extra_widget);
     }
 
@@ -3388,8 +3376,8 @@ operation_mode_set_enter_location (GtkFileChooserWidget *impl)
   gtk_stack_set_visible_child_name (GTK_STACK (priv->browse_files_stack), "list");
   gtk_stack_set_visible_child_name (GTK_STACK (priv->browse_header_stack), "location");
   gtk_revealer_set_reveal_child (GTK_REVEALER (priv->browse_header_revealer), TRUE);
-  //location_bar_update (impl);
-  gtk_tree_view_column_set_visible (priv->list_location_column, FALSE); // FIXME iconview
+  location_bar_update (impl);
+  gtk_tree_view_column_set_visible (priv->list_location_column, FALSE);
   gtk_widget_set_sensitive (priv->filter_combo, TRUE);
   location_mode_set (impl, LOCATION_MODE_FILENAME_ENTRY);
 }
@@ -6093,11 +6081,10 @@ gtk_file_chooser_widget_unselect_file (GtkFileChooser *chooser,
                                        GFile          *file)
 {
   GtkFileChooserWidget *impl = GTK_FILE_CHOOSER_WIDGET (chooser);
-  GtkFileChooserWidgetPrivate *priv = impl->priv;
   GtkTreeView *tree_view;
   GtkTreeModel *model;
   GtkTreeIter iter;
-
+  
   model = gtk_tree_view_get_model (tree_view);
   if (!model)
     return;
@@ -6640,8 +6627,6 @@ switch_folder_foreach_cb (GtkTreeModel *model,
 static void
 switch_to_selected_folder (GtkFileChooserWidget *impl)
 {
-  GtkFileChooserWidgetPrivate *priv = impl->priv;
-  GtkTreeSelection *selection;
   struct switch_folder_closure closure;
 
   /* We do this with foreach() rather than get_selected() as we may be in
@@ -6677,7 +6662,7 @@ get_selected_file_info_from_file_list (GtkFileChooserWidget *impl,
   if (priv->view_mode == VIEW_MODE_LIST)
     {
       selection = gtk_tree_view_get_selection (GTK_TREE_VIEW (priv->browse_files_tree_view));
-      if (!gtk_tree_selection_get_selected (selection, NULL, &iter))
+            if (!gtk_tree_selection_get_selected (selection, NULL, &iter))
         {
           *had_selection = FALSE;
           return NULL;
@@ -6697,8 +6682,8 @@ get_selected_file_info_from_file_list (GtkFileChooserWidget *impl,
   else
     g_assert_not_reached();
 
-  info = _gtk_file_system_model_get_info (GTK_FILE_SYSTEM_MODEL (model), &iter);
-  return info;
+    info = _gtk_file_system_model_get_info (GTK_FILE_SYSTEM_MODEL (model), &iter);
+    return info;
 }
 
 /* Gets the display name of the selected file in the file list; assumes single
