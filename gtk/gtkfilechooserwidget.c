@@ -1,4 +1,4 @@
-/* -*- Mode: C; c-file-style: "gnu"; tab-width: 8 -*- */
+/* -*- Mode: C; c-file-style: "gnu"; indent-tabs-mode: nil; tab-width: 8 -*- */
 /* GTK - The GIMP Toolkit
  * gtkfilechooserwidget.c: Embeddable file selector widget
  * Copyright (C) 2003, Red Hat, Inc.
@@ -362,8 +362,6 @@ struct _GtkFileChooserWidgetPrivate {
   ViewMode view_mode;
 
   GtkCellRenderer *list_icon_renderer;
-  GSource *start_editing_icon_view_idle;
-  GtkTreePath *start_editing_icon_view_path;
 
   gulong toplevel_set_focus_id;
   GtkWidget *toplevel_last_focus_widget;
@@ -664,8 +662,6 @@ static void     current_view_set_cursor               (GtkFileChooserWidget  *im
                                                        GtkTreePath           *path);
 static void     current_view_set_select_multiple      (GtkFileChooserWidget  *impl,
                                                        gboolean select_multiple);
-
-static GSource *add_idle_while_impl_is_alive (GtkFileChooserWidget *impl, GCallback callback);
 
 static void     clear_model_cache            (GtkFileChooserWidget *impl,
                                               gint                  column);
@@ -1035,55 +1031,6 @@ set_preview_widget (GtkFileChooserWidget *impl,
     }
 
   update_preview_widget_visibility (impl);
-}
-
-static gboolean
-start_editing_icon_view_idle_cb (GtkFileChooserWidget *impl)
-{
-  GDK_THREADS_ENTER ();
-  GtkFileChooserWidgetPrivate *priv = impl->priv;
-
-  g_source_destroy (priv->start_editing_icon_view_idle);
-  priv->start_editing_icon_view_idle = NULL;
-
-  gtk_icon_view_scroll_to_path (GTK_ICON_VIEW (priv->browse_files_icon_view),
-				priv->start_editing_icon_view_path,
-				TRUE,
-				0.5,
-				0.0);
-
-  g_object_set (priv->list_icon_renderer, "editable", TRUE, NULL);
-  gtk_icon_view_set_cursor (GTK_ICON_VIEW (priv->browse_files_icon_view),
-			    priv->start_editing_icon_view_path,
-			    priv->list_icon_renderer,
-			    TRUE);
-  gtk_widget_grab_focus (GTK_WIDGET (priv->list_icon_renderer));
-
-  gtk_tree_path_free (priv->start_editing_icon_view_path);
-  priv->start_editing_icon_view_path = NULL;
-
-  GDK_THREADS_LEAVE ();
-
-  return FALSE;
-}
-
-static void
-add_idle_to_edit_icon_view (GtkFileChooserWidget *impl, GtkTreePath *path)
-{
-  GtkFileChooserWidgetPrivate *priv = impl->priv;
-
-  /* Normally we would run the code in the start_editing_icon_view_idle_cb() synchronously,
-   * but GtkIconView doesn't like to start editing itself immediately after getting an item
-   * added - it wants to run its layout loop first.  So, we add the editable item first, and
-   * only start editing it until an idle handler.
-   */
-
-  g_assert (priv->start_editing_icon_view_idle == NULL);
-  g_assert (priv->start_editing_icon_view_path == NULL);
-
-  priv->start_editing_icon_view_path = path;
-  priv->start_editing_icon_view_idle = add_idle_while_impl_is_alive (impl,
-								     G_CALLBACK (start_editing_icon_view_idle_cb));
 }
 
 static void
@@ -6081,15 +6028,13 @@ gtk_file_chooser_widget_unselect_file (GtkFileChooser *chooser,
                                        GFile          *file)
 {
   GtkFileChooserWidget *impl = GTK_FILE_CHOOSER_WIDGET (chooser);
-  GtkTreeView *tree_view;
-  GtkTreeModel *model;
+  GtkFileChooserWidgetPrivate *priv = impl->priv;
   GtkTreeIter iter;
   
-  model = gtk_tree_view_get_model (tree_view);
-  if (!model)
+  if (!priv->current_model)
     return;
 
-  if (!_gtk_file_system_model_get_iter_for_file (GTK_FILE_SYSTEM_MODEL (model), &iter, file))
+  if (!_gtk_file_system_model_get_iter_for_file (GTK_FILE_SYSTEM_MODEL (priv->current_model), &iter, file))
     return;
 
   current_selection_unselect_iter (impl, &iter);
@@ -6655,14 +6600,13 @@ get_selected_file_info_from_file_list (GtkFileChooserWidget *impl,
   GtkTreeSelection *selection;
   GtkTreeIter iter;
   GFileInfo *info;
-  GtkTreeModel *model;
 
   g_assert (!priv->select_multiple);
 
   if (priv->view_mode == VIEW_MODE_LIST)
     {
       selection = gtk_tree_view_get_selection (GTK_TREE_VIEW (priv->browse_files_tree_view));
-            if (!gtk_tree_selection_get_selected (selection, NULL, &iter))
+      if (!gtk_tree_selection_get_selected (selection, NULL, &iter))
         {
           *had_selection = FALSE;
           return NULL;
@@ -6682,8 +6626,8 @@ get_selected_file_info_from_file_list (GtkFileChooserWidget *impl,
   else
     g_assert_not_reached();
 
-    info = _gtk_file_system_model_get_info (GTK_FILE_SYSTEM_MODEL (model), &iter);
-    return info;
+  info = _gtk_file_system_model_get_info (GTK_FILE_SYSTEM_MODEL (priv->current_model), &iter);
+  return info;
 }
 
 /* Gets the display name of the selected file in the file list; assumes single
@@ -7468,21 +7412,6 @@ get_selected_files (GtkFileChooserWidget *impl)
   result = g_slist_reverse (result);
 
   return result;
-}
-
-static void
-selected_foreach_get_info_cb (GtkTreeModel *model,
-                              GtkTreePath  *path,
-                              GtkTreeIter  *iter,
-                              gpointer      data)
-{
-  GSList **list;
-  GFileInfo *info;
-
-  list = data;
-
-  info = _gtk_file_system_model_get_info (GTK_FILE_SYSTEM_MODEL (model), iter);
-  *list = g_slist_prepend (*list, g_object_ref (info));
 }
 
 static GSList *
