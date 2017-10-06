@@ -315,7 +315,7 @@
                                     <property name="can_focus">True</property>
                                     <property name="shadow_type">in</property>    
                                     <property name="hscrollbar-policy">GTK_POLICY_AUTOMATIC</property>
-                                    <property name="vscrollbar-policy">GTK_POILCY_ALWAYS</property>
+                                    <property name="vscrollbar-policy">GTK_POLICY_ALWAYS</property>
                                     <child>
                                       <object class="GtkIconView" id="browse_files_icon_view">
                                         <property name="visible">True</property>
