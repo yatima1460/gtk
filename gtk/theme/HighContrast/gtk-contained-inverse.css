@@ -158,17 +158,9 @@ spinbutton:not(.vertical) progress:backdrop, entry progress:backdrop { backgroun
 
 button.titlebutton, button { min-height: 24px; min-width: 16px; padding: 4px 8px; border: 1px solid; border-radius: 3px; transition: all 200ms cubic-bezier(0.25, 0.46, 0.45, 0.94); border-width: 2px; border-style: solid; color: #fff; background-image: none; background-color: #000; border-color: gray; }
 
-button.sidebar-button, button.titlebutton, button.flat { border-width: 2px; border-style: solid; color: #fff; background-color: transparent; background-image: none; border-color: transparent; transition: none; }
+button.titlebutton:disabled, button:disabled { border-width: 2px; border-style: solid; color: gray; background-color: #070707; border-color: #494949; background-image: none; }
 
-button.sidebar-button:hover, button.titlebutton:hover, button.flat:hover { transition: all 200ms cubic-bezier(0.25, 0.46, 0.45, 0.94); transition-duration: 500ms; }
-
-button.sidebar-button:hover:active, button.titlebutton:hover:active, button.flat:hover:active { transition: all 200ms cubic-bezier(0.25, 0.46, 0.45, 0.94); }
-
-button.sidebar-button:backdrop, button.titlebutton:backdrop, button.sidebar-button:disabled, button.titlebutton:disabled, button.sidebar-button:backdrop:disabled, button.titlebutton:backdrop:disabled, button.flat:backdrop, button.flat:disabled, button.flat:backdrop:disabled { border-width: 2px; border-style: solid; color: gray; background-color: transparent; background-image: none; border-color: transparent; }
-
-button.titlebutton:hover, button:hover { border-width: 2px; border-style: solid; color: #fff; background-color: #000; border-color: gray; background-image: none; -gtk-icon-effect: highlight; }
-
-button.titlebutton:active, button.titlebutton:checked, button:active, button:checked { border-width: 2px; border-style: solid; background-image: none; color: black; background-color: white; border-color: gray; transition-duration: 50ms; }
+button.titlebutton:disabled:active, button.titlebutton:disabled:checked, button:disabled:active, button:disabled:checked { border-width: 2px; border-style: solid; color: gray; border-color: #494949; background-image: none; background-color: #070707; }
 
 button.titlebutton:backdrop, button:backdrop { border-width: 2px; border-style: solid; color: #fff; background-color: #000; border-color: #737373; background-image: none; -gtk-icon-effect: none; }
 
@@ -178,9 +170,17 @@ button.titlebutton:backdrop:disabled, button:backdrop:disabled { border-width: 2
 
 button.titlebutton:backdrop:disabled:active, button.titlebutton:backdrop:disabled:checked, button:backdrop:disabled:active, button:backdrop:disabled:checked { border-width: 2px; border-style: solid; color: gray; border-color: #494949; background-image: none; background-color: #090909; }
 
-button.titlebutton:disabled, button:disabled { border-width: 2px; border-style: solid; color: gray; background-color: #070707; border-color: #494949; background-image: none; }
+button.sidebar-button, button.titlebutton, button.flat { border-width: 2px; border-style: solid; color: #fff; background-color: transparent; background-image: none; border-color: transparent; transition: none; }
 
-button.titlebutton:disabled:active, button.titlebutton:disabled:checked, button:disabled:active, button:disabled:checked { border-width: 2px; border-style: solid; color: gray; border-color: #494949; background-image: none; background-color: #070707; }
+button.sidebar-button:hover, button.titlebutton:hover, button.flat:hover { transition: all 200ms cubic-bezier(0.25, 0.46, 0.45, 0.94); transition-duration: 500ms; }
+
+button.sidebar-button:hover:active, button.titlebutton:hover:active, button.flat:hover:active { transition: all 200ms cubic-bezier(0.25, 0.46, 0.45, 0.94); }
+
+button.sidebar-button:backdrop, button.titlebutton:backdrop, button.sidebar-button:disabled, button.titlebutton:disabled, button.sidebar-button:backdrop:disabled, button.titlebutton:backdrop:disabled, button.flat:backdrop, button.flat:disabled, button.flat:backdrop:disabled { border-width: 2px; border-style: solid; color: gray; background-color: transparent; background-image: none; border-color: transparent; }
+
+button.titlebutton:hover, button.sidebar-button:hover, button.titlebutton:hover, button:hover, button.flat:hover { border-width: 2px; border-style: solid; color: #fff; background-color: #000; border-color: gray; background-image: none; -gtk-icon-effect: highlight; }
+
+button.titlebutton:active, button.titlebutton:checked, button:active, button:checked { border-width: 2px; border-style: solid; background-image: none; color: black; background-color: white; border-color: gray; transition-duration: 50ms; }
 
 button.image-button.titlebutton, button.image-button { min-width: 24px; padding-left: 4px; padding-right: 4px; }
 
@@ -484,45 +484,47 @@ toolbar.inline-toolbar:backdrop, searchbar.inline-toolbar:backdrop { border-colo
 /*************** Header bars * */
 .titlebar:not(headerbar), headerbar { min-height: 46px; border-width: 0 0 1px; border-style: solid; border-color: gray; border-radius: 7px 7px 0 0; background-color: transparent; background-image: linear-gradient(to bottom, #0a0a0a, #000); box-shadow: inset 0 -1px #262626, inset 0 1px #000; padding: 6px; }
 
-.titlebar:not(headerbar):backdrop, headerbar:backdrop { border-color: #737373; background-color: #000; background-image: none; box-shadow: none; }
+.titlebar:backdrop:not(headerbar), headerbar:backdrop { border-color: #737373; background-color: #000; background-image: none; box-shadow: none; }
 
 .titlebar:not(headerbar) .title, headerbar .title { font-weight: bold; padding: 0px 12px; }
 
 .titlebar:not(headerbar) .subtitle, headerbar .subtitle { font-size: 80%; padding: 0 12px; }
 
-.titlebar:not(headerbar).selection-mode, headerbar.selection-mode { color: #b7b7b7; text-shadow: 0 1px rgba(0, 0, 0, 0.5); background-image: linear-gradient(to bottom, #eaeaea, #e2e2e2); box-shadow: inset 0 -1px #262626, inset 0 1px #6f6f6f; }
+.selection-mode.titlebar:not(headerbar), headerbar.selection-mode { color: #b7b7b7; text-shadow: 0 1px rgba(0, 0, 0, 0.5); background-image: linear-gradient(to bottom, #eaeaea, #e2e2e2); box-shadow: inset 0 -1px #262626, inset 0 1px #6f6f6f; }
 
-.titlebar:not(headerbar).selection-mode button, headerbar.selection-mode button { border-width: 2px; border-style: solid; color: #000; background-image: none; background-color: #ddd; border-color: #9d9d9d; }
+.selection-mode.titlebar:not(headerbar) button, headerbar.selection-mode button { border-width: 2px; border-style: solid; color: #000; background-image: none; background-color: #ddd; border-color: #9d9d9d; }
 
-.titlebar:not(headerbar).selection-mode button:hover, headerbar.selection-mode button:hover { border-width: 2px; border-style: solid; color: #000; background-color: #ddd; border-color: #9d9d9d; background-image: none; }
+.selection-mode.titlebar:not(headerbar) button:hover, headerbar.selection-mode button:hover { border-width: 2px; border-style: solid; color: #000; background-color: #ddd; border-color: #9d9d9d; background-image: none; }
 
-.titlebar:not(headerbar).selection-mode button:active, headerbar.selection-mode button:active { border-width: 2px; border-style: solid; background-image: none; color: white; background-color: #222222; border-color: #9d9d9d; }
+.selection-mode.titlebar:not(headerbar) button:active, headerbar.selection-mode button:active { border-width: 2px; border-style: solid; background-image: none; color: white; background-color: #222222; border-color: #9d9d9d; }
 
-.titlebar:not(headerbar).selection-mode button:disabled, headerbar.selection-mode button:disabled { border-width: 2px; border-style: solid; color: gray; background-color: #070707; border-color: #494949; background-image: none; }
+.selection-mode.titlebar:not(headerbar) button:disabled, headerbar.selection-mode button:disabled { border-width: 2px; border-style: solid; color: gray; background-color: #070707; border-color: #494949; background-image: none; }
 
-.titlebar:not(headerbar).selection-mode button:backdrop, headerbar.selection-mode button:backdrop { border-width: 2px; border-style: solid; color: #000; background-color: #ddd; border-color: #ddd; background-image: none; border-color: #b7b7b7; }
+.selection-mode.titlebar:not(headerbar) button:backdrop, headerbar.selection-mode button:backdrop { border-width: 2px; border-style: solid; color: #000; background-color: #ddd; border-color: #ddd; background-image: none; border-color: #b7b7b7; }
 
-.titlebar:not(headerbar).selection-mode button:backdrop:disabled, headerbar.selection-mode button:backdrop:disabled { border-width: 2px; border-style: solid; color: gray; background-color: #070707; border-color: #494949; background-image: none; }
+.selection-mode.titlebar:not(headerbar) button:backdrop:disabled, headerbar.selection-mode button:backdrop:disabled { border-width: 2px; border-style: solid; color: gray; background-color: #070707; border-color: #494949; background-image: none; }
 
-.titlebar:not(headerbar).selection-mode button.suggested-action, headerbar.selection-mode button.suggested-action { border-width: 2px; border-style: solid; color: #fff; background-image: none; background-color: #000; border-color: gray; }
+.selection-mode.titlebar:not(headerbar) button.suggested-action, headerbar.selection-mode button.suggested-action { border-width: 2px; border-style: solid; color: #fff; background-image: none; background-color: #000; border-color: gray; }
 
-.titlebar:not(headerbar).selection-mode button.suggested-action:hover, headerbar.selection-mode button.suggested-action:hover { border-width: 2px; border-style: solid; color: #fff; background-color: #000; border-color: gray; background-image: none; }
+.selection-mode.titlebar:not(headerbar) button.suggested-action:hover, headerbar.selection-mode button.suggested-action:hover { border-width: 2px; border-style: solid; color: #fff; background-color: #000; border-color: gray; background-image: none; }
 
-.titlebar:not(headerbar).selection-mode button.suggested-action:active, headerbar.selection-mode button.suggested-action:active { border-width: 2px; border-style: solid; background-image: none; color: black; background-color: white; border-color: gray; }
+.selection-mode.titlebar:not(headerbar) button.suggested-action:active, headerbar.selection-mode button.suggested-action:active { border-width: 2px; border-style: solid; background-image: none; color: black; background-color: white; border-color: gray; }
 
-.titlebar:not(headerbar).selection-mode button.suggested-action:disabled, headerbar.selection-mode button.suggested-action:disabled { border-width: 2px; border-style: solid; color: gray; background-color: #070707; border-color: #494949; background-image: none; }
+.selection-mode.titlebar:not(headerbar) button.suggested-action:disabled, headerbar.selection-mode button.suggested-action:disabled { border-width: 2px; border-style: solid; color: gray; background-color: #070707; border-color: #494949; background-image: none; }
 
-.titlebar:not(headerbar).selection-mode button.suggested-action:backdrop, headerbar.selection-mode button.suggested-action:backdrop { border-width: 2px; border-style: solid; color: #fff; background-color: #000; border-color: #737373; background-image: none; }
+.selection-mode.titlebar:not(headerbar) button.suggested-action:backdrop, headerbar.selection-mode button.suggested-action:backdrop { border-width: 2px; border-style: solid; color: #fff; background-color: #000; border-color: #737373; background-image: none; }
 
-.titlebar:not(headerbar).selection-mode button.suggested-action:backdrop:disabled, headerbar.selection-mode button.suggested-action:backdrop:disabled { border-width: 2px; border-style: solid; color: gray; background-color: #070707; border-color: #494949; background-image: none; }
+.selection-mode.titlebar:not(headerbar) button.suggested-action:backdrop:disabled, headerbar.selection-mode button.suggested-action:backdrop:disabled { border-width: 2px; border-style: solid; color: gray; background-color: #070707; border-color: #494949; background-image: none; }
 
-.titlebar:not(headerbar).selection-mode .selection-menu, headerbar.selection-mode .selection-menu { border-width: 0; background-image: none; box-shadow: none; }
+.selection-mode.titlebar:not(headerbar) .selection-menu, headerbar.selection-mode .selection-menu { border-width: 0; background-image: none; box-shadow: none; }
 
 .tiled .titlebar:not(headerbar), .maximized .titlebar:not(headerbar), .fullscreen .titlebar:not(headerbar), .tiled headerbar, .maximized headerbar, .fullscreen headerbar { border-radius: 0; }
 
-.titlebar:not(headerbar).default-decoration, headerbar.default-decoration { min-height: 28px; padding: 4px; }
+.default-decoration.titlebar:not(headerbar), headerbar.default-decoration { min-height: 28px; padding: 4px; }
 
-.titlebar:not(headerbar).default-decoration button.titlebutton, headerbar.default-decoration button.titlebutton { min-height: 26px; min-width: 26px; margin: 0; padding: 0; }
+.default-decoration.titlebar:not(headerbar) button.titlebutton, headerbar.default-decoration button.titlebutton { min-height: 26px; min-width: 26px; margin: 0; padding: 0; }
+
+window.csd > .titlebar:not(headerbar) { padding: 0; background-color: transparent; background-image: none; border-style: none; border-color: transparent; box-shadow: none; }
 
 /************ Pathbars * */
 .path-bar button { padding: 5px 6px 6px; }
@@ -1264,7 +1266,7 @@ messagedialog .dialog-action-area button { padding: 8px; }
 
 messagedialog .titlebar { border-style: none; box-shadow: inset 0 1px #000; }
 
-messagedialog.csd { border-bottom-left-radius: 9px; border-bottom-right-radius: 9px; }
+messagedialog.csd.background { border-bottom-left-radius: 9px; border-bottom-right-radius: 9px; }
 
 messagedialog.csd .dialog-action-area button { padding: 12px; border-radius: 0; border-width: 2px; border-style: solid; color: #fff; background-image: none; background-color: #000; border-color: gray; }
 
@@ -1304,9 +1306,9 @@ messagedialog.csd .dialog-action-area button.destructive-action:disabled { borde
 
 messagedialog.csd .dialog-action-area button, messagedialog.csd .dialog-action-area button:hover, messagedialog.csd .dialog-action-area button:active, messagedialog.csd .dialog-action-area button:disabled, messagedialog.csd .dialog-action-area button:backdrop, messagedialog.csd .dialog-action-area button:backdrop:disabled, messagedialog.csd .dialog-action-area button.suggested-action, messagedialog.csd .dialog-action-area button.suggested-action:hover, messagedialog.csd .dialog-action-area button.suggested-action:active, messagedialog.csd .dialog-action-area button.suggested-action:backdrop, messagedialog.csd .dialog-action-area button.suggested-action:backdrop:disabled, messagedialog.csd .dialog-action-area button.suggested-action:disabled, messagedialog.csd .dialog-action-area button.destructive-action, messagedialog.csd .dialog-action-area button.destructive-action:hover, messagedialog.csd .dialog-action-area button.destructive-action:active, messagedialog.csd .dialog-action-area button.destructive-action:backdrop, messagedialog.csd .dialog-action-area button.destructive-action:backdrop:disabled, messagedialog.csd .dialog-action-area button.destructive-action:disabled { border-right-style: none; border-bottom-style: none; }
 
-messagedialog.csd .dialog-action-area button:last-child { border-bottom-right-radius: 7px; }
+messagedialog.csd .dialog-action-area button:last-child { border-bottom-right-radius: 7px; -gtk-outline-bottom-right-radius: 5px; }
 
-messagedialog.csd .dialog-action-area button:first-child { border-left-style: none; border-bottom-left-radius: 7px; }
+messagedialog.csd .dialog-action-area button:first-child { border-left-style: none; border-bottom-left-radius: 7px; -gtk-outline-bottom-left-radius: 5px; }
 
 filechooser .dialog-action-box { border-top: 1px solid gray; }
 
@@ -1369,19 +1371,19 @@ placesview .server-list-button:checked > image { transition: 200ms cubic-bezier(
 placesview row.activatable:hover { background-color: transparent; }
 
 /********* Paned * */
-paned separator { min-width: 1px; min-height: 1px; background-image: linear-gradient(to bottom, gray, gray); }
+paned > separator { min-width: 1px; min-height: 1px; background-image: linear-gradient(to bottom, gray, gray); }
 
-paned separator:backdrop { background-image: linear-gradient(to bottom, #737373, #737373); }
+paned > separator:backdrop { background-image: linear-gradient(to bottom, #737373, #737373); }
 
-paned:dir(ltr).horizontal separator { margin: 0 -8px 0 0; padding: 0 8px 0 0; }
+paned:dir(ltr).horizontal > separator { margin: 0 -8px 0 0; padding: 0 8px 0 0; }
 
-paned:dir(rtl).horizontal separator { margin: 0 0 0 -8px; padding: 0 0 0 8px; }
+paned:dir(rtl).horizontal > separator { margin: 0 0 0 -8px; padding: 0 0 0 8px; }
 
-paned.vertical separator { margin: 0 0 -8px 0; padding: 0 0 8px 0; }
+paned.vertical > separator { margin: 0 0 -8px 0; padding: 0 0 8px 0; }
 
-paned separator:selected { background-color: #ddd; }
+paned > separator:selected { background-color: #ddd; }
 
-paned separator.wide { min-width: 5px; min-height: 5px; background-color: transparent; border-style: none solid; border-color: gray; border-width: 1px; }
+paned > separator.wide { min-width: 5px; min-height: 5px; background-color: transparent; border-style: none solid; border-color: gray; border-width: 1px; }
 
 /************** GtkInfoBar * */
 infobar { border-width: 0; border-style: none; }
@@ -1403,9 +1405,13 @@ infobar { border-width: 0; border-style: none; }
 .info label:selected, .info label:selected:focus, .info label:selected:hover, .question label:selected, .question label:selected:focus, .question label:selected:hover, .warning label:selected, .warning label:selected:focus, .warning label:selected:hover, .error label:selected, .error label:selected:focus, .error label:selected:hover { background-color: white; }
 
 /************ Tooltips * */
-.tooltip { color: white; padding: 4px; /* not working */ border-radius: 5px; background-color: rgba(0, 0, 0, 0.8); text-shadow: 0 1px black; }
+tooltip { padding: 4px; /* not working */ border-radius: 5px; box-shadow: none; }
 
-.tooltip * { padding: 4px; background-color: transparent; color: inherit; }
+tooltip.background { background-color: rgba(0, 0, 0, 0.9); background-clip: padding-box; border: 1px solid gray; }
+
+tooltip decoration { background-color: transparent; }
+
+tooltip * { padding: 4px; background-color: transparent; color: white; }
 
 /***************** Color Chooser * */
 colorswatch { box-shadow: inset 0 1px rgba(0, 0, 0, 0.1), 0 1px #000; }
@@ -1463,17 +1469,19 @@ colorswatch#add-color-button:backdrop { border-width: 2px; border-style: solid; 
 colorswatch#add-color-button overlay { border-width: 0; background: none; }
 
 /********************** Window Decorations * */
-decoration { border-radius: 7px 7px 0 0; border-width: 0px; box-shadow: 0 3px 9px 1px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 0, 0, 0.23); /* this is used for the resize cursor area */ margin: 10px; }
+decoration { border-radius: 7px 7px 0 0; border-width: 0px; box-shadow: 0 3px 9px 1px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.23); /* this is used for the resize cursor area */ margin: 10px; }
 
-decoration:backdrop { box-shadow: 0 2px 6px 2px rgba(0, 0, 0, 0.2), 0 3px 9px 1px transparent, 0 0 0 1px rgba(0, 0, 0, 0.18); }
+decoration:backdrop { box-shadow: 0 2px 6px 2px rgba(0, 0, 0, 0.2), 0 3px 9px 1px transparent, 0 0 0 1px rgba(255, 255, 255, 0.18); }
 
-decoration.tiled { border-radius: 0; }
+.tiled decoration { border-radius: 0; }
 
-decoration.csd.popup { border-radius: 0; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 0, 0, 0.13); }
+.csd.popup decoration { border-radius: 0; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.13); }
 
-decoration.csd.tooltip { border-radius: 5px; box-shadow: none; }
+tooltip.csd decoration { border-radius: 5px; box-shadow: none; }
 
-decoration.solid-csd { border-radius: 0; margin: 4px; background-color: #000; border: solid 1px #737373; box-shadow: none; }
+messagedialog.csd decoration { border-radius: 7px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.13); }
+
+.solid-csd decoration { border-radius: 0; margin: 4px; background-color: #000; border: solid 1px #737373; box-shadow: none; }
 
 /********************** Touch Copy & Paste * */
 cursor-handle { background-color: #000; background-image: none; -gtk-icon-source: none; box-shadow: none; outline-style: none; outline-color: transparent; border: 2px solid #fff; }

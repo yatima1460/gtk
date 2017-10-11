@@ -31,7 +31,7 @@
  * can hold almost any other standard #GtkWidget. The most commonly used
  * child is #GtkImage. If no widget is explicitely added to the #GtkMenuButton,
  * a #GtkImage is automatically created, using an arrow image oriented
- * according to #GtkMenuButton:direction or the generic "view-context-menu"
+ * according to #GtkMenuButton:direction or the generic “open-menu-symbolic”
  * icon if the direction is not set.
  *
  * The positioning of the popup is determined by the #GtkMenuButton:direction
@@ -1039,7 +1039,7 @@ gtk_menu_button_dispose (GObject *object)
 
   if (priv->popover)
     {
-      gtk_widget_destroy (priv->popover);
+      gtk_popover_set_relative_to (GTK_POPOVER (priv->popover), NULL);
       priv->popover = NULL;
     }
 

@@ -375,38 +375,11 @@ button {
 
     @include button(normal);
 
-    &.flat {
-      @include button(undecorated);
-      // to avoid adiacent buttons borders clashing when transitioning, the transition on the normal state is set
-      // to none, while it's added back in the hover state, so the button decoration will fade in on hover, but
-      // it won't fade out when the pointer leave the button allocation area. To make the transition more evident
-      // in this case the duration is increased.
-      transition: none;
+    &:disabled {
+      @include button(insensitive);
 
-      &:hover {
-        transition: $_button_transition;
-        transition-duration: 500ms;
-
-        &:active { transition: $_button_transition; }
-      }
-      
-      &:backdrop, 
-      &:disabled, 
-      &:backdrop:disabled {
-        @include button(undecorated-insensitive);
-      }
-    }
-
-    &:hover {
-      @include button(hover);
-      -gtk-icon-effect: highlight;
-    }
-
-    &:active,
-    &:checked {
-      @include button(active);
-
-      transition-duration: 50ms;
+      &:active,
+      &:checked { @include button(insensitive-active); }
     }
 
     &:backdrop {
@@ -425,11 +398,40 @@ button {
       }
     }
 
-    &:disabled {
-      @include button(insensitive);
+    &.flat {
+      @include button(undecorated);
 
-      &:active,
-      &:checked { @include button(insensitive-active); }
+      // to avoid adiacent buttons borders clashing when transitioning, the transition on the normal state is set
+      // to none, while it's added back in the hover state, so the button decoration will fade in on hover, but
+      // it won't fade out when the pointer leave the button allocation area. To make the transition more evident
+      // in this case the duration is increased.
+      transition: none;
+
+      &:hover {
+        transition: $_button_transition;
+        transition-duration: 500ms;
+
+        &:active { transition: $_button_transition; }
+      }
+
+      &:backdrop,
+      &:disabled,
+      &:backdrop:disabled {
+        @include button(undecorated-insensitive);
+      }
+    }
+
+    &:hover,
+    &.flat:hover {
+      @include button(hover);
+      -gtk-icon-effect: highlight;
+    }
+
+    &:active,
+    &:checked {
+      @include button(active);
+
+      transition-duration: 50ms;
     }
 
     &.image-button {
@@ -1195,7 +1197,7 @@ searchbar {
  * Header bars *
  ***************/
 
-.titlebar:not(headerbar),
+%titlebar,
 headerbar {
   min-height: 46px;
   border-width: 0 0 1px;
@@ -1280,6 +1282,21 @@ headerbar {
     }
   }
 }
+
+.titlebar:not(headerbar) {
+  window.csd > & {
+    // in csd we assume every titlebar is a headerbar so reset anything, this is needed for split toolbars cases
+    padding: 0;
+    background-color: transparent;
+    background-image: none;
+    border-style: none;
+    border-color: transparent;
+    box-shadow: none;
+  }
+
+  @extend %titlebar;
+}
+
 
 /************
  * Pathbars *
@@ -2816,6 +2833,7 @@ calendar {
   &.highlight, &.highlight:backdrop { color: $fg_color; }
 }
 
+
 /***********
  * Dialogs *
  ***********/
@@ -2829,27 +2847,36 @@ messagedialog { // Message Dialog styling
     border-style: none;
     box-shadow: inset 0 1px $borders_edge;
   }
+
   &.csd { // rounded bottom border styling for csd version
-    // bigger radius for better antialiasing
-    border-bottom-left-radius: 9px;
-    border-bottom-right-radius: 9px;
+    &.background {
+      // bigger radius for better antialiasing
+      border-bottom-left-radius: 9px;
+      border-bottom-right-radius: 9px;
+    }
+
     .dialog-action-area button {
       padding: 12px;
       border-radius: 0;
+
       @include button(normal, $edge: none);
       @extend %middle_button;
+
       &:hover {
         @include button(hover, $edge: none);
         @extend %middle_button;
       }
+
       &:active {
         @include button(active, $edge: none);
         @extend %middle_button;
       }
+
       &:disabled {
         @include button(insensitive, $edge: none);
         @extend %middle_button;
       }
+
       &:backdrop {
         @include button(backdrop, $edge: none);
         @extend %middle_button;
@@ -2858,44 +2885,58 @@ messagedialog { // Message Dialog styling
         @include button(backdrop-insensitive, $edge: none);
         @extend %middle_button;
       }
+
       @each $b_type, $b_color in (suggested-action, $suggested_color),
                                  (destructive-action, $destructive_color) {
         &.#{$b_type} {
           @include button(normal, $b_color, white, $edge: none);
           @extend %middle_button;
+
           &:hover {
             @include button(hover, $b_color, white, $edge: none);
             @extend %middle_button;
           }
+
           &:active {
             @include button(active, $b_color, white, $edge: none);
             @extend %middle_button;
           }
+
           &:backdrop {
             @include button(backdrop, $b_color, white);
             @extend %middle_button;
+
             &:disabled {
               @include button(backdrop-insensitive);
               @extend %middle_button;
             }
           }
+
           &:disabled {
             @include button(insensitive);
             @extend %middle_button;
           }
         }
       }
+
       &:first-child{ @extend %first_button; }
       &:last-child { @extend %last_button; }
     }
+
     %middle_button {
       border-right-style: none;
       border-bottom-style: none;
     }
-    %last_button { border-bottom-right-radius: 7px; }
+
+    %last_button {
+      border-bottom-right-radius: 7px;
+      -gtk-outline-bottom-right-radius: 5px;
+    }
+
     %first_button {
       border-left-style: none;
       border-bottom-left-radius: 7px;
+      -gtk-outline-bottom-left-radius: 5px;
     }
   }
 }
@@ -2914,6 +2955,7 @@ filechooserbutton:drop(active) {
   box-shadow: none;
   border-color: transparent;
 }
+
 
 /***********
  * Sidebar *
@@ -3046,30 +3088,35 @@ placesview {
 
 
 paned {
-  separator {
+  > separator {
     min-width: 1px;
     min-height: 1px;
     background-image: _solid($borders_color);
+
     &:backdrop {
       background-image: _solid($backdrop_borders_color);
     }
   }
-   &:dir(ltr).horizontal separator {
+
+  &:dir(ltr).horizontal > separator {
     margin: 0 -8px 0 0;
     padding: 0 8px 0 0;
   }
-  &:dir(rtl).horizontal separator {
+  &:dir(rtl).horizontal > separator {
     margin: 0 0 0 -8px;
     padding: 0 0 0 8px;
   }
-  &.vertical separator {
+
+  &.vertical > separator {
     margin: 0 0 -8px 0;
     padding: 0 0 8px 0;
   }
-  separator:selected {
+
+  > separator:selected {
     background-color: $selected_bg_color;
   }
-  separator.wide {
+
+  > separator.wide {
     min-width: 5px;
     min-height: 5px;
     background-color: transparent;
@@ -3114,20 +3161,29 @@ infobar {
  * Tooltips *
  ************/
 
-.tooltip {
-  color: white;
+tooltip {
+  &.background {
+    // background-color needs to be set this way otherwise it gets drawn twice
+    // see https://bugzilla.gnome.org/show_bug.cgi?id=736155 for details.
+    background-color: transparentize(black, 0.1);
+    background-clip: padding-box;
+    border: 1px solid $borders_color;
+  }
+
   padding: 4px; /* not working */
   border-radius: 5px;
-  background-color: transparentize(black,0.2);  //FIXME proper color
-  text-shadow: 0 1px black;
-//  border: 2px solid $borders_color; gnome shell style?
+  box-shadow: none; // otherwise it gets inherited by windowframe.csd
+
+  // FIXME: we need a border or tooltips vanish on black background.
+  decoration { background-color: transparent; }
+
+  * { // Yeah this is ugly
+    padding: 4px;
+    background-color: transparent;
+    color: white;
+  }
 }
 
-.tooltip * { //Yeah this is ugly
-  padding: 4px;
-  background-color: transparent;
-  color: inherit; // just to be sure
-}
 
 /*****************
  * Color Chooser *
@@ -3253,8 +3309,8 @@ decoration {
 
   // this needs to be transparent
   // see bug #722563
-  $_wm_border: transparentize(black, 0.77);
-  $_wm_border_backdrop: transparentize(black, 0.82);
+  $_wm_border: transparentize($fg_color, 0.77);
+  $_wm_border_backdrop: transparentize($fg_color, 0.82);
 
   box-shadow: 0 3px 9px 1px transparentize(black, 0.5),
               0 0 0 1px $_wm_border; //doing borders with box-shadow
@@ -3267,21 +3323,29 @@ decoration {
                 0 3px 9px 1px transparent,
                 0 0 0 1px $_wm_border_backdrop;
   }
-  &.tiled {
+
+  .tiled & {
     border-radius: 0;
   }
-  &.csd {
-    &.popup {
-      border-radius: 0;
-      box-shadow: 0 1px 2px transparentize(black, 0.8),
-                  0 0 0 1px transparentize($_wm_border,0.1);
-    }
-    &.tooltip {
-      border-radius: 5px;
-      box-shadow: none;
-    }
+
+  .csd.popup & {
+    border-radius: 0;
+    box-shadow: 0 1px 2px transparentize(black, 0.8),
+                0 0 0 1px transparentize($_wm_border,0.1);
   }
-  &.solid-csd {
+
+  tooltip.csd & {
+    border-radius: 5px;
+    box-shadow: none;
+  }
+
+  messagedialog.csd & {
+    border-radius: 7px;
+    box-shadow: 0 1px 2px transparentize(black, 0.8),
+                0 0 0 1px transparentize($_wm_border, 0.1);
+  }
+
+  .solid-csd & {
     border-radius: 0;
     margin: 4px;
     background-color: $backdrop_bg_color;
