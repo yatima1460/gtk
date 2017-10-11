@@ -2171,7 +2171,7 @@ check_file_list_popover_sensitivity (GtkFileChooserWidget *impl)
   GActionGroup *actions;
   GAction *action, *action2;
 
-  actions = gtk_widget_get_action_group (priv->browse_files_icon_view, "item");
+  actions = gtk_widget_get_action_group (priv->browse_files_tree_view, "item");
 
   selection_check (impl, &num_selected, &all_files, &all_folders);
 
@@ -2269,7 +2269,7 @@ add_actions (GtkFileChooserWidget *impl)
   g_action_map_add_action_entries (G_ACTION_MAP (actions),
                                    entries, G_N_ELEMENTS (entries),
                                    impl);
-  gtk_widget_insert_action_group (GTK_WIDGET (impl->priv->browse_files_icon_view), "item", actions);
+  gtk_widget_insert_action_group (GTK_WIDGET (impl->priv->browse_files_tree_view), "item", actions);
   g_object_unref (actions);
 }
 
@@ -2318,7 +2318,7 @@ file_list_build_popover (GtkFileChooserWidget *impl)
   if (priv->browse_files_popover)
     return;
 
-  priv->browse_files_popover = gtk_popover_new (priv->browse_files_icon_view);
+  priv->browse_files_popover = gtk_popover_new (priv->browse_files_tree_view);
   box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
   g_object_set (box, "margin", 10, NULL);
   gtk_widget_show (box);
@@ -2366,7 +2366,7 @@ file_list_update_popover (GtkFileChooserWidget *impl)
 
   gtk_widget_set_visible (priv->visit_file_item, (priv->operation_mode != OPERATION_MODE_BROWSE));
 
-  actions = gtk_widget_get_action_group (priv->browse_files_icon_view, "item");
+  actions = gtk_widget_get_action_group (priv->browse_files_tree_view, "item");
   action = g_action_map_lookup_action (G_ACTION_MAP (actions), "toggle-show-hidden");
   g_simple_action_set_state (G_SIMPLE_ACTION (action), g_variant_new_boolean (priv->show_hidden));
 
@@ -2395,17 +2395,27 @@ file_list_show_popover (GtkFileChooserWidget *impl,
 
   file_list_update_popover (impl);
 
-  selection = gtk_tree_view_get_selection (GTK_TREE_VIEW (priv->browse_files_icon_view));
+  selection = gtk_tree_view_get_selection (GTK_TREE_VIEW (priv->browse_files_tree_view));
   list = gtk_tree_selection_get_selected_rows (selection, &model);
+
+  /* selection = gtk_icon_view_get_selected_items (GTK_ICON_VIEW (priv->browse_files_icon_view));
+  list = gtk_icon_view_select_path (selection, &path); */
   if (list)
     {
       path = list->data;
-      gtk_tree_view_get_cell_area (GTK_TREE_VIEW (priv->browse_files_icon_view), path, NULL, &rect);
-      gtk_tree_view_convert_bin_window_to_widget_coords (GTK_TREE_VIEW (priv->browse_files_icon_view),
+      gtk_tree_view_get_cell_area (GTK_TREE_VIEW (priv->browse_files_tree_view), path, NULL, &rect);
+      gtk_tree_view_convert_bin_window_to_widget_coords (GTK_TREE_VIEW (priv->browse_files_tree_view),
                                                      rect.x, rect.y, &rect.x, &rect.y);
 
+      rect.x = CLAMP (x - 20, 0, gtk_widget_get_allocated_width (priv->browse_files_tree_view) - 40);
+      rect.width = 40; 
+
+      /* gtk_icon_view_get_cell_rect (GTK_ICON_VIEW (priv->browse_files_icon_view), path, NULL, &rect);
+      gtk_icon_view_convert_widget_to_bin_window_coords (GTK_ICON_VIEW (priv->browse_files_icon_view),
+                                                         rect.x, rect.y, &rect.x, &rect.y);
+
       rect.x = CLAMP (x - 20, 0, gtk_widget_get_allocated_width (priv->browse_files_icon_view) - 40);
-      rect.width = 40;
+      rect.width = 40; */
 
       g_list_free_full (list, (GDestroyNotify) gtk_tree_path_free);
     }
@@ -2429,8 +2439,8 @@ list_popup_menu_cb (GtkWidget            *widget,
   GtkFileChooserWidgetPrivate *priv = impl->priv;
 
   file_list_show_popover (impl,
-                          0.5 * gtk_widget_get_allocated_width (GTK_WIDGET (priv->browse_files_icon_view)),
-                          0.5 * gtk_widget_get_allocated_height (GTK_WIDGET (priv->browse_files_icon_view)));
+                          0.5 * gtk_widget_get_allocated_width (GTK_WIDGET (priv->browse_files_tree_view)),
+                          0.5 * gtk_widget_get_allocated_height (GTK_WIDGET (priv->browse_files_tree_view)));
   return TRUE;
 }
 
