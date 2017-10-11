@@ -2398,8 +2398,6 @@ file_list_show_popover (GtkFileChooserWidget *impl,
   selection = gtk_tree_view_get_selection (GTK_TREE_VIEW (priv->browse_files_tree_view));
   list = gtk_tree_selection_get_selected_rows (selection, &model);
 
-  /* selection = gtk_icon_view_get_selected_items (GTK_ICON_VIEW (priv->browse_files_icon_view));
-  list = gtk_icon_view_select_path (selection, &path); */
   if (list)
     {
       path = list->data;
@@ -2409,13 +2407,6 @@ file_list_show_popover (GtkFileChooserWidget *impl,
 
       rect.x = CLAMP (x - 20, 0, gtk_widget_get_allocated_width (priv->browse_files_tree_view) - 40);
       rect.width = 40; 
-
-      /* gtk_icon_view_get_cell_rect (GTK_ICON_VIEW (priv->browse_files_icon_view), path, NULL, &rect);
-      gtk_icon_view_convert_widget_to_bin_window_coords (GTK_ICON_VIEW (priv->browse_files_icon_view),
-                                                         rect.x, rect.y, &rect.x, &rect.y);
-
-      rect.x = CLAMP (x - 20, 0, gtk_widget_get_allocated_width (priv->browse_files_icon_view) - 40);
-      rect.width = 40; */
 
       g_list_free_full (list, (GDestroyNotify) gtk_tree_path_free);
     }
