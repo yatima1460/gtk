@@ -4048,7 +4048,7 @@ set_sort_column (GtkFileChooserWidget *impl)
   GtkFileChooserWidgetPrivate *priv = impl->priv;
   GtkTreeSortable *sortable;
 
-  sortable = GTK_TREE_SORTABLE (gtk_tree_view_get_model (GTK_TREE_VIEW (priv->browse_files_tree_view)));
+  sortable = GTK_TREE_SORTABLE (priv->current_model);
 
   /* can happen when we're still populating the model */
   if (sortable == NULL)
