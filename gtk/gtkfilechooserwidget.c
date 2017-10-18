@@ -445,8 +445,8 @@ enum {
         G_TYPE_STRING,            /* MODEL_COL_NAME_COLLATED */ \
         G_TYPE_BOOLEAN,           /* MODEL_COL_IS_FOLDER */     \
         G_TYPE_BOOLEAN,           /* MODEL_COL_IS_SENSITIVE */  \
-	CAIRO_GOBJECT_TYPE_SURFACE,  /* MODEL_COL_LIST_SURFACE */	\
-	GDK_TYPE_PIXBUF,          /* MODEL_COL_ICON_PIXBUF */	\
+        CAIRO_GOBJECT_TYPE_SURFACE,  /* MODEL_COL_LIST_SURFACE */ \
+        GDK_TYPE_PIXBUF,          /* MODEL_COL_ICON_PIXBUF */   \
         G_TYPE_STRING,            /* MODEL_COL_SIZE_TEXT */     \
         G_TYPE_STRING,            /* MODEL_COL_DATE_TEXT */     \
         G_TYPE_STRING,            /* MODEL_COL_TIME_TEXT */     \
@@ -590,7 +590,7 @@ static void list_cursor_changed        (GtkTreeView           *treeview,
                                         GtkFileChooserWidget  *impl);
 static void icon_item_activated        (GtkIconView           *icon_view,
                                         GtkTreePath           *path,
-					GtkFileChooserWidget  *impl);
+                                        GtkFileChooserWidget  *impl);
 static void item_activated             (GtkTreeModel          *model,
                                         GtkTreePath           *path,
                                         GtkFileChooserWidget *impl);
@@ -2904,7 +2904,7 @@ location_mode_set (GtkFileChooserWidget *impl,
           location_switch_to_path_bar (impl);
 
           if (switch_to_file_list)
-	    gtk_widget_grab_focus (priv->browse_files_current_view);
+            gtk_widget_grab_focus (priv->browse_files_current_view);
 
           break;
 
@@ -5302,7 +5302,7 @@ file_system_model_set (GtkFileSystemModel *model,
 
           path = gtk_tree_model_get_path (tree_model, &iter);
           file_visible = (gtk_tree_path_compare (start, path) != 1 &&
-			      gtk_tree_path_compare (path, end) != 1);
+                          gtk_tree_path_compare (path, end) != 1);
 
           gtk_tree_path_free (path);
           gtk_tree_path_free (start);
@@ -7366,7 +7366,7 @@ gtk_file_chooser_widget_initial_focus (GtkFileChooserEmbed *chooser_embed)
     {
       if (priv->location_mode == LOCATION_MODE_PATH_BAR
           || priv->operation_mode == OPERATION_MODE_RECENT)
-	widget = priv->browse_files_current_view;
+        widget = priv->browse_files_current_view;
       else
         widget = priv->location_entry;
     }
