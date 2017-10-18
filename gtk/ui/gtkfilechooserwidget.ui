@@ -40,7 +40,7 @@
               </object>
             </child>
             <child>
-              <object class="GtkScale" id="icon_view_scale_widget">
+              <object class="GtkScale" id="icon_view_scale">
                 <property name="visible">0</property>
                 <property name="orientation">horizontal</property>
 		<property name="adjustment">icon_view_icon_size</property>

@@ -358,7 +358,7 @@ struct _GtkFileChooserWidgetPrivate {
   GSource *focus_entry_idle;
 
   GtkWidget *view_mode_combo_box;
-  GtkWidget *icon_view_scale_widget;
+  GtkWidget *icon_view_scale;
   ViewMode view_mode;
 
   GtkCellRenderer *list_icon_renderer;
@@ -607,7 +607,7 @@ static void update_cell_renderer_attributes (GtkFileChooserWidget *impl);
 static void load_remove_timer (GtkFileChooserWidget *impl, LoadState new_load_state);
 static void browse_files_center_selected_row (GtkFileChooserWidget *impl);
 
-static void icon_view_scale_value_changed_cb (GtkAdjustment        *range,
+static void icon_view_scale_value_changed_cb (GtkAdjustment        *adj,
                                               GtkFileChooserWidget *impl);
 
 static void view_mode_set (GtkFileChooserWidget *impl, ViewMode view_mode);
@@ -998,7 +998,7 @@ update_preview_widget_visibility (GtkFileChooserWidget *impl)
         }
     }
 
-  if (priv->preview_widget_active && priv->preview_widget)
+  if (priv->preview_widget_active && priv->preview_widget && priv->view_mode == VIEW_MODE_LIST)
     gtk_widget_show (priv->preview_box);
   else
     gtk_widget_hide (priv->preview_box);
@@ -3011,13 +3011,13 @@ view_mode_set (GtkFileChooserWidget *impl, ViewMode view_mode)
       create_browse_files_icon_view (impl);
       priv->browse_files_current_view = priv->browse_files_icon_view;
       old_view = priv->browse_files_tree_view;
-      gtk_widget_show (priv->icon_view_scale_widget);
+      gtk_widget_show (priv->icon_view_scale);
     } 
   else if (view_mode == VIEW_MODE_LIST)
     {
       priv->browse_files_current_view = priv->browse_files_tree_view;
       old_view = priv->browse_files_icon_view;
-      gtk_widget_hide (priv->icon_view_scale_widget);
+      gtk_widget_hide (priv->icon_view_scale);
     }
   else
     g_assert_not_reached ();
@@ -3063,7 +3063,7 @@ icon_view_scale_value_changed_cb (GtkAdjustment        *adj,
                                   GtkFileChooserWidget *impl)
 {
   GtkFileChooserWidgetPrivate *priv = impl->priv;
-  double value = gtk_adjustment_get_value (adj);
+  gdouble value = gtk_adjustment_get_value (adj);
   value = round (value / 16) * 16;
 
   if (priv->icon_view_icon_size == (gint)value)
@@ -4068,11 +4068,10 @@ settings_load (GtkFileChooserWidget *impl)
   gboolean show_size_column;
   gboolean sort_directories_first;
   DateFormat date_format;
-  gint sort_column; 
+  gint sort_column, icon_view_scale; 
   GtkSortType sort_order;
   StartupMode startup_mode;
   gint sidebar_width;
-  gint icon_view_scale;
   GSettings *settings;
 
   settings = _gtk_file_chooser_get_settings_for_widget (GTK_WIDGET (impl));
@@ -4089,6 +4088,7 @@ settings_load (GtkFileChooserWidget *impl)
   date_format = g_settings_get_enum (settings, SETTINGS_KEY_DATE_FORMAT);
 
   view_mode_set (impl, view_mode);
+  gtk_adjustment_set_value (GTK_ADJUSTMENT (priv->icon_view_scale), icon_view_scale);
   priv->icon_view_icon_size = icon_view_scale; 
 
   if (!priv->show_hidden_set)
@@ -8792,7 +8792,7 @@ gtk_file_chooser_widget_class_init (GtkFileChooserWidgetClass *class)
   gtk_widget_class_bind_template_child_private (widget_class, GtkFileChooserWidget, browse_path_bar);
   gtk_widget_class_bind_template_child_private (widget_class, GtkFileChooserWidget, filter_combo_hbox);
   gtk_widget_class_bind_template_child_private (widget_class, GtkFileChooserWidget, filter_combo);
-  gtk_widget_class_bind_template_child_private (widget_class, GtkFileChooserWidget, icon_view_scale_widget);
+  gtk_widget_class_bind_template_child_private (widget_class, GtkFileChooserWidget, icon_view_scale);
   gtk_widget_class_bind_template_child_private (widget_class, GtkFileChooserWidget, preview_box);
   gtk_widget_class_bind_template_child_private (widget_class, GtkFileChooserWidget, extra_align);
   gtk_widget_class_bind_template_child_private (widget_class, GtkFileChooserWidget, extra_and_filters);
