@@ -6281,8 +6281,8 @@ gtk_widget_translate_coordinates (GtkWidget  *src_widget,
 				  gint       *dest_x,
 				  gint       *dest_y)
 {
-  GtkWidgetPrivate *src_priv = src_widget->priv;
-  GtkWidgetPrivate *dest_priv = dest_widget->priv;
+  GtkWidgetPrivate *src_priv;
+  GtkWidgetPrivate *dest_priv;
   GtkWidget *ancestor;
   GdkWindow *window;
   GList *dest_list = NULL;
@@ -6293,6 +6293,9 @@ gtk_widget_translate_coordinates (GtkWidget  *src_widget,
   ancestor = gtk_widget_common_ancestor (src_widget, dest_widget);
   if (!ancestor || !_gtk_widget_get_realized (src_widget) || !_gtk_widget_get_realized (dest_widget))
     return FALSE;
+
+  src_priv = src_widget->priv;
+  dest_priv = dest_widget->priv;
 
   /* Translate from allocation relative to window relative */
   if (_gtk_widget_get_has_window (src_widget) && src_priv->parent)
@@ -7179,17 +7182,43 @@ gtk_widget_real_touch_event (GtkWidget     *widget,
                              GdkEventTouch *event)
 {
   GdkEvent *bevent;
-  gboolean return_val;
-  gint signum;
+  gboolean return_val = FALSE;
 
   if (!event->emulating_pointer)
     return _gtk_widget_run_controllers (widget, (GdkEvent*) event,
                                         GTK_PHASE_BUBBLE);
 
+  if (event->type == GDK_TOUCH_UPDATE ||
+      event->type == GDK_TOUCH_BEGIN)
+    {
+      bevent = gdk_event_new (GDK_MOTION_NOTIFY);
+      bevent->any.window = g_object_ref (event->window);
+      bevent->any.send_event = FALSE;
+      bevent->motion.time = event->time;
+      bevent->button.state = event->state;
+      bevent->motion.x_root = event->x_root;
+      bevent->motion.y_root = event->y_root;
+      bevent->motion.x = event->x;
+      bevent->motion.y = event->y;
+      bevent->motion.device = event->device;
+      bevent->motion.is_hint = FALSE;
+      bevent->motion.axes = g_memdup (event->axes,
+                                      sizeof (gdouble) * gdk_device_get_n_axes (event->device));
+      gdk_event_set_source_device (bevent, gdk_event_get_source_device ((GdkEvent*)event));
+
+      if (event->type == GDK_TOUCH_UPDATE)
+        bevent->motion.state |= GDK_BUTTON1_MASK;
+
+      g_signal_emit (widget, widget_signals[MOTION_NOTIFY_EVENT], 0, bevent, &return_val);
+
+      gdk_event_free (bevent);
+    }
+
   if (event->type == GDK_TOUCH_BEGIN ||
       event->type == GDK_TOUCH_END)
     {
       GdkEventType type;
+      gint signum;
 
       if (event->type == GDK_TOUCH_BEGIN)
         {
@@ -7218,31 +7247,11 @@ gtk_widget_real_touch_event (GtkWidget     *widget,
 
       if (event->type == GDK_TOUCH_END)
         bevent->button.state |= GDK_BUTTON1_MASK;
-    }
-  else if (event->type == GDK_TOUCH_UPDATE)
-    {
-      signum = MOTION_NOTIFY_EVENT;
-      bevent = gdk_event_new (GDK_MOTION_NOTIFY);
-      bevent->any.window = g_object_ref (event->window);
-      bevent->any.send_event = FALSE;
-      bevent->motion.time = event->time;
-      bevent->motion.state = event->state | GDK_BUTTON1_MASK;
-      bevent->motion.x_root = event->x_root;
-      bevent->motion.y_root = event->y_root;
-      bevent->motion.x = event->x;
-      bevent->motion.y = event->y;
-      bevent->motion.device = event->device;
-      bevent->motion.is_hint = FALSE;
-      bevent->motion.axes = g_memdup (event->axes,
-                                      sizeof (gdouble) * gdk_device_get_n_axes (event->device));
-      gdk_event_set_source_device (bevent, gdk_event_get_source_device ((GdkEvent*)event));
-    }
-  else
-    return FALSE;
 
-  g_signal_emit (widget, widget_signals[signum], 0, bevent, &return_val);
+      g_signal_emit (widget, widget_signals[signum], 0, bevent, &return_val);
 
-  gdk_event_free (bevent);
+      gdk_event_free (bevent);
+    }
 
   return return_val;
 }

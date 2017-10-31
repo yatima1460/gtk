@@ -126,6 +126,7 @@ struct _GdkWindowImplWayland
     struct wl_egl_window *egl_window;
     struct wl_egl_window *dummy_egl_window;
     struct zxdg_exported_v1 *xdg_exported;
+    struct org_kde_kwin_server_decoration *server_decoration;
   } display_server;
 
   EGLSurface egl_surface;
@@ -1373,6 +1374,7 @@ xdg_surface_configure (void                   *data,
   int width = impl->pending.width;
   int height = impl->pending.height;
   gboolean fixed_size;
+  gboolean saved_size;
 
   if (!impl->initial_configure_received)
     {
@@ -1392,6 +1394,7 @@ xdg_surface_configure (void                   *data,
   fixed_size =
     new_state & (GDK_WINDOW_STATE_MAXIMIZED | GDK_WINDOW_STATE_FULLSCREEN | GDK_WINDOW_STATE_TILED);
 
+  saved_size = (width == 0 && height == 0);
   /* According to xdg_shell, an xdg_surface.configure with size 0x0
    * should be interpreted as that it is up to the client to set a
    * size.
@@ -1400,7 +1403,7 @@ xdg_surface_configure (void                   *data,
    * the client should configure its size back to what it was before
    * being maximize or fullscreen.
    */
-  if (width == 0 && height == 0 && !fixed_size)
+  if (saved_size && !fixed_size)
     {
       width = impl->saved_width;
       height = impl->saved_height;
@@ -1413,16 +1416,19 @@ xdg_surface_configure (void                   *data,
       /* Ignore size increments for maximized/fullscreen windows */
       if (fixed_size)
         geometry_mask &= ~GDK_HINT_RESIZE_INC;
+      if (!saved_size)
+        {
+          /* Do not reapply contrains if we are restoring original size */
+          gdk_window_constrain_size (&impl->geometry_hints,
+                                     geometry_mask,
+                                     width + impl->margin_left + impl->margin_right,
+                                     height + impl->margin_top + impl->margin_bottom,
+                                     &width,
+                                     &height);
 
-      gdk_window_constrain_size (&impl->geometry_hints,
-                                 geometry_mask,
-                                 width + impl->margin_left + impl->margin_right,
-                                 height + impl->margin_top + impl->margin_bottom,
-                                 &width,
-                                 &height);
-
-      /* Save size for next time we get 0x0 */
-      _gdk_wayland_window_save_size (window);
+          /* Save size for next time we get 0x0 */
+          _gdk_wayland_window_save_size (window);
+        }
 
       gdk_wayland_window_configure (window, width, height, impl->scale);
     }
@@ -1674,6 +1680,21 @@ window_anchor_to_gravity (GdkGravity rect_anchor)
     default:
       g_assert_not_reached ();
     }
+}
+
+void
+gdk_wayland_window_announce_csd (GdkWindow *window)
+{
+  GdkWaylandDisplay *display_wayland = GDK_WAYLAND_DISPLAY (gdk_window_get_display (window));
+  GdkWindowImplWayland *impl = GDK_WINDOW_IMPL_WAYLAND (window->impl);
+  if (!display_wayland->server_decoration_manager)
+    return;
+  impl->display_server.server_decoration =
+    org_kde_kwin_server_decoration_manager_create (display_wayland->server_decoration_manager,
+                                                  impl->display_server.wl_surface);
+  if (impl->display_server.server_decoration)
+    org_kde_kwin_server_decoration_request_mode (impl->display_server.server_decoration,
+                                                ORG_KDE_KWIN_SERVER_DECORATION_MANAGER_MODE_CLIENT);
 }
 
 static GdkWindow *
@@ -2663,8 +2684,7 @@ gdk_window_wayland_move_resize (GdkWindow *window,
   if (with_move)
     {
       /* Each toplevel has in its own "root" coordinate system */
-      if (GDK_WINDOW_TYPE (window) != GDK_WINDOW_TOPLEVEL &&
-          (window->x != x || window->y != y))
+      if (GDK_WINDOW_TYPE (window) != GDK_WINDOW_TOPLEVEL)
         {
           window->x = x;
           window->y = y;
@@ -2965,16 +2985,16 @@ gtk_surface_configure (void                *data,
 
         /* Since v2 */
         case GTK_SURFACE1_STATE_TILED_TOP:
-          new_state |= GDK_WINDOW_STATE_TOP_TILED;
+          new_state |= (GDK_WINDOW_STATE_TILED | GDK_WINDOW_STATE_TOP_TILED);
           break;
         case GTK_SURFACE1_STATE_TILED_RIGHT:
-          new_state |= GDK_WINDOW_STATE_RIGHT_TILED;
+          new_state |= (GDK_WINDOW_STATE_TILED | GDK_WINDOW_STATE_RIGHT_TILED);
           break;
         case GTK_SURFACE1_STATE_TILED_BOTTOM:
-          new_state |= GDK_WINDOW_STATE_BOTTOM_TILED;
+          new_state |= (GDK_WINDOW_STATE_TILED | GDK_WINDOW_STATE_BOTTOM_TILED);
           break;
         case GTK_SURFACE1_STATE_TILED_LEFT:
-          new_state |= GDK_WINDOW_STATE_LEFT_TILED;
+          new_state |= (GDK_WINDOW_STATE_TILED | GDK_WINDOW_STATE_LEFT_TILED);
           break;
         default:
           /* Unknown state */
