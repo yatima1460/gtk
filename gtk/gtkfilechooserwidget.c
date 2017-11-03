@@ -22,7 +22,6 @@
 #include "gtkfilechooserwidget.h"
 #include "gtkfilechooserwidgetprivate.h"
 
-#include "gtkadjustment.h"
 #include "gtkbindings.h"
 #include "gtkbutton.h"
 #include "gtkcelllayout.h"
@@ -57,7 +56,6 @@
 #include "gtkplacesviewprivate.h"
 #include "gtkprivate.h"
 #include "gtkrecentmanager.h"
-#include "gtkscale.h"
 #include "gtksearchentry.h"
 #include "gtkseparatormenuitem.h"
 #include "gtksettings.h"
@@ -607,7 +605,7 @@ static void update_cell_renderer_attributes (GtkFileChooserWidget *impl);
 static void load_remove_timer (GtkFileChooserWidget *impl, LoadState new_load_state);
 static void browse_files_center_selected_row (GtkFileChooserWidget *impl);
 
-static void icon_view_scale_value_changed_cb (GtkAdjustment        *adj,
+static void icon_view_scale_value_changed_cb (GtkRange             *range,
                                               GtkFileChooserWidget *impl);
 
 static void view_mode_set (GtkFileChooserWidget *impl, ViewMode view_mode);
@@ -3059,11 +3057,11 @@ view_notebook_switch_page_cb (GtkNotebook *notebook,
 }
 
 static void
-icon_view_scale_value_changed_cb (GtkAdjustment        *adj,
+icon_view_scale_value_changed_cb (GtkRange             *range,
                                   GtkFileChooserWidget *impl)
 {
   GtkFileChooserWidgetPrivate *priv = impl->priv;
-  gdouble value = gtk_adjustment_get_value (adj);
+  gdouble value = gtk_range_get_value (range);
   value = round (value / 16) * 16;
 
   if (priv->icon_view_icon_size == (gint)value)
@@ -4068,7 +4066,7 @@ settings_load (GtkFileChooserWidget *impl)
   gboolean show_size_column;
   gboolean sort_directories_first;
   DateFormat date_format;
-  gint sort_column, icon_view_scale; 
+  gint sort_column, icon_view_scale;
   GtkSortType sort_order;
   StartupMode startup_mode;
   gint sidebar_width;
@@ -4088,7 +4086,8 @@ settings_load (GtkFileChooserWidget *impl)
   date_format = g_settings_get_enum (settings, SETTINGS_KEY_DATE_FORMAT);
 
   view_mode_set (impl, view_mode);
-  gtk_adjustment_set_value (GTK_ADJUSTMENT (priv->icon_view_scale), icon_view_scale);
+
+  gtk_range_set_value (GTK_RANGE (priv->icon_view_scale), icon_view_scale);
   priv->icon_view_icon_size = icon_view_scale; 
 
   if (!priv->show_hidden_set)
