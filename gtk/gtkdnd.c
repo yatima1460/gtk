@@ -43,6 +43,10 @@
 #endif
 #endif
 
+#ifdef GDK_WINDOWING_WIN32
+#include <gdk/win32/gdkwin32.h>
+#endif
+
 #ifdef GDK_WINDOWING_WAYLAND
 #include <gdk/wayland/gdkwayland.h>
 #endif
@@ -1685,6 +1689,9 @@ gtk_drag_is_managed (GtkWidget *source_widget)
 #ifdef GDK_WINDOWING_WAYLAND
     GDK_IS_WAYLAND_DISPLAY (gtk_widget_get_display (source_widget)) ||
 #endif
+#ifdef GDK_WINDOWING_WIN32
+    GDK_IS_WIN32_DISPLAY (gtk_widget_get_display (source_widget)) ||
+#endif
     FALSE;
 }
 
@@ -1964,7 +1971,7 @@ gtk_drag_begin_internal (GtkWidget          *widget,
  * button is held down for some time.  Try to save the last event that you got
  * from the mouse, using gdk_event_copy(), and pass it to this function
  * (remember to free the event with gdk_event_free() when you are done).
- * If you can really not pass a real event, pass #NULL instead.
+ * If you really cannot pass a real event, pass %NULL instead.
  *
  * Returns: (transfer none): the context for this drag
  *
