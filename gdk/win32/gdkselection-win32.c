@@ -357,6 +357,7 @@ gdk_win32_selection_init (GdkWin32Selection *win32_selection)
   win32_selection->dnd_data_object_target = NULL;
   win32_selection->property_change_format = 0;
   win32_selection->property_change_data = NULL;
+  win32_selection->property_change_target_atom = 0;
 
   atoms = g_array_sized_new (FALSE, TRUE, sizeof (GdkAtom), GDK_WIN32_ATOM_INDEX_LAST);
   g_array_set_size (atoms, GDK_WIN32_ATOM_INDEX_LAST);
@@ -756,8 +757,6 @@ selection_property_store (GdkWindow *owner,
   GdkSelProp *prop;
   GdkWin32Selection *win32_sel = _gdk_win32_selection_get ();
 
-  g_return_if_fail (type != GDK_TARGET_STRING);
-
   prop = g_hash_table_lookup (win32_sel->sel_prop_table, GDK_WINDOW_HWND (owner));
 
   if (prop != NULL)
@@ -894,6 +893,7 @@ send_targets_request (guint time)
   tmp_event.selection.property = _gdk_win32_selection_atom (GDK_WIN32_ATOM_INDEX_GDK_SELECTION);
   tmp_event.selection.requestor = owner;
   tmp_event.selection.time = time;
+  win32_sel->property_change_target_atom = _gdk_win32_selection_atom (GDK_WIN32_ATOM_INDEX_TARGETS);
 
   gdk_event_put (&tmp_event);
   win32_sel->targets_request_pending = TRUE;
@@ -2166,6 +2166,15 @@ convert_dnd_selection_to_target (GdkAtom    target,
   fmt.lindex = -1;
   fmt.tymed = TYMED_HGLOBAL;
 
+  /* We rely on GTK+ applications to synthesize the DELETE request
+   * for themselves, since they do know whether a DnD operation was a
+   * move and whether was successful. Therefore, we do not need to
+   * actually send anything here. Just report back without storing
+   * any data.
+   */
+  if (target == _gdk_win32_selection_atom (GDK_WIN32_ATOM_INDEX_DELETE))
+    return result;
+
   for (format = 0, with_transmute = 0; format == 0 && with_transmute < 2; with_transmute++)
     {
       for (i = 0;
@@ -2325,8 +2334,10 @@ _gdk_win32_selection_property_change (GdkWin32Selection *win32_sel,
                                       gint               nelements)
 {
   if (property == _gdk_win32_selection_atom (GDK_WIN32_ATOM_INDEX_GDK_SELECTION) &&
-      type == GDK_SELECTION_TYPE_ATOM) /* implies target == _gdk_win32_selection_atom (GDK_WIN32_ATOM_INDEX_TARGETS) */
+      win32_sel->property_change_target_atom == _gdk_win32_selection_atom (GDK_WIN32_ATOM_INDEX_TARGETS))
     {
+      win32_sel->property_change_target_atom = 0;
+
       if (win32_sel->clipboard_opened_for == INVALID_HANDLE_VALUE &&
           OpenClipboard (GDK_WINDOW_HWND (window)))
         {
@@ -2345,11 +2356,22 @@ _gdk_win32_selection_property_change (GdkWin32Selection *win32_sel,
           open_clipboard_timeout (NULL);
         }
     }
+  else if (property == _gdk_win32_selection_atom (GDK_WIN32_ATOM_INDEX_OLE2_DND) &&
+           mode == GDK_PROP_MODE_REPLACE &&
+           win32_sel->property_change_target_atom == _gdk_win32_selection_atom (GDK_WIN32_ATOM_INDEX_DELETE))
+    {
+      /* no-op on Windows */
+      win32_sel->property_change_target_atom = 0;
+    }
   else if (mode == GDK_PROP_MODE_REPLACE &&
-           (win32_sel->property_change_data == NULL ||
+           (win32_sel->property_change_target_atom == 0 ||
+            win32_sel->property_change_data == NULL ||
             win32_sel->property_change_format == 0))
     {
-      g_warning ("Setting selection property with 0x%p == NULL or 0x%x == 0", win32_sel->property_change_data, win32_sel->property_change_format);
+      g_warning ("Setting selection property with 0x%p == NULL or 0x%x == 0 or 0x%p == 0",
+                 win32_sel->property_change_data,
+                 win32_sel->property_change_format,
+                 win32_sel->property_change_target_atom);
     }
   else if (mode == GDK_PROP_MODE_REPLACE &&
            win32_sel->property_change_data != NULL &&
@@ -2396,6 +2418,7 @@ _gdk_win32_selection_property_change (GdkWin32Selection *win32_sel,
 
       win32_sel->property_change_format = 0;
       win32_sel->property_change_data = 0;
+      win32_sel->property_change_target_atom = 0;
     }
   else
     {
