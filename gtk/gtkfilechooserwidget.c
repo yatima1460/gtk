@@ -2386,6 +2386,8 @@ file_list_show_popover (GtkFileChooserWidget *impl,
   GtkFileChooserWidgetPrivate *priv = impl->priv;
   GdkRectangle rect;
   GList *list;
+  GtkTreeSelection *selection;
+  GtkTreeModel *model;
   GtkTreePath *path;
 
 
