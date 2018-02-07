@@ -24,6 +24,7 @@
 #include <atk/atk.h>
 
 #include "gtkfontchooserwidget.h"
+#include "gtkfontchooserwidgetprivate.h"
 
 #include "gtkadjustment.h"
 #include "gtkbuildable.h"
@@ -138,8 +139,6 @@ static void gtk_font_chooser_widget_finalize             (GObject         *objec
 static void gtk_font_chooser_widget_screen_changed       (GtkWidget       *widget,
                                                           GdkScreen       *previous_screen);
 
-static void gtk_font_chooser_widget_style_updated        (GtkWidget       *widget);
-
 static gboolean gtk_font_chooser_widget_find_font        (GtkFontChooserWidget *fontchooser,
                                                           const PangoFontDescription *font_desc,
                                                           GtkTreeIter          *iter);
@@ -176,6 +175,9 @@ static void     gtk_font_chooser_widget_cell_data_func         (GtkTreeViewColum
 								GtkTreeModel      *tree_model,
 								GtkTreeIter       *iter,
 								gpointer           user_data);
+
+static void selection_changed (GtkTreeSelection *selection,
+                               GtkFontChooserWidget *fontchooser);
 
 static void gtk_font_chooser_widget_iface_init (GtkFontChooserIface *iface);
 
@@ -580,7 +582,6 @@ gtk_font_chooser_widget_class_init (GtkFontChooserWidgetClass *klass)
   g_type_ensure (G_TYPE_THEMED_ICON);
 
   widget_class->screen_changed = gtk_font_chooser_widget_screen_changed;
-  widget_class->style_updated = gtk_font_chooser_widget_style_updated;
 
   gobject_class->finalize = gtk_font_chooser_widget_finalize;
   gobject_class->set_property = gtk_font_chooser_widget_set_property;
@@ -615,6 +616,7 @@ gtk_font_chooser_widget_class_init (GtkFontChooserWidgetClass *klass)
   gtk_widget_class_bind_template_callback (widget_class, row_deleted_cb);
   gtk_widget_class_bind_template_callback (widget_class, size_change_cb);
   gtk_widget_class_bind_template_callback (widget_class, output_cb);
+  gtk_widget_class_bind_template_callback (widget_class, selection_changed);
 
   gtk_widget_class_set_css_name (widget_class, "fontchooser");
 }
@@ -855,35 +857,20 @@ gtk_font_chooser_widget_get_preview_text_height (GtkFontChooserWidget *fontchoos
 
 static PangoAttrList *
 gtk_font_chooser_widget_get_preview_attributes (GtkFontChooserWidget       *fontchooser,
-                                                const PangoFontDescription *font_desc,
-                                                gsize                       first_line_len)
+                                                const PangoFontDescription *font_desc)
 {
   PangoAttribute *attribute;
   PangoAttrList *attrs;
 
   attrs = pango_attr_list_new ();
 
-  attribute = pango_attr_weight_new (PANGO_WEIGHT_BOLD);
-  attribute->end_index = first_line_len;
-  pango_attr_list_insert (attrs, attribute);
-
-  attribute = pango_attr_scale_new (PANGO_SCALE_SMALL);
-  attribute->end_index = first_line_len;
-  pango_attr_list_insert (attrs, attribute);
-
   if (font_desc)
     {
       attribute = pango_attr_font_desc_new (font_desc);
-      attribute->start_index = first_line_len;
       pango_attr_list_insert (attrs, attribute);
     }
 
-  attribute = pango_attr_fallback_new (FALSE);
-  attribute->start_index = first_line_len;
-  pango_attr_list_insert (attrs, attribute);
-
   attribute = pango_attr_size_new_absolute (gtk_font_chooser_widget_get_preview_text_height (fontchooser));
-  attribute->start_index = first_line_len;
   pango_attr_list_insert (attrs, attribute);
 
   return attrs;
@@ -899,29 +886,25 @@ gtk_font_chooser_widget_cell_data_func (GtkTreeViewColumn *column,
   GtkFontChooserWidget *fontchooser = user_data;
   GtkDelayedFontDescription *desc;
   PangoAttrList *attrs;
-  char *preview_title, *text;
-  gsize first_line_len;
+  char *preview_title;
 
   gtk_tree_model_get (tree_model, iter,
                       PREVIEW_TITLE_COLUMN, &preview_title,
                       FONT_DESC_COLUMN, &desc,
                       -1);
 
-  text = g_strconcat (preview_title, "\n", fontchooser->priv->preview_text, NULL);
-  first_line_len = strlen (preview_title) + 1;
-
-  attrs = gtk_font_chooser_widget_get_preview_attributes (fontchooser, 
-                                                          gtk_delayed_font_description_get (desc),
-                                                          first_line_len);
+  attrs = gtk_font_chooser_widget_get_preview_attributes (fontchooser,
+                                                          gtk_delayed_font_description_get (desc));
 
   g_object_set (cell,
+                "xpad", 20,
+                "ypad", 10,
                 "attributes", attrs,
-                "text", text,
+                "text", preview_title,
                 NULL);
 
   gtk_delayed_font_description_unref (desc);
   pango_attr_list_unref (attrs);
-  g_free (text);
   g_free (preview_title);
 }
 
@@ -934,13 +917,13 @@ gtk_font_chooser_widget_set_cell_size (GtkFontChooserWidget *fontchooser)
 
   gtk_cell_renderer_set_fixed_size (priv->family_face_cell, -1, -1);
 
-  attrs = gtk_font_chooser_widget_get_preview_attributes (fontchooser, 
-                                                          NULL,
-                                                          1);
-  
+  attrs = gtk_font_chooser_widget_get_preview_attributes (fontchooser, NULL);
+
   g_object_set (priv->family_face_cell,
+                "xpad", 20,
+                "ypad", 10,
                 "attributes", attrs,
-                "text", "x\nx",
+                "text", "x",
                 NULL);
 
   pango_attr_list_unref (attrs);
@@ -1064,16 +1047,6 @@ gtk_font_chooser_widget_screen_changed (GtkWidget *widget,
   gtk_font_chooser_widget_load_fonts (fontchooser, FALSE);
 }
 
-static void
-gtk_font_chooser_widget_style_updated (GtkWidget *widget)
-{
-  GtkFontChooserWidget *fontchooser = GTK_FONT_CHOOSER_WIDGET (widget);
-
-  GTK_WIDGET_CLASS (gtk_font_chooser_widget_parent_class)->style_updated (widget);
- 
-  gtk_font_chooser_widget_load_fonts (fontchooser, FALSE);
-}
-
 static PangoFontFamily *
 gtk_font_chooser_widget_get_family (GtkFontChooser *chooser)
 {
@@ -1114,20 +1087,36 @@ static gint
 gtk_font_chooser_widget_get_size (GtkFontChooser *chooser)
 {
   GtkFontChooserWidget *fontchooser = GTK_FONT_CHOOSER_WIDGET (chooser);
+  PangoFontDescription *desc = gtk_font_chooser_widget_get_font_desc (fontchooser);
 
-  return pango_font_description_get_size (fontchooser->priv->font_desc);
+  if (desc)
+    return pango_font_description_get_size (desc);
+
+  return -1;
 }
 
 static gchar *
 gtk_font_chooser_widget_get_font (GtkFontChooserWidget *fontchooser)
 {
-  return pango_font_description_to_string (fontchooser->priv->font_desc);
+  PangoFontDescription *desc = gtk_font_chooser_widget_get_font_desc (fontchooser);
+
+  if (desc)
+    return pango_font_description_to_string (desc);
+
+  return NULL;
 }
 
 static PangoFontDescription *
 gtk_font_chooser_widget_get_font_desc (GtkFontChooserWidget *fontchooser)
 {
-  return fontchooser->priv->font_desc;
+  GtkFontChooserWidgetPrivate *priv = fontchooser->priv;
+  GtkTreeSelection *selection;
+
+  selection = gtk_tree_view_get_selection (GTK_TREE_VIEW (priv->family_face_list));
+  if (gtk_tree_selection_count_selected_rows (selection) > 0)
+    return fontchooser->priv->font_desc;
+
+  return NULL;
 }
 
 static void
@@ -1138,6 +1127,14 @@ gtk_font_chooser_widget_set_font (GtkFontChooserWidget *fontchooser,
 
   font_desc = pango_font_description_from_string (fontname);
   gtk_font_chooser_widget_take_font_desc (fontchooser, font_desc);
+}
+
+static void
+selection_changed (GtkTreeSelection     *selection,
+                   GtkFontChooserWidget *fontchooser)
+{
+  g_object_notify (G_OBJECT (fontchooser), "font");
+  g_object_notify (G_OBJECT (fontchooser), "font-desc");
 }
 
 static void
@@ -1357,4 +1354,15 @@ gtk_font_chooser_widget_iface_init (GtkFontChooserIface *iface)
   iface->set_filter_func = gtk_font_chooser_widget_set_filter_func;
   iface->set_font_map = gtk_font_chooser_widget_set_font_map;
   iface->get_font_map = gtk_font_chooser_widget_get_font_map;
+}
+
+gboolean
+gtk_font_chooser_widget_handle_event (GtkWidget   *widget,
+                                      GdkEventKey *key_event)
+{
+  GtkFontChooserWidget *fontchooser = GTK_FONT_CHOOSER_WIDGET (widget);
+  GtkFontChooserWidgetPrivate *priv = fontchooser->priv;
+  GdkEvent *event = (GdkEvent *)key_event;
+
+  return gtk_search_entry_handle_event (GTK_SEARCH_ENTRY (priv->search_entry), event);
 }

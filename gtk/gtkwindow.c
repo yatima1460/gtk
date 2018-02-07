@@ -283,7 +283,6 @@ static const GtkTargetEntry dnd_dest_targets [] = {
 
 enum {
   SET_FOCUS,
-  FRAME_EVENT,
   ACTIVATE_FOCUS,
   ACTIVATE_DEFAULT,
   KEYS_CHANGED,
@@ -4174,6 +4173,9 @@ on_titlebar_title_notify (GtkHeaderBar *titlebar,
  *
  * Sets a custom titlebar for @window.
  *
+ * A typical widget used here is #GtkHeaderBar, as it provides various features
+ * expected of a titlebar while allowing the addition of child widgets to it.
+ *
  * If you set a custom titlebar, GTK+ will do its best to convince
  * the window manager not to put its own titlebar on the window.
  * Depending on the system, this function may not work for a window
@@ -4552,7 +4554,7 @@ gtk_window_realize_icon (GtkWindow *window)
 
   info->realized = TRUE;
 
-  gdk_window_set_icon_list (_gtk_widget_get_window (widget), icon_list);
+  gdk_window_set_icon_list (gdk_window, icon_list);
   if (GTK_IS_HEADER_BAR (priv->title_box))
     _gtk_header_bar_update_window_icon (GTK_HEADER_BAR (priv->title_box), window);
 
@@ -5356,16 +5358,17 @@ gtk_window_get_default_size (GtkWindow *window,
  * When using client side decorations, GTK+ will do its best to adjust
  * the given size so that the resulting window size matches the
  * requested size without the title bar, borders and shadows added for
- * the client side decorations, but there is no garantee that the
+ * the client side decorations, but there is no guarantee that the
  * result will be totally accurate because these widgets added for
  * client side decorations depend on the theme and may not be realized
  * or visible at the time gtk_window_resize() is issued.
  *
- * Typically, gtk_window_resize() will compensate for the GtkHeaderBar
- * height only if it's known at the time the resulting GtkWindow
- * configuration is issued.
+ * If the GtkWindow has a titlebar widget (see gtk_window_set_titlebar()), then
+ * typically, gtk_window_resize() will compensate for the height of the titlebar
+ * widget only if the height is known when the resulting GtkWindow configuration
+ * is issued.
  * For example, if new widgets are added after the GtkWindow configuration
- * and cause the GtkHeaderBar to grow in height, this will result in a
+ * and cause the titlebar widget to grow in height, this will result in a
  * window content smaller that specified by gtk_window_resize() and not
  * a larger window.
  *

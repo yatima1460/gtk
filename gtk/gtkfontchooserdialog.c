@@ -26,6 +26,7 @@
 #include "gtkfontchooserdialog.h"
 #include "gtkfontchooser.h"
 #include "gtkfontchooserwidget.h"
+#include "gtkfontchooserwidgetprivate.h"
 #include "gtkfontchooserutils.h"
 #include "gtkbox.h"
 #include "deprecated/gtkstock.h"
@@ -121,6 +122,21 @@ font_activated_cb (GtkFontChooser *fontchooser,
   gtk_dialog_response (dialog, GTK_RESPONSE_OK);
 }
 
+static gboolean
+gtk_font_chooser_dialog_key_press_event (GtkWidget   *dialog,
+                                         GdkEventKey *event)
+{
+  GtkFontChooserDialog *fdialog = GTK_FONT_CHOOSER_DIALOG (dialog);
+  gboolean handled = FALSE;
+
+  handled = GTK_WIDGET_CLASS (gtk_font_chooser_dialog_parent_class)->key_press_event (dialog, event);
+
+  if (!handled)
+    handled = gtk_font_chooser_widget_handle_event (fdialog->priv->fontchooser, event);
+
+  return handled;
+}
+
 static void
 gtk_font_chooser_dialog_class_init (GtkFontChooserDialogClass *klass)
 {
@@ -129,6 +145,8 @@ gtk_font_chooser_dialog_class_init (GtkFontChooserDialogClass *klass)
 
   gobject_class->get_property = gtk_font_chooser_dialog_get_property;
   gobject_class->set_property = gtk_font_chooser_dialog_set_property;
+
+  widget_class->key_press_event = gtk_font_chooser_dialog_key_press_event;
 
   _gtk_font_chooser_install_properties (gobject_class);
 
@@ -139,6 +157,20 @@ gtk_font_chooser_dialog_class_init (GtkFontChooserDialogClass *klass)
 
   gtk_widget_class_bind_template_child_private (widget_class, GtkFontChooserDialog, fontchooser);
   gtk_widget_class_bind_template_callback (widget_class, font_activated_cb);
+}
+
+static void
+update_button (GtkFontChooserDialog *dialog)
+{
+  GtkFontChooserDialogPrivate *priv = dialog->priv;
+  PangoFontDescription *desc;
+
+  desc = gtk_font_chooser_get_font_desc (GTK_FONT_CHOOSER (priv->fontchooser));
+
+  gtk_widget_set_sensitive (priv->select_button, desc != NULL);
+
+  if (desc)
+    pango_font_description_free (desc);
 }
 
 static void
@@ -164,6 +196,10 @@ G_GNUC_END_IGNORE_DEPRECATIONS
 
   _gtk_font_chooser_set_delegate (GTK_FONT_CHOOSER (fontchooserdiag),
                                   GTK_FONT_CHOOSER (priv->fontchooser));
+
+  g_signal_connect_swapped (priv->fontchooser, "notify::font-desc",
+                            G_CALLBACK (update_button), fontchooserdiag);
+  update_button (fontchooserdiag);
 }
 
 /**

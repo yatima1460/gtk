@@ -4895,7 +4895,7 @@ gtk_text_view_style_updated (GtkWidget *widget)
   style_context = gtk_widget_get_style_context (widget);
   change = gtk_style_context_get_change (style_context);
 
-  if ((change == NULL || gtk_css_style_change_affects (change, GTK_CSS_AFFECTS_TEXT)) &&
+  if ((change == NULL || gtk_css_style_change_affects (change, GTK_CSS_AFFECTS_FONT)) &&
       priv->layout && priv->layout->default_style)
     {
       gtk_text_view_set_attributes_from_style (text_view,
@@ -8210,13 +8210,17 @@ gtk_text_view_reset_im_context (GtkTextView *text_view)
  * gtk_foo_bar_key_press_event (GtkWidget   *widget,
  *                              GdkEventKey *event)
  * {
- *   if ((key->keyval == GDK_KEY_Return || key->keyval == GDK_KEY_KP_Enter))
+ *   guint keyval;
+ *
+ *   gdk_event_get_keyval ((GdkEvent*)event, &keyval);
+ *
+ *   if (keyval == GDK_KEY_Return || keyval == GDK_KEY_KP_Enter)
  *     {
- *       if (gtk_text_view_im_context_filter_keypress (GTK_TEXT_VIEW (view), event))
+ *       if (gtk_text_view_im_context_filter_keypress (GTK_TEXT_VIEW (widget), event))
  *         return TRUE;
  *     }
  *
- *     // Do some stuff
+ *   // Do some stuff
  *
  *   return GTK_WIDGET_CLASS (gtk_foo_bar_parent_class)->key_press_event (widget, event);
  * }

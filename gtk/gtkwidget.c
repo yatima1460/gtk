@@ -426,6 +426,12 @@
  *   gtk_widget_class_bind_template_child_private (GTK_WIDGET_CLASS (klass),
  *                                                 FooWidget, goodbye_button);
  * }
+ *
+ * static void
+ * foo_widget_init (FooWidget *widget)
+ * {
+ *
+ * }
  * ]|
  *
  * You can also use gtk_widget_class_bind_template_callback() to connect a signal
@@ -8168,29 +8174,22 @@ gtk_widget_real_style_updated (GtkWidget *widget)
   if (widget->priv->context)
     {
       GtkCssStyleChange *change = gtk_style_context_get_change (widget->priv->context);
-      const gboolean has_text = gtk_widget_peek_pango_context (widget) != NULL;
+      gboolean has_text = gtk_widget_peek_pango_context (widget) != NULL;
 
-      if (has_text && gtk_css_style_change_affects (change, GTK_CSS_AFFECTS_TEXT))
+      if (change == NULL ||
+          (has_text && gtk_css_style_change_affects (change, GTK_CSS_AFFECTS_FONT)))
         gtk_widget_update_pango_context (widget);
 
       if (widget->priv->anchored)
         {
           if (change == NULL ||
               gtk_css_style_change_affects (change, GTK_CSS_AFFECTS_SIZE) ||
-              (has_text && gtk_css_style_change_affects (change, GTK_CSS_AFFECTS_TEXT_SIZE)))
-            {
-              gtk_widget_queue_resize (widget);
-            }
-          else if (gtk_css_style_change_affects (change, GTK_CSS_AFFECTS_CLIP) ||
-                   (has_text && gtk_css_style_change_affects (change, GTK_CSS_AFFECTS_TEXT_CLIP)))
-            {
-              gtk_widget_queue_allocate (widget);
-            }
+              (has_text && gtk_css_style_change_affects (change, GTK_CSS_AFFECTS_TEXT)))
+            gtk_widget_queue_resize (widget);
+          else if (gtk_css_style_change_affects (change, GTK_CSS_AFFECTS_CLIP))
+            gtk_widget_queue_allocate (widget);
           else if (gtk_css_style_change_affects (change, GTK_CSS_AFFECTS_REDRAW))
-
-            {
-                gtk_widget_queue_draw (widget);
-            }
+            gtk_widget_queue_draw (widget);
         }
     }
   else
@@ -11525,14 +11524,21 @@ gtk_widget_add_device_events (GtkWidget    *widget,
  * inside a #GtkSocket within the same application.
  *
  * To reliably find the toplevel #GtkWindow, use
- * gtk_widget_get_toplevel() and call gtk_widget_is_toplevel()
- * on the result.
+ * gtk_widget_get_toplevel() and call GTK_IS_WINDOW()
+ * on the result. For instance, to get the title of a widget's toplevel
+ * window, one might use:
  * |[<!-- language="C" -->
- *  GtkWidget *toplevel = gtk_widget_get_toplevel (widget);
- *  if (gtk_widget_is_toplevel (toplevel))
- *    {
- *      // Perform action on toplevel.
- *    }
+ * static const char *
+ * get_widget_toplevel_title (GtkWidget *widget)
+ * {
+ *   GtkWidget *toplevel = gtk_widget_get_toplevel (widget);
+ *   if (GTK_IS_WINDOW (toplevel))
+ *     {
+ *       return gtk_window_get_title (GTK_WINDOW (toplevel));
+ *     }
+ *
+ *   return NULL;
+ * }
  * ]|
  *
  * Returns: (transfer none): the topmost ancestor of @widget, or @widget itself
@@ -17477,6 +17483,10 @@ gtk_widget_reset_controllers (GtkWidget *widget)
   for (l = priv->event_controllers; l; l = l->next)
     {
       controller_data = l->data;
+
+      if (controller_data->controller == NULL)
+        continue;
+
       gtk_event_controller_reset (controller_data->controller);
     }
 }

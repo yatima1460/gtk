@@ -95,6 +95,7 @@ noinst_PROGRAMS =  $(TEST_PROGS)	\
 	testlist			\
 	testlist2			\
 	testlist3			\
+	testlist4			\
 	testlevelbar			\
 	testlockbutton			\
 	testmenubutton			\
@@ -145,7 +146,6 @@ noinst_PROGRAMS =  $(TEST_PROGS)	\
 	testvolumebutton		\
 	testscrolledwindow		\
 	testscrolledge			\
-	testswitch			\
 	testcellarea			\
 	testswitch			\
 	styleexamples			\
