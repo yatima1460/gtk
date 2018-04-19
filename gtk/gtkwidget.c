@@ -5297,7 +5297,7 @@ gtk_widget_add_tick_callback (GtkWidget       *widget,
 
   priv = widget->priv;
 
-  if (priv->realized && !priv->clock_tick_id)
+  if (priv->frameclock_connected && !priv->clock_tick_id)
     {
       frame_clock = gtk_widget_get_frame_clock (widget);
 
@@ -5368,6 +5368,8 @@ gtk_widget_connect_frame_clock (GtkWidget     *widget,
 {
   GtkWidgetPrivate *priv = widget->priv;
 
+  priv->frameclock_connected = TRUE;
+
   if (GTK_IS_CONTAINER (widget))
     _gtk_container_maybe_start_idle_sizer (GTK_CONTAINER (widget));
 
@@ -5402,6 +5404,8 @@ gtk_widget_disconnect_frame_clock (GtkWidget     *widget,
       priv->clock_tick_id = 0;
       gdk_frame_clock_end_updating (frame_clock);
     }
+
+  priv->frameclock_connected = FALSE;
 
   if (priv->context)
     gtk_style_context_set_frame_clock (priv->context, NULL);
@@ -5981,12 +5985,14 @@ gtk_widget_size_allocate_with_baseline (GtkWidget     *widget,
       gtk_widget_queue_draw (widget);
     }
 
+#ifdef G_ENABLE_CONSISTENCY_CHECKS
   if (gtk_widget_get_resize_needed (widget))
     {
       g_warning ("Allocating size to %s %p without calling gtk_widget_get_preferred_width/height(). "
                  "How does the code know the size to allocate?",
                  gtk_widget_get_name (widget), widget);
     }
+#endif
 
   if (GTK_DEBUG_CHECK (GEOMETRY))
     {
@@ -11037,9 +11043,9 @@ gtk_widget_child_focus (GtkWidget       *widget,
  * navigation outside the widget, e.g. by calling
  * gtk_widget_child_focus() on the widget’s toplevel.
  *
- * The default ::keynav-failed handler returns %TRUE for
+ * The default ::keynav-failed handler returns %FALSE for
  * %GTK_DIR_TAB_FORWARD and %GTK_DIR_TAB_BACKWARD. For the other
- * values of #GtkDirectionType it returns %FALSE.
+ * values of #GtkDirectionType it returns %TRUE.
  *
  * Whenever the default handler returns %TRUE, it also calls
  * gtk_widget_error_bell() to notify the user of the failed keyboard

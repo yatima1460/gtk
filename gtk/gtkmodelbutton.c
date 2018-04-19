@@ -400,6 +400,7 @@ static void
 gtk_model_button_set_active (GtkModelButton *button,
                              gboolean        active)
 {
+  active = !!active;
   if (button->active == active)
     return;
 
@@ -427,6 +428,7 @@ static void
 gtk_model_button_set_inverted (GtkModelButton *button,
                                gboolean        inverted)
 {
+  inverted = !!inverted;
   if (button->inverted == inverted)
     return;
 
@@ -441,6 +443,7 @@ static void
 gtk_model_button_set_centered (GtkModelButton *button,
                                gboolean        centered)
 {
+  centered = !!centered;
   if (button->centered == centered)
     return;
 
@@ -457,6 +460,7 @@ gtk_model_button_set_iconic (GtkModelButton *button,
   GtkCssNode *widget_node;
   GtkCssNode *indicator_node;
 
+  iconic = !!iconic;
   if (button->iconic == iconic)
     return;
 
@@ -535,7 +539,8 @@ gtk_model_button_get_property (GObject    *object,
       break;
 
     default:
-      g_assert_not_reached ();
+      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+      break;
     }
 }
 
@@ -582,7 +587,8 @@ gtk_model_button_set_property (GObject      *object,
       break;
 
     default:
-      g_assert_not_reached ();
+      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+      break;
     }
 }
 
@@ -1181,7 +1187,7 @@ gtk_model_button_class_init (GtkModelButtonClass *class)
   /**
    * GtkModelButton:centered:
    *
-   * Wether to render the button contents centered instead of left-aligned.
+   * Whether to render the button contents centered instead of left-aligned.
    * This property should be set for title-like items.
    *
    * Since: 3.16

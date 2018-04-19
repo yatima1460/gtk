@@ -2587,11 +2587,13 @@ gtk_menu_popdown (GtkMenu *menu)
 GtkWidget*
 gtk_menu_get_active (GtkMenu *menu)
 {
-  GtkMenuPrivate *priv = menu->priv;
+  GtkMenuPrivate *priv;
   GtkWidget *child;
   GList *children;
 
   g_return_val_if_fail (GTK_IS_MENU (menu), NULL);
+
+  priv = menu->priv;
 
   if (!priv->old_active_menu_item)
     {
@@ -2629,11 +2631,13 @@ void
 gtk_menu_set_active (GtkMenu *menu,
                      guint    index)
 {
-  GtkMenuPrivate *priv = menu->priv;
+  GtkMenuPrivate *priv;
   GtkWidget *child;
   GList *tmp_list;
 
   g_return_if_fail (GTK_IS_MENU (menu));
+
+  priv = menu->priv;
 
   tmp_list = g_list_nth (GTK_MENU_SHELL (menu)->priv->children, index);
   if (tmp_list)
@@ -2666,8 +2670,12 @@ void
 gtk_menu_set_accel_group (GtkMenu       *menu,
                           GtkAccelGroup *accel_group)
 {
-  GtkMenuPrivate *priv = menu->priv;
+  GtkMenuPrivate *priv;
+
   g_return_if_fail (GTK_IS_MENU (menu));
+  g_return_if_fail (GTK_IS_ACCEL_GROUP (accel_group));
+
+  priv = menu->priv;
 
   if (priv->accel_group != accel_group)
     {
@@ -2718,7 +2726,7 @@ gtk_menu_real_can_activate_accel (GtkWidget *widget,
 /**
  * gtk_menu_set_accel_path:
  * @menu:       a valid #GtkMenu
- * @accel_path: (allow-none): a valid accelerator path
+ * @accel_path: (nullable): a valid accelerator path, or %NULL to unset the path
  *
  * Sets an accelerator path for this menu from which accelerator paths
  * for its immediate children, its menu items, can be constructed.
@@ -2746,14 +2754,16 @@ void
 gtk_menu_set_accel_path (GtkMenu     *menu,
                          const gchar *accel_path)
 {
-  GtkMenuPrivate *priv = menu->priv;
+  GtkMenuPrivate *priv;
+
   g_return_if_fail (GTK_IS_MENU (menu));
+
+  priv = menu->priv;
 
   if (accel_path)
     g_return_if_fail (accel_path[0] == '<' && strchr (accel_path, '/')); /* simplistic check */
 
-  /* FIXME: accel_path should be defined as const gchar* */
-  priv->accel_path = (gchar*)g_intern_string (accel_path);
+  priv->accel_path = g_intern_string (accel_path);
   if (priv->accel_path)
     _gtk_menu_refresh_accel_paths (menu, FALSE);
 }
@@ -2803,7 +2813,6 @@ _gtk_menu_refresh_accel_paths (GtkMenu  *menu,
                                gboolean  group_changed)
 {
   GtkMenuPrivate *priv = menu->priv;
-  g_return_if_fail (GTK_IS_MENU (menu));
 
   if (priv->accel_path && priv->accel_group)
     {
@@ -2950,11 +2959,14 @@ void
 gtk_menu_set_tearoff_state (GtkMenu  *menu,
                             gboolean  torn_off)
 {
-  GtkMenuPrivate *priv = menu->priv;
+  GtkMenuPrivate *priv;
   gint height;
 
   g_return_if_fail (GTK_IS_MENU (menu));
 
+  priv = menu->priv;
+
+  torn_off = !!torn_off;
   if (priv->torn_off != torn_off)
     {
       priv->torn_off = torn_off;
@@ -3073,7 +3085,8 @@ gtk_menu_get_tearoff_state (GtkMenu *menu)
 /**
  * gtk_menu_set_title:
  * @menu: a #GtkMenu
- * @title: a string containing the title for the menu
+ * @title: (nullable): a string containing the title for the menu, or %NULL to
+ *   inherit the title of the parent menu item, if any
  *
  * Sets the title string for the menu.
  *
@@ -3088,10 +3101,12 @@ void
 gtk_menu_set_title (GtkMenu     *menu,
                     const gchar *title)
 {
-  GtkMenuPrivate *priv = menu->priv;
+  GtkMenuPrivate *priv;
   char *old_title;
 
   g_return_if_fail (GTK_IS_MENU (menu));
+
+  priv = menu->priv;
 
   old_title = priv->title;
   priv->title = g_strdup (title);
@@ -6072,9 +6087,11 @@ void
 gtk_menu_set_monitor (GtkMenu *menu,
                       gint     monitor_num)
 {
-  GtkMenuPrivate *priv = menu->priv;
+  GtkMenuPrivate *priv;
 
   g_return_if_fail (GTK_IS_MENU (menu));
+
+  priv = menu->priv;
 
   if (priv->monitor_num != monitor_num)
     {
@@ -6207,13 +6224,14 @@ void
 gtk_menu_set_reserve_toggle_size (GtkMenu  *menu,
                                   gboolean  reserve_toggle_size)
 {
-  GtkMenuPrivate *priv = menu->priv;
+  GtkMenuPrivate *priv;
   gboolean no_toggle_size;
 
   g_return_if_fail (GTK_IS_MENU (menu));
 
-  no_toggle_size = !reserve_toggle_size;
+  priv = menu->priv;
 
+  no_toggle_size = !reserve_toggle_size;
   if (priv->no_toggle_size != no_toggle_size)
     {
       priv->no_toggle_size = no_toggle_size;

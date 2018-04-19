@@ -1172,12 +1172,15 @@ toolbar { //FIXME: why is all this being ignored?
   }
 }
 
-searchbar {
+searchbar > revealer > box {
   @extend toolbar;
   border-width: 0 0 1px;
   border-color: $borders_color;
   border-style: none none solid none;
-  padding: 3px;
+
+  // workaround: undo the GtkContainer:border-width and use CSS padding instead
+  margin: -6px;
+  padding: 9px;
 }
 
 %inset-bar {
@@ -2608,6 +2611,7 @@ levelbar {
   }
 }
 
+
 // catch all extend :)
 
 %selected_items {
@@ -2615,6 +2619,9 @@ levelbar {
   color: $selected_fg_color;
   &:backdrop { background-color: $borders_color; color: $selected_fg_color; }
 }
+
+.monospace { font-family: monospace; }
+
 
 /**********
  * frames *
@@ -2792,7 +2799,10 @@ expander {
     min-height: 16px;
     -gtk-icon-source: -gtk-icontheme('pan-end-symbolic');
     &:dir(rtl) { -gtk-icon-source: -gtk-icontheme('pan-end-symbolic-rtl'); }
+
     &:hover { color: lighten($fg_color,30%); } //only lightens the arrow
+    &:disabled { color: $insensitive_fg_color; }
+
     &:checked { -gtk-icon-source: -gtk-icontheme('pan-down-symbolic'); }
   }
 }
