@@ -2341,11 +2341,24 @@ file_list_build_popover (GtkFileChooserWidget *impl)
 
   if (priv->view_mode == VIEW_MODE_ICON)
     {
-      priv->browse_files_popover = gtk_popover_new (priv->browse_files_icon_view);
+      priv->browse_files_popover = gtk_popover_new (priv->browse_files_tree_view);
       box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
       g_object_set (box, "margin", 10, NULL);
       gtk_widget_show (box);
       gtk_container_add (GTK_CONTAINER (priv->browse_files_popover), box);
+
+      priv->visit_file_item = add_button (box, _("_Visit File"), "item.visit");
+      priv->open_folder_item = add_button (box, _("_Open With File Manager"), "item.open");
+      priv->copy_file_location_item = add_button (box, _("_Copy Location"), "item.copy-location");
+      priv->add_shortcut_item = add_button (box, _("_Add to Bookmarks"), "item.add-shortcut");
+      priv->rename_file_item = add_button (box, _("_Rename"), "item.rename");
+      priv->delete_file_item = add_button (box, _("_Delete"), "item.delete");
+      priv->trash_file_item = add_button (box, _("_Move to Trash"), "item.trash");
+
+      append_separator (box);
+
+      priv->hidden_files_item = add_button (box, _("Show _Hidden Files"), "item.toggle-show-hidden");
+      priv->sort_directories_item = add_button (box, _("Sort _Folders before Files"), "item.toggle-sort-dirs-first");
 	}
 }
 
@@ -2414,7 +2427,7 @@ file_list_show_popover (GtkFileChooserWidget *impl,
 	  gtk_tree_view_convert_bin_window_to_widget_coords (GTK_TREE_VIEW (priv->browse_files_tree_view),
 	                                                rect.x, rect.y, &rect.x, &rect.y);
 
-      rect.x = CLAMP (x - 20, 0, gtk_widget_get_allocated_width (priv->browse_files_icon_view) - 40);
+      rect.x = CLAMP (x - 20, 0, gtk_widget_get_allocated_width (priv->browse_files_tree_view) - 40);
       rect.width = 40; 
 
       g_list_free_full (list, (GDestroyNotify) gtk_tree_path_free);
