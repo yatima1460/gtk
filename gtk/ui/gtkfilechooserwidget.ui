@@ -251,48 +251,48 @@
                                             </child>
                                           </object>
                                         </child>
-                                      </object>
-                                    </child>
-                                    <child>
-                                      <object class="GtkTreeViewColumn" id="list_location_column">
-                                        <property name="title" translatable="yes">Location</property>
-                                        <property name="resizable">1</property>
-                                        <property name="visible">0</property>
-                                        <property name="expand">1</property>
                                         <child>
-                                          <object class="GtkCellRendererText" id="list_location_renderer">
-                                            <property name="xalign">0</property>
-                                            <property name="width-chars">10</property>
-                                            <property name="ellipsize">start</property>
-                                            <property name="xpad">6</property>
-                                          </object>
-                                        </child>
-                                      </object>
-                                    </child>
-                                    <child>
-                                      <object class="GtkTreeViewColumn" id="list_size_column">
-                                        <property name="title" translatable="yes">Size</property>
-                                        <property name="sizing">fixed</property>
-                                        <child>
-                                          <object class="GtkCellRendererText" id="list_size_renderer">
-                                            <property name="xalign">0</property>
-                                            <property name="xpad">6</property>
-                                          </object>
-                                        </child>
-                                      </object>
-                                    </child>
-                                    <child>
-                                      <object class="GtkTreeViewColumn" id="list_time_column">
-                                        <property name="title" translatable="yes">Modified</property>
-                                        <property name="sizing">fixed</property>
-                                        <child>
-                                          <object class="GtkCellRendererText" id="list_date_renderer">
-                                            <property name="xpad">6</property>
+                                          <object class="GtkTreeViewColumn" id="list_location_column">
+                                            <property name="title" translatable="yes">Location</property>
+                                            <property name="resizable">1</property>
+                                            <property name="visible">0</property>
+                                            <property name="expand">1</property>
+                                            <child>
+                                              <object class="GtkCellRendererText" id="list_location_renderer">
+                                                <property name="xalign">0</property>
+                                                <property name="width-chars">10</property>
+                                                <property name="ellipsize">start</property>
+                                                <property name="xpad">6</property>
+                                              </object>
+                                            </child>
                                           </object>
                                         </child>
                                         <child>
-                                          <object class="GtkCellRendererText" id="list_time_renderer">
-                                            <property name="xpad">6</property>
+                                          <object class="GtkTreeViewColumn" id="list_size_column">
+                                            <property name="title" translatable="yes">Size</property>
+                                            <property name="sizing">fixed</property>
+                                            <child>
+                                              <object class="GtkCellRendererText" id="list_size_renderer">
+                                                <property name="xalign">0</property>
+                                                <property name="xpad">6</property>
+                                              </object>
+                                            </child>
+                                          </object>
+                                        </child>
+                                        <child>
+                                          <object class="GtkTreeViewColumn" id="list_time_column">
+                                            <property name="title" translatable="yes">Modified</property>
+                                            <property name="sizing">fixed</property>
+                                            <child>
+                                              <object class="GtkCellRendererText" id="list_date_renderer">
+                                                <property name="xpad">6</property>
+                                              </object>
+                                            </child>
+                                            <child>
+                                              <object class="GtkCellRendererText" id="list_time_renderer">
+                                                <property name="xpad">6</property>
+                                              </object>
+                                            </child>
                                           </object>
                                         </child>
                                       </object>
