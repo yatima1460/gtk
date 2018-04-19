@@ -2315,26 +2315,38 @@ file_list_build_popover (GtkFileChooserWidget *impl)
   if (priv->browse_files_popover)
     return;
 
-  priv->browse_files_popover = gtk_popover_new (priv->browse_files_tree_view);
-  box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
-  g_object_set (box, "margin", 10, NULL);
-  gtk_widget_show (box);
-  gtk_container_add (GTK_CONTAINER (priv->browse_files_popover), box);
+  if (priv->view_mode == VIEW_MODE_LIST)
+    {
+      priv->browse_files_popover = gtk_popover_new (priv->browse_files_tree_view);
+      box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
+      g_object_set (box, "margin", 10, NULL);
+      gtk_widget_show (box);
+      gtk_container_add (GTK_CONTAINER (priv->browse_files_popover), box);
 
-  priv->visit_file_item = add_button (box, _("_Visit File"), "item.visit");
-  priv->open_folder_item = add_button (box, _("_Open With File Manager"), "item.open");
-  priv->copy_file_location_item = add_button (box, _("_Copy Location"), "item.copy-location");
-  priv->add_shortcut_item = add_button (box, _("_Add to Bookmarks"), "item.add-shortcut");
-  priv->rename_file_item = add_button (box, _("_Rename"), "item.rename");
-  priv->delete_file_item = add_button (box, _("_Delete"), "item.delete");
-  priv->trash_file_item = add_button (box, _("_Move to Trash"), "item.trash");
+      priv->visit_file_item = add_button (box, _("_Visit File"), "item.visit");
+      priv->open_folder_item = add_button (box, _("_Open With File Manager"), "item.open");
+      priv->copy_file_location_item = add_button (box, _("_Copy Location"), "item.copy-location");
+      priv->add_shortcut_item = add_button (box, _("_Add to Bookmarks"), "item.add-shortcut");
+      priv->rename_file_item = add_button (box, _("_Rename"), "item.rename");
+      priv->delete_file_item = add_button (box, _("_Delete"), "item.delete");
+      priv->trash_file_item = add_button (box, _("_Move to Trash"), "item.trash");
 
-  append_separator (box);
+      append_separator (box);
 
-  priv->hidden_files_item = add_button (box, _("Show _Hidden Files"), "item.toggle-show-hidden");
-  priv->size_column_item = add_button (box, _("Show _Size Column"), "item.toggle-show-size");
-  priv->show_time_item = add_button (box, _("Show _Time"), "item.toggle-show-time");
-  priv->sort_directories_item = add_button (box, _("Sort _Folders before Files"), "item.toggle-sort-dirs-first");
+      priv->hidden_files_item = add_button (box, _("Show _Hidden Files"), "item.toggle-show-hidden");
+      priv->size_column_item = add_button (box, _("Show _Size Column"), "item.toggle-show-size");
+      priv->show_time_item = add_button (box, _("Show _Time"), "item.toggle-show-time");
+      priv->sort_directories_item = add_button (box, _("Sort _Folders before Files"), "item.toggle-sort-dirs-first");
+	}
+
+  if (priv->view_mode == VIEW_MODE_ICON)
+    {
+      priv->browse_files_popover = gtk_popover_new (priv->browse_files_icon_view);
+      box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
+      g_object_set (box, "margin", 10, NULL);
+      gtk_widget_show (box);
+      gtk_container_add (GTK_CONTAINER (priv->browse_files_popover), box);
+	}
 }
 
 /* Updates the popover for the file list, creating it if necessary */
@@ -2440,7 +2452,6 @@ list_button_press_event_cb (GtkWidget            *widget,
                             GdkEventButton       *event,
                             GtkFileChooserWidget *impl)
 {
-  GtkFileChooserWidgetPrivate *priv = impl->priv;
   static gboolean in_press = FALSE;
 
   if (in_press)
@@ -2946,6 +2957,7 @@ view_mode_set (GtkFileChooserWidget *impl, ViewMode view_mode)
   GtkFileChooserWidgetPrivate *priv = impl->priv;
   GtkWidget *old_view = NULL;
   ViewMode old_view_mode = priv->view_mode;
+  priv->browse_files_popover = NULL;
 
   if (old_view_mode == view_mode)
     return;
