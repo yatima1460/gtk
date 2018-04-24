@@ -248,6 +248,9 @@ struct _GtkFileChooserWidgetPrivate {
   GtkWidget *delete_file_item;
   GtkWidget *sort_directories_item;
   GtkWidget *show_time_item;
+  GtkWidget *sort_by_name_item;
+  GtkWidget *sort_by_size_item;
+  GtkWidget *sort_by_time_item;
 
   GtkWidget *browse_new_folder_button;
   GtkSizeGroup *browse_path_bar_size_group;
@@ -1854,6 +1857,54 @@ open_folder_cb (GSimpleAction *action,
 }
 G_GNUC_END_IGNORE_DEPRECATIONS
 
+/* callback used when "Sort by Name" menu item is activated */
+static void
+sort_by_name_cb (GSimpleAction *action,
+                 GVariant      *parameter,
+                 gpointer      data)
+{
+  GtkFileChooserWidget *impl = data;
+  GtkFileChooserWidgetPrivate *priv = impl->priv;
+  GtkTreeSortable *sortable;
+
+  sortable = GTK_TREE_SORTABLE (priv->browse_files_model);
+  gtk_tree_sortable_set_sort_column_id (sortable,
+                                        priv->sort_column=MODEL_COL_NAME,
+                                        priv->sort_order);
+}
+
+/* callback used when "Sort by Size" menu item is activated */
+static void
+sort_by_size_cb (GSimpleAction *action,
+                 GVariant      *parameter,
+                 gpointer      data)
+{
+  GtkFileChooserWidget *impl = data;
+  GtkFileChooserWidgetPrivate *priv = impl->priv;
+  GtkTreeSortable *sortable;
+
+  sortable = GTK_TREE_SORTABLE (priv->browse_files_model);
+  gtk_tree_sortable_set_sort_column_id (sortable,
+                                        priv->sort_column=MODEL_COL_SIZE,
+                                        priv->sort_order);
+}
+
+/* callback used when "Sort by Time" menu item is activated */
+static void
+sort_by_time_cb (GSimpleAction *action,
+                 GVariant      *parameter,
+                 gpointer      data)
+{
+  GtkFileChooserWidget *impl = data;
+  GtkFileChooserWidgetPrivate *priv = impl->priv;
+  GtkTreeSortable *sortable;
+
+  sortable = GTK_TREE_SORTABLE (priv->browse_files_model);
+  gtk_tree_sortable_set_sort_column_id (sortable,
+                                        priv->sort_column=MODEL_COL_TIME,
+                                        priv->sort_order);
+}
+
 /* callback used when the "Show Hidden Files" menu item is toggled */
 static void
 change_show_hidden_state (GSimpleAction *action,
@@ -2165,6 +2216,7 @@ check_file_list_popover_sensitivity (GtkFileChooserWidget *impl)
   gboolean all_files;
   gboolean all_folders;
   gboolean active;
+  gboolean always_active;
   GActionGroup *actions;
   GAction *action, *action2;
 
@@ -2173,6 +2225,7 @@ check_file_list_popover_sensitivity (GtkFileChooserWidget *impl)
   selection_check (impl, &num_selected, &all_files, &all_folders);
 
   active = (num_selected != 0);
+  always_active = (num_selected >= 0);
 
   action = g_action_map_lookup_action (G_ACTION_MAP (actions), "copy-location");
   g_simple_action_set_enabled (G_SIMPLE_ACTION (action), active);
@@ -2185,6 +2238,15 @@ check_file_list_popover_sensitivity (GtkFileChooserWidget *impl)
 
   action = g_action_map_lookup_action (G_ACTION_MAP (actions), "open");
   g_simple_action_set_enabled (G_SIMPLE_ACTION (action), (num_selected == 1) && all_folders);
+
+  action = g_action_map_lookup_action (G_ACTION_MAP (actions), "sort-by-name");
+  g_simple_action_set_enabled (G_SIMPLE_ACTION (action), always_active);
+
+  action = g_action_map_lookup_action (G_ACTION_MAP (actions), "sort-by-size");
+  g_simple_action_set_enabled (G_SIMPLE_ACTION (action), always_active);
+
+  action = g_action_map_lookup_action (G_ACTION_MAP (actions), "sort-by-time");
+  g_simple_action_set_enabled (G_SIMPLE_ACTION (action), always_active);
 
   action = g_action_map_lookup_action (G_ACTION_MAP (actions), "rename");
   if (num_selected == 1)
@@ -2251,6 +2313,9 @@ static GActionEntry entries[] = {
   { "rename", rename_file_cb, NULL, NULL, NULL },
   { "delete", delete_file_cb, NULL, NULL, NULL },
   { "trash", trash_file_cb, NULL, NULL, NULL },
+  { "sort-by-name", sort_by_name_cb, NULL, NULL, NULL },
+  { "sort-by-size", sort_by_size_cb, NULL, NULL, NULL },
+  { "sort-by-time", sort_by_time_cb, NULL, NULL, NULL },
   { "toggle-show-hidden", NULL, NULL, "false", change_show_hidden_state },
   { "toggle-show-size", NULL, NULL, "false", change_show_size_state },
   { "toggle-show-time", NULL, NULL, "false", change_show_time_state },
@@ -2357,6 +2422,9 @@ file_list_build_popover (GtkFileChooserWidget *impl)
 
       append_separator (box);
 
+	  priv->sort_by_name_item = add_button (box, _("Sort _by Name"), "item.sort-by-name");
+	  priv->sort_by_size_item = add_button (box, _("Sort _by Size"), "item.sort-by-size");
+	  priv->sort_by_time_item = add_button (box, _("Sort _by Time"), "item.sort-by-time");
       priv->hidden_files_item = add_button (box, _("Show _Hidden Files"), "item.toggle-show-hidden");
       priv->sort_directories_item = add_button (box, _("Sort _Folders before Files"), "item.toggle-sort-dirs-first");
 	}

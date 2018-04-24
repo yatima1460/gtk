@@ -320,7 +320,7 @@
                                         <property name="visible">True</property>
                                         <property name="can_focus">True</property>
                                         <property name="has_tooltip">True</property>
-					<property name="column-spacing">2</property>
+                                        <property name="column-spacing">2</property>
                                         <signal name="button-press-event" handler="list_button_press_event_cb" swapped="no"/>
                                         <signal name="drag-data-received" handler="file_list_drag_data_received_cb" swapped="no"/>
                                         <signal name="drag-drop" handler="file_list_drag_drop_cb" swapped="no"/>
