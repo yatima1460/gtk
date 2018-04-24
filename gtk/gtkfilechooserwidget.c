@@ -251,6 +251,8 @@ struct _GtkFileChooserWidgetPrivate {
   GtkWidget *sort_by_name_item;
   GtkWidget *sort_by_size_item;
   GtkWidget *sort_by_time_item;
+  GtkWidget *ascending_item;
+  GtkWidget *descending_item;
 
   GtkWidget *browse_new_folder_button;
   GtkSizeGroup *browse_path_bar_size_group;
@@ -1905,6 +1907,38 @@ sort_by_time_cb (GSimpleAction *action,
                                         priv->sort_order);
 }
 
+/* callback used when "Ascending" menu item is activated */
+static void
+ascending_cb (GSimpleAction *action,
+              GVariant      *parameter,
+              gpointer      data)
+{
+  GtkFileChooserWidget *impl = data;
+  GtkFileChooserWidgetPrivate *priv = impl->priv;
+  GtkTreeSortable *sortable;
+
+  sortable = GTK_TREE_SORTABLE (priv->browse_files_model);
+  gtk_tree_sortable_set_sort_column_id (sortable,
+                                        priv->sort_column,
+                                        priv->sort_order=GTK_SORT_ASCENDING);
+}
+
+/* callback used when "Descending" menu item is activated */
+static void
+descending_cb (GSimpleAction *action,
+               GVariant      *parameter,
+               gpointer      data)
+{
+  GtkFileChooserWidget *impl = data;
+  GtkFileChooserWidgetPrivate *priv = impl->priv;
+  GtkTreeSortable *sortable;
+
+  sortable = GTK_TREE_SORTABLE (priv->browse_files_model);
+  gtk_tree_sortable_set_sort_column_id (sortable,
+                                        priv->sort_column,
+                                        priv->sort_order=GTK_SORT_DESCENDING);
+}
+
 /* callback used when the "Show Hidden Files" menu item is toggled */
 static void
 change_show_hidden_state (GSimpleAction *action,
@@ -2248,6 +2282,12 @@ check_file_list_popover_sensitivity (GtkFileChooserWidget *impl)
   action = g_action_map_lookup_action (G_ACTION_MAP (actions), "sort-by-time");
   g_simple_action_set_enabled (G_SIMPLE_ACTION (action), always_active);
 
+  action = g_action_map_lookup_action (G_ACTION_MAP (actions), "ascending");
+  g_simple_action_set_enabled (G_SIMPLE_ACTION (action), always_active);
+
+  action = g_action_map_lookup_action (G_ACTION_MAP (actions), "descending");
+  g_simple_action_set_enabled (G_SIMPLE_ACTION (action), always_active);
+
   action = g_action_map_lookup_action (G_ACTION_MAP (actions), "rename");
   if (num_selected == 1)
     {
@@ -2316,6 +2356,8 @@ static GActionEntry entries[] = {
   { "sort-by-name", sort_by_name_cb, NULL, NULL, NULL },
   { "sort-by-size", sort_by_size_cb, NULL, NULL, NULL },
   { "sort-by-time", sort_by_time_cb, NULL, NULL, NULL },
+  { "ascending", ascending_cb, NULL, NULL, NULL },
+  { "descending", descending_cb, NULL, NULL, NULL },
   { "toggle-show-hidden", NULL, NULL, "false", change_show_hidden_state },
   { "toggle-show-size", NULL, NULL, "false", change_show_size_state },
   { "toggle-show-time", NULL, NULL, "false", change_show_time_state },
@@ -2422,9 +2464,11 @@ file_list_build_popover (GtkFileChooserWidget *impl)
 
       append_separator (box);
 
-	  priv->sort_by_name_item = add_button (box, _("Sort _by Name"), "item.sort-by-name");
-	  priv->sort_by_size_item = add_button (box, _("Sort _by Size"), "item.sort-by-size");
-	  priv->sort_by_time_item = add_button (box, _("Sort _by Time"), "item.sort-by-time");
+      priv->sort_by_name_item = add_button (box, _("Sort _by Name"), "item.sort-by-name");
+      priv->sort_by_size_item = add_button (box, _("Sort _by Size"), "item.sort-by-size");
+      priv->sort_by_time_item = add_button (box, _("Sort _by Time"), "item.sort-by-time");
+      priv->ascending_item = add_button (box, _("Ascending"), "item.ascending");
+      priv->descending_item = add_button (box, _("Descending"), "item.descending");
       priv->hidden_files_item = add_button (box, _("Show _Hidden Files"), "item.toggle-show-hidden");
       priv->sort_directories_item = add_button (box, _("Sort _Folders before Files"), "item.toggle-sort-dirs-first");
 	}
