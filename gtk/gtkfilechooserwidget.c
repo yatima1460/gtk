@@ -248,6 +248,7 @@ struct _GtkFileChooserWidgetPrivate {
   GtkWidget *delete_file_item;
   GtkWidget *sort_directories_item;
   GtkWidget *show_time_item;
+  GtkWidget *arrange_item;
   GtkWidget *sort_by_name_item;
   GtkWidget *sort_by_size_item;
   GtkWidget *sort_by_time_item;
@@ -2425,9 +2426,9 @@ file_list_build_popover (GtkFileChooserWidget *impl)
   priv->rename_file_item = add_button (box, _("_Rename"), "item.rename");
   priv->delete_file_item = add_button (box, _("_Delete"), "item.delete");
   priv->trash_file_item = add_button (box, _("_Move to Trash"), "item.trash");
+  append_separator (box);
   if (priv->view_mode == VIEW_MODE_LIST)
     {
-      append_separator (box);
       priv->hidden_files_item = add_button (box, _("Show _Hidden Files"), "item.toggle-show-hidden");
       priv->size_column_item = add_button (box, _("Show _Size Column"), "item.toggle-show-size");
       priv->show_time_item = add_button (box, _("Show _Time"), "item.toggle-show-time");
@@ -2435,13 +2436,17 @@ file_list_build_popover (GtkFileChooserWidget *impl)
     }
   if (priv->view_mode == VIEW_MODE_ICON)
     {
-      append_separator (box);
+      GtkWidget *menu;
 
-      priv->sort_by_name_item = add_button (box, _("Sort _by Name"), "item.sort-by-name");
-      priv->sort_by_size_item = add_button (box, _("Sort _by Size"), "item.sort-by-size");
-      priv->sort_by_time_item = add_button (box, _("Sort _by Time"), "item.sort-by-time");
-      priv->ascending_item = add_button (box, _("Ascending"), "item.ascending");
-      priv->descending_item = add_button (box, _("Descending"), "item.descending");
+      priv->arrange_item = add_button (box, _("Arrange Items"), NULL);
+      menu = gtk_menu_new ();
+      gtk_menu_item_set_submenu (GTK_MENU_ITEM (priv->arrange_item), menu);
+      priv->sort_by_name_item = add_button (menu, _("Sort _by Name"), "item.sort-by-name");
+      priv->sort_by_size_item = add_button (menu, _("Sort _by Size"), "item.sort-by-size");
+      priv->sort_by_time_item = add_button (menu, _("Sort _by Time"), "item.sort-by-time");
+      append_separator (menu);
+      priv->ascending_item = add_button (menu, _("Ascending"), "item.ascending");
+      priv->descending_item = add_button (menu, _("Descending"), "item.descending");
       priv->hidden_files_item = add_button (box, _("Show _Hidden Files"), "item.toggle-show-hidden");
       priv->sort_directories_item = add_button (box, _("Sort _Folders before Files"), "item.toggle-sort-dirs-first");
     }
