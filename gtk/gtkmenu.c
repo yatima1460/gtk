@@ -101,6 +101,7 @@
 
 #include "config.h"
 
+#include <math.h>
 #include <string.h>
 
 #include  <gobject/gvaluecollector.h>
@@ -4817,14 +4818,13 @@ gtk_menu_set_submenu_navigation_region (GtkMenu          *menu,
                                         GdkEventCrossing *event)
 {
   GtkMenuPrivate *priv = menu->priv;
-  gint submenu_left = 0;
-  gint submenu_right = 0;
-  gint submenu_top = 0;
-  gint submenu_bottom = 0;
-  gint width = 0;
   GtkWidget *event_widget;
-  GtkMenuPopdownData *popdown_data;
   GdkWindow *window;
+  int submenu_left;
+  int submenu_right;
+  int submenu_top;
+  int submenu_bottom;
+  int width;
 
   g_return_if_fail (menu_item->priv->submenu != NULL);
   g_return_if_fail (event != NULL);
@@ -4841,6 +4841,11 @@ gtk_menu_set_submenu_navigation_region (GtkMenu          *menu,
 
   if (event->x >= 0 && event->x < width)
     {
+      GtkMenuPopdownData *popdown_data;
+      /* The calculations below assume floored coordinates */
+      int x_root = floor (event->x_root);
+      int y_root = floor (event->y_root);
+
       gtk_menu_stop_navigating_submenu (menu);
 
       /* The navigation region is the triangle closest to the x/y
@@ -4851,20 +4856,20 @@ gtk_menu_set_submenu_navigation_region (GtkMenu          *menu,
         {
           /* right */
           priv->navigation_x = submenu_left;
-          priv->navigation_width = event->x_root - submenu_left;
+          priv->navigation_width = x_root - submenu_left;
         }
       else
         {
           /* left */
           priv->navigation_x = submenu_right;
-          priv->navigation_width = event->x_root - submenu_right;
+          priv->navigation_width = x_root - submenu_right;
         }
 
       if (event->y < 0)
         {
           /* top */
-          priv->navigation_y = event->y_root;
-          priv->navigation_height = submenu_top - event->y_root - NAVIGATION_REGION_OVERSHOOT;
+          priv->navigation_y = y_root;
+          priv->navigation_height = submenu_top - y_root - NAVIGATION_REGION_OVERSHOOT;
 
           if (priv->navigation_height >= 0)
             return;
@@ -4872,8 +4877,8 @@ gtk_menu_set_submenu_navigation_region (GtkMenu          *menu,
       else
         {
           /* bottom */
-          priv->navigation_y = event->y_root;
-          priv->navigation_height = submenu_bottom - event->y_root + NAVIGATION_REGION_OVERSHOOT;
+          priv->navigation_y = y_root;
+          priv->navigation_height = submenu_bottom - y_root + NAVIGATION_REGION_OVERSHOOT;
 
           if (priv->navigation_height <= 0)
             return;

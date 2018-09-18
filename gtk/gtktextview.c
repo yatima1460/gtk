@@ -1728,7 +1728,7 @@ gtk_text_view_init (GtkTextView *text_view)
   priv->tabs = NULL;
   priv->editable = TRUE;
 
-  priv->scroll_after_paste = TRUE;
+  priv->scroll_after_paste = FALSE;
 
   gtk_drag_dest_set (widget, 0, NULL, 0,
                      GDK_ACTION_COPY | GDK_ACTION_MOVE);
@@ -5666,10 +5666,6 @@ gtk_text_view_multipress_gesture_pressed (GtkGestureMultiPress *gesture,
   else if (button == GDK_BUTTON_MIDDLE &&
            get_middle_click_paste (text_view))
     {
-      /* We do not want to scroll back to the insert iter when we paste
-         with the middle button */
-      priv->scroll_after_paste = FALSE;
-
       get_iter_from_gesture (text_view, priv->multipress_gesture,
                              &iter, NULL, NULL);
       gtk_text_buffer_paste_clipboard (get_buffer (text_view),
@@ -7217,6 +7213,8 @@ gtk_text_view_paste_clipboard (GtkTextView *text_view)
   GtkClipboard *clipboard = gtk_widget_get_clipboard (GTK_WIDGET (text_view),
 						      GDK_SELECTION_CLIPBOARD);
   
+  text_view->priv->scroll_after_paste = TRUE;
+
   gtk_text_buffer_paste_clipboard (get_buffer (text_view),
 				   clipboard,
 				   NULL,
@@ -7239,7 +7237,7 @@ gtk_text_view_paste_done_handler (GtkTextBuffer *buffer,
       gtk_text_view_scroll_mark_onscreen (text_view, gtk_text_buffer_get_insert (buffer));
     }
 
-  priv->scroll_after_paste = TRUE;
+  priv->scroll_after_paste = FALSE;
 }
 
 static void
@@ -7612,17 +7610,20 @@ typedef struct
   SelectionGranularity granularity;
   GtkTextMark *orig_start;
   GtkTextMark *orig_end;
+  GtkTextBuffer *buffer;
 } SelectionData;
 
 static void
 selection_data_free (SelectionData *data)
 {
   if (data->orig_start != NULL)
-    gtk_text_buffer_delete_mark (gtk_text_mark_get_buffer (data->orig_start),
-                                 data->orig_start);
+    gtk_text_buffer_delete_mark (data->buffer, data->orig_start);
+
   if (data->orig_end != NULL)
-    gtk_text_buffer_delete_mark (gtk_text_mark_get_buffer (data->orig_end),
-                                 data->orig_end);
+    gtk_text_buffer_delete_mark (data->buffer, data->orig_end);
+
+  g_object_unref (data->buffer);
+
   g_slice_free (SelectionData, data);
 }
 
@@ -7903,6 +7904,7 @@ gtk_text_view_start_selection_drag (GtkTextView          *text_view,
                                                   &orig_start, TRUE);
   data->orig_end = gtk_text_buffer_create_mark (buffer, NULL,
                                                 &orig_end, TRUE);
+  data->buffer = g_object_ref (buffer);
   gtk_text_view_check_cursor_blink (text_view);
 
   g_object_set_qdata_full (G_OBJECT (priv->drag_gesture),
@@ -9674,19 +9676,15 @@ append_bubble_action (GtkTextView  *text_view,
                       const gchar  *signal,
                       gboolean      sensitive)
 {
-  GtkWidget *item, *image;
+  GtkWidget *item;
 
-  item = gtk_button_new ();
+  item = gtk_button_new_from_icon_name (icon_name, GTK_ICON_SIZE_MENU);
   gtk_widget_set_focus_on_click (item, FALSE);
-  image = gtk_image_new_from_icon_name (icon_name, GTK_ICON_SIZE_MENU);
-  gtk_widget_show (image);
-  gtk_container_add (GTK_CONTAINER (item), image);
   gtk_widget_set_tooltip_text (item, label);
-  gtk_style_context_add_class (gtk_widget_get_style_context (item), "image-button");
   g_object_set_qdata (G_OBJECT (item), quark_gtk_signal, (char *)signal);
   g_signal_connect (item, "clicked", G_CALLBACK (activate_bubble_cb), text_view);
   gtk_widget_set_sensitive (GTK_WIDGET (item), sensitive);
-  gtk_widget_show (GTK_WIDGET (item));
+  gtk_widget_show (item);
   gtk_container_add (GTK_CONTAINER (toolbar), item);
 }
 
@@ -9745,8 +9743,7 @@ bubble_targets_received (GtkClipboard     *clipboard,
   can_insert = gtk_text_iter_can_insert (&iter, priv->editable);
   has_clipboard = gtk_selection_data_targets_include_text (data);
 
-  if (range_contains_editable_text (&sel_start, &sel_end, priv->editable) && has_selection)
-    append_bubble_action (text_view, toolbar, _("Select all"), "edit-select-all-symbolic", "select-all", !all_selected);
+  append_bubble_action (text_view, toolbar, _("Select all"), "edit-select-all-symbolic", "select-all", !all_selected);
 
   if (range_contains_editable_text (&sel_start, &sel_end, priv->editable) && has_selection)
     append_bubble_action (text_view, toolbar, _("Cut"), "edit-cut-symbolic", "cut-clipboard", TRUE);

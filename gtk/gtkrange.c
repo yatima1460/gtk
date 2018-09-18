@@ -959,8 +959,8 @@ should_invert_move (GtkRange       *range,
   if (move_orientation == priv->orientation)
     return should_invert (range);
 
-  /* H range/V move: Always invert, so down/up always dec/increase the value */
-  if (priv->orientation == GTK_ORIENTATION_HORIZONTAL)
+  /* H scale/V move: Always invert, so down/up always dec/increase the value */
+  if (priv->orientation == GTK_ORIENTATION_HORIZONTAL && GTK_IS_SCALE (range))
     return TRUE;
 
   /* V range/H move: Left/right always dec/increase the value */
@@ -3107,18 +3107,12 @@ gtk_range_scroll_event (GtkWidget      *widget,
 {
   GtkRange *range = GTK_RANGE (widget);
   GtkRangePrivate *priv = range->priv;
+  double delta = _gtk_range_get_wheel_delta (range, event);
+  gboolean handled;
 
-  if (gtk_widget_get_realized (widget))
-    {
-      gdouble delta;
-      gboolean handled;
-
-      delta = _gtk_range_get_wheel_delta (range, event);
-
-      g_signal_emit (range, signals[CHANGE_VALUE], 0,
-                     GTK_SCROLL_JUMP, gtk_adjustment_get_value (priv->adjustment) + delta,
-                     &handled);
-    }
+  g_signal_emit (range, signals[CHANGE_VALUE], 0,
+                 GTK_SCROLL_JUMP, gtk_adjustment_get_value (priv->adjustment) + delta,
+                 &handled);
 
   return GDK_EVENT_STOP;
 }
