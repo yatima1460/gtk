@@ -9,9 +9,9 @@
 # set GTK_BINARY_AGE and GTK_INTERFACE_AGE to 0.
 
 m4_define([gtk_major_version], [3])
-m4_define([gtk_minor_version], [22])
-m4_define([gtk_micro_version], [30])
-m4_define([gtk_interface_age], [30])
+m4_define([gtk_minor_version], [24])
+m4_define([gtk_micro_version], [1])
+m4_define([gtk_interface_age], [1])
 m4_define([gtk_binary_age],
           [m4_eval(100 * gtk_minor_version + gtk_micro_version)])
 m4_define([gtk_version],
@@ -42,7 +42,7 @@ m4_define([gtk_binary_version], [3.0.0])
 
 # required versions of other packages
 m4_define([glib_required_major], [2])
-m4_define([glib_required_minor], [49])
+m4_define([glib_required_minor], [53])
 m4_define([glib_required_micro], [4])
 m4_define([glib_required_version],
           [glib_required_major.glib_required_minor.glib_required_micro])
@@ -54,7 +54,7 @@ m4_define([glib_min_required_version], m4_join([_], [GLIB_VERSION], glib_require
 m4_define([glib_max_allowed_version], m4_join([_], [GLIB_VERSION], glib_required_major, glib_max_allowed_minor))
 GLIB_VERSION_CFLAGS="-DGLIB_MIN_REQUIRED_VERSION=glib_min_required_version -DGLIB_MAX_ALLOWED_VERSION=glib_max_allowed_version"
 
-m4_define([pango_required_version], [1.37.3])
+m4_define([pango_required_version], [1.41.0])
 m4_define([atk_required_version], [2.15.1])
 m4_define([cairo_required_version], [1.14.0])
 m4_define([gdk_pixbuf_required_version], [2.30.0])
@@ -876,9 +876,10 @@ AC_CHECK_FUNCS(mallinfo)
 AC_CHECK_FUNCS(getresuid)
 AC_TYPE_UID_T
 
-# Check for round(), rint(), isnan(), isinf() and nearbyint()
+# Check for round(), rint(), isnan() and isinf()
+# Check for log2(), exp2(), nearbyint() and trunc()
 AC_CHECK_LIB(m,round,,)
-AC_CHECK_FUNCS(round rint nearbyint sincos exp2 log2)
+AC_CHECK_FUNCS(round rint nearbyint sincos exp2 log2 trunc)
 AC_CHECK_DECLS([isnan, isinf], [], [], [[#include <math.h>]])
 
 # Checks for gdkspawn
@@ -1426,6 +1427,22 @@ if test x"$os_win32" = xyes; then
   GTK_EXTRA_CFLAGS="$msnative_struct"
 fi
 
+##################################################
+# Check for harfbuzz and pangoft2
+##################################################
+
+PKG_CHECK_MODULES(GTK_FONT_CHOOSER_WIDGET,
+                  harfbuzz >= 0.9 pangoft2,
+                  build_font_demo=yes,
+                  build_font_demo=no)
+AM_CONDITIONAL(BUILD_FONT_DEMO, [ test "x$build_font_demo" = xyes ])
+if test "x$build_font_demo" = xyes; then
+  AC_DEFINE([HAVE_HARFBUZZ], 1, [defines whether we have HarfBuzz])
+  AC_DEFINE([HAVE_PANGOFT], 1, [defines whether we have pangoft2])
+  GTK_DEP_CFLAGS="$GTK_DEP_CFLAGS $GTK_FONT_CHOOSER_WIDGET_CFLAGS"
+  GTK_DEP_LIBS="$GTK_DEP_LIBS $GTK_FONT_CHOOSER_WIDGET_LIBS"
+fi
+
 if $PKG_CONFIG --exists x11; then
   X11_PREFIX="`$PKG_CONFIG --variable=prefix x11`"
 elif test x"$prefix" != xNONE; then
@@ -1434,10 +1451,48 @@ else
   X11_PREFIX="$ac_default_prefix"
 fi
 
+AC_ARG_ENABLE(win32-gles,
+              [AS_HELP_STRING([--enable-win32-gles],
+                              [enable OpenGL ES rendering in Win32 backend, disabled by default])],
+                              [win32_gles=yes],
+                              [win32_gles=no])
+
+if test x"$enable_win32_backend" = xyes; then
+  AC_MSG_CHECKING(WGL support in epoxy)
+  WGL_SUPPORT="`$PKG_CONFIG --variable=epoxy_has_wgl epoxy`"
+  if test x"$WGL_SUPPORT" = x1; then
+    AC_MSG_RESULT([supported])
+  else
+    AC_MSG_ERROR([
+*** epoxy was not built with WGL support or epoxy version is too old.
+*** WGL support in epoxy is enabled by default for all Windows builds,
+*** and is used by GTK+ uncondititonally. If it is not there, then
+*** something is very wrong.
+])
+  fi
+  if test x"$win32_gles" = xyes; then
+    AC_MSG_CHECKING(EGL support in epoxy)
+    EGL_SUPPORT="`$PKG_CONFIG --variable=epoxy_has_egl epoxy`"
+    if test x"$EGL_SUPPORT" = x1; then
+      AC_MSG_RESULT([supported])
+    else
+      AC_MSG_ERROR([
+*** epoxy was not built with EGL support or epoxy version is too old.
+*** EGL support in epoxy is disabled by default in Windows builds,
+*** you might need to rebuild epoxy with explicit --enable-egl=yes.
+*** EGL support is needed for OpenGL ES rendering.
+])
+    fi
+  fi
+fi
+
+AM_CONDITIONAL(WIN32_GLES, test x"$platform_win32" = xyes -a x"$win32_gles" = xyes)
+
 GLIB_PREFIX="`$PKG_CONFIG --variable=prefix glib-2.0`"
 ATK_PREFIX="`$PKG_CONFIG --variable=prefix atk`"
 PANGO_PREFIX="`$PKG_CONFIG --variable=prefix pango`"
 CAIRO_PREFIX="`$PKG_CONFIG --variable=prefix cairo`"
+ISO_CODES_PREFIX="`$PKG_CONFIG --variable=prefix iso-codes`"
 
 AC_SUBST(GTK_PACKAGES)
 AC_SUBST(GTK_PRIVATE_PACKAGES)
@@ -1451,6 +1506,7 @@ AC_SUBST(GLIB_PREFIX)
 AC_SUBST(ATK_PREFIX)
 AC_SUBST(PANGO_PREFIX)
 AC_SUBST(CAIRO_PREFIX)
+AC_SUBST(ISO_CODES_PREFIX)
 
 AC_SUBST(GTK_DEBUG_FLAGS)
 AC_SUBST(GTK_XIM_FLAGS)
@@ -1737,15 +1793,6 @@ if test "$have_colord" = "yes"; then
         AC_DEFINE(HAVE_COLORD, 1, [define if we have colord])
 fi
 AM_CONDITIONAL(HAVE_COLORD, test "x$have_colord" = "xyes")
-
-##################################################
-# Check for harfbuzz and pangoft2
-##################################################
-
-PKG_CHECK_MODULES(FONTDEMO, harfbuzz >= 0.9 pangoft2, build_font_demo=yes, build_font_demo=no)
-AC_SUBST(FONTDEMO_CFLAGS)
-AC_SUBST(FONTDEMO_LIBS)
-AM_CONDITIONAL(BUILD_FONT_DEMO, [ test "x$build_font_demo" = xyes ])
 
 ##################################################
 # Checks for gtk-doc and docbook-tools

@@ -2398,7 +2398,8 @@ volume_mount_cb (GObject      *source_object,
                  GAsyncResult *result,
                  gpointer      user_data)
 {
-  GtkPlacesSidebar *sidebar = GTK_PLACES_SIDEBAR (user_data);
+  GtkSidebarRow *row = GTK_SIDEBAR_ROW (user_data);
+  GtkPlacesSidebar *sidebar;
   GVolume *volume;
   GError *error;
   gchar *primary;
@@ -2406,6 +2407,7 @@ volume_mount_cb (GObject      *source_object,
   GMount *mount;
 
   volume = G_VOLUME (source_object);
+  g_object_get (row, "sidebar", &sidebar, NULL);
 
   error = NULL;
   if (!g_volume_mount_finish (volume, result, &error))
@@ -2414,7 +2416,10 @@ volume_mount_cb (GObject      *source_object,
           error->code != G_IO_ERROR_ALREADY_MOUNTED)
         {
           name = g_volume_get_name (G_VOLUME (source_object));
-          primary = g_strdup_printf (_("Unable to access “%s”"), name);
+          if (g_str_has_prefix (error->message, "Error unlocking"))
+            primary = g_strdup_printf (_("Error unlocking “%s”"), name);
+          else
+            primary = g_strdup_printf (_("Unable to access “%s”"), name);
           g_free (name);
           emit_show_error_message (sidebar, primary, error->message);
           g_free (primary);
@@ -2423,6 +2428,7 @@ volume_mount_cb (GObject      *source_object,
     }
 
   sidebar->mounting = FALSE;
+  gtk_sidebar_row_set_busy (row, FALSE);
 
   mount = g_volume_get_mount (volume);
   if (mount != NULL)
@@ -2436,32 +2442,42 @@ volume_mount_cb (GObject      *source_object,
       g_object_unref (G_OBJECT (mount));
     }
 
+  g_object_unref (row);
   g_object_unref (sidebar);
 }
 
 static void
-mount_volume (GtkPlacesSidebar *sidebar,
-              GVolume          *volume)
+mount_volume (GtkSidebarRow *row,
+              GVolume       *volume)
 {
+  GtkPlacesSidebar *sidebar;
   GMountOperation *mount_op;
+
+  g_object_get (row, "sidebar", &sidebar, NULL);
 
   mount_op = get_mount_operation (sidebar);
   g_mount_operation_set_password_save (mount_op, G_PASSWORD_SAVE_FOR_SESSION);
 
+  g_object_ref (row);
   g_object_ref (sidebar);
-  g_volume_mount (volume, 0, mount_op, NULL, volume_mount_cb, sidebar);
+  g_volume_mount (volume, 0, mount_op, NULL, volume_mount_cb, row);
 }
 
 static void
-open_drive (GtkPlacesSidebar   *sidebar,
+open_drive (GtkSidebarRow      *row,
             GDrive             *drive,
             GtkPlacesOpenFlags  open_flags)
 {
+  GtkPlacesSidebar *sidebar;
+
+  g_object_get (row, "sidebar", &sidebar, NULL);
+
   if (drive != NULL &&
       (g_drive_can_start (drive) || g_drive_can_start_degraded (drive)))
     {
       GMountOperation *mount_op;
 
+      gtk_sidebar_row_set_busy (row, TRUE);
       mount_op = get_mount_operation (sidebar);
       g_drive_start (drive, G_DRIVE_START_NONE, mount_op, NULL, drive_start_from_bookmark_cb, NULL);
       g_object_unref (mount_op);
@@ -2469,15 +2485,20 @@ open_drive (GtkPlacesSidebar   *sidebar,
 }
 
 static void
-open_volume (GtkPlacesSidebar   *sidebar,
+open_volume (GtkSidebarRow      *row,
              GVolume            *volume,
              GtkPlacesOpenFlags  open_flags)
 {
+  GtkPlacesSidebar *sidebar;
+
+  g_object_get (row, "sidebar", &sidebar, NULL);
+
   if (volume != NULL && !sidebar->mounting)
     {
       sidebar->mounting = TRUE;
       sidebar->go_to_after_mount_open_flags = open_flags;
-      mount_volume (sidebar, volume);
+      gtk_sidebar_row_set_busy (row, TRUE);
+      mount_volume (row, volume);
     }
 }
 
@@ -2534,11 +2555,11 @@ open_row (GtkSidebarRow      *row,
     }
   else if (volume != NULL)
     {
-      open_volume (sidebar, volume, open_flags);
+      open_volume (row, volume, open_flags);
     }
   else if (drive != NULL)
     {
-      open_drive (sidebar, drive, open_flags);
+      open_drive (row, drive, open_flags);
     }
 
   g_object_unref (sidebar);
@@ -2875,7 +2896,7 @@ mount_shortcut_cb (GSimpleAction *action,
                 NULL);
 
   if (volume != NULL)
-    mount_volume (sidebar, volume);
+    mount_volume (sidebar->context_row, volume);
 
   g_object_unref (volume);
 }
@@ -4743,6 +4764,8 @@ gtk_places_sidebar_class_init (GtkPlacesSidebarClass *class)
   /**
    * GtkPlacesSidebar::show-starred-location:
    * @sidebar: the object which received the signal.
+   * @open_flags: a single value from #GtkPlacesOpenFlags specifying how the
+   *   starred file should be opened.
    *
    * The places sidebar emits this signal when it needs the calling
    * application to present a way to show the starred files. In GNOME,

@@ -1906,13 +1906,18 @@ gtk_settings_create_for_display (GdkDisplay *display)
 #ifdef GDK_WINDOWING_WAYLAND
     if (GDK_IS_WAYLAND_DISPLAY (display))
       {
-        const gchar *immodule = NULL;
-
         if (gdk_wayland_display_query_registry (display,
-                                                "gtk_text_input_manager"))
+                                                "zwp_text_input_manager_v3"))
           {
             settings = g_object_new (GTK_TYPE_SETTINGS,
                                      "gtk-im-module", "wayland",
+                                     NULL);
+          }
+        else if (gdk_wayland_display_query_registry (display,
+                                                "gtk_text_input_manager"))
+          {
+            settings = g_object_new (GTK_TYPE_SETTINGS,
+                                     "gtk-im-module", "waylandgtk",
                                      NULL);
           }
         else
@@ -1922,9 +1927,6 @@ gtk_settings_create_for_display (GdkDisplay *display)
              */
             settings = g_object_new (GTK_TYPE_SETTINGS, NULL);
           }
-
-          immodule = "wayland";
-
       }
   else
 #endif

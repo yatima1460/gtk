@@ -4576,7 +4576,8 @@ icon_from_list (GList *list,
   for (l = list; l; l = l->next)
     {
       pixbuf = list->data;
-      if (gdk_pixbuf_get_width (pixbuf) <= size)
+      if (gdk_pixbuf_get_width (pixbuf) <= size &&
+          gdk_pixbuf_get_height (pixbuf) <= size)
         {
           best = g_object_ref (pixbuf);
           break;
@@ -7226,7 +7227,7 @@ subtract_corners_from_region (cairo_region_t        *region,
 
 static void
 update_opaque_region (GtkWindow           *window,
-                      GtkBorder           *border,
+                      const GtkBorder     *border,
                       const GtkAllocation *allocation)
 {
   GtkWidget *widget = GTK_WIDGET (window);
@@ -7488,8 +7489,13 @@ gtk_window_realize (GtkWidget *widget)
     gdk_window_set_decorations (gdk_window, 0);
 
 #ifdef GDK_WINDOWING_WAYLAND
-  if (priv->client_decorated && GDK_IS_WAYLAND_WINDOW (gdk_window))
-    gdk_wayland_window_announce_csd (gdk_window);
+  if (GDK_IS_WAYLAND_WINDOW (gdk_window))
+    {
+      if (priv->client_decorated)
+        gdk_wayland_window_announce_csd (gdk_window);
+      else
+        gdk_wayland_window_announce_ssd (gdk_window);
+    }
 #endif
 
   if (!priv->deletable)
@@ -8606,6 +8612,11 @@ gtk_window_focus (GtkWidget        *widget,
     {
       if (gtk_widget_child_focus (child, direction))
         return TRUE;
+      else if (priv->title_box != NULL &&
+               priv->title_box != child &&
+               gtk_widget_child_focus (priv->title_box, direction))
+        return TRUE;
+
     }
 
   return FALSE;
@@ -8999,11 +9010,24 @@ static void
 gtk_window_style_updated (GtkWidget *widget)
 {
   GtkCssStyleChange *change = gtk_style_context_get_change (gtk_widget_get_style_context (widget));
+  GtkWindow *window = GTK_WINDOW (widget);
 
   GTK_WIDGET_CLASS (gtk_window_parent_class)->style_updated (widget);
 
+  if (!_gtk_widget_get_alloc_needed (widget) &&
+      (change == NULL || gtk_css_style_change_changes_property (change, GTK_CSS_PROPERTY_BACKGROUND_COLOR)))
+    {
+      GtkAllocation allocation;
+      GtkBorder window_border;
+
+      _gtk_widget_get_allocation (widget, &allocation);
+      get_shadow_width (window, &window_border);
+
+      update_opaque_region (window, &window_border, &allocation);
+    }
+
   if (change == NULL || gtk_css_style_change_changes_property (change, GTK_CSS_PROPERTY_ICON_THEME))
-    update_themed_icon (GTK_WINDOW (widget));
+    update_themed_icon (window);
 }
 
 /**

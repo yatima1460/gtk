@@ -1074,6 +1074,7 @@ gdk_win32_window_destroy (GdkWindow *window,
 {
   GdkWindowImplWin32 *window_impl = GDK_WINDOW_IMPL_WIN32 (window->impl);
   GSList *tmp;
+  GdkWin32Display *display = NULL;
 
   g_return_if_fail (GDK_IS_WINDOW (window));
 
@@ -1084,17 +1085,27 @@ gdk_win32_window_destroy (GdkWindow *window,
   _gdk_remove_modal_window (window);
 
   /* Remove all our transient children */
-  tmp = window_impl->transient_children;
-  while (tmp != NULL)
+  while (window_impl->transient_children != NULL)
     {
-      GdkWindow *child = tmp->data;
-      GdkWindowImplWin32 *child_impl = GDK_WINDOW_IMPL_WIN32 (GDK_WINDOW (child)->impl);
-
-      child_impl->transient_owner = NULL;
-      tmp = tmp->next;
+      GdkWindow *child = window_impl->transient_children->data;
+      gdk_window_set_transient_for (child, NULL);
     }
-  g_slist_free (window_impl->transient_children);
-  window_impl->transient_children = NULL;
+
+#ifdef GDK_WIN32_ENABLE_EGL
+  display = GDK_WIN32_DISPLAY (gdk_window_get_display (window));
+
+  /* Get rid of any EGLSurfaces that we might have created */
+  if (window_impl->egl_surface != EGL_NO_SURFACE)
+    {
+      eglDestroySurface (display->egl_disp, window_impl->egl_surface);
+      window_impl->egl_surface = EGL_NO_SURFACE;
+    }
+  if (window_impl->egl_dummy_surface != EGL_NO_SURFACE)
+    {
+      eglDestroySurface (display->egl_disp, window_impl->egl_dummy_surface);
+      window_impl->egl_dummy_surface = EGL_NO_SURFACE;
+    }
+#endif
 
   /* Remove ourself from our transient owner */
   if (window_impl->transient_owner != NULL)
@@ -1695,6 +1706,7 @@ gdk_win32_window_move_resize (GdkWindow *window,
     }
   else
     {
+      _gdk_win32_window_invalidate_egl_framebuffer (window);
       if (with_move)
 	{
 	  gdk_win32_window_move_resize_internal (window, x, y, width, height);
@@ -2109,27 +2121,29 @@ gdk_win32_window_set_transient_for (GdkWindow *window,
       return;
     }
 
-  if (parent == NULL)
+  if (window_impl->transient_owner == parent)
+    return;
+
+  if (GDK_IS_WINDOW (window_impl->transient_owner))
     {
       GdkWindowImplWin32 *trans_impl = GDK_WINDOW_IMPL_WIN32 (window_impl->transient_owner->impl);
-      if (trans_impl->transient_children != NULL)
-        {
-          item = g_slist_find (trans_impl->transient_children, window);
-          item->data = NULL;
-          trans_impl->transient_children = g_slist_delete_link (trans_impl->transient_children, item);
-          trans_impl->num_transients--;
+      item = g_slist_find (trans_impl->transient_children, window);
+      item->data = NULL;
+      trans_impl->transient_children = g_slist_delete_link (trans_impl->transient_children, item);
+      trans_impl->num_transients--;
 
-          if (!trans_impl->num_transients)
-            {
-              trans_impl->transient_children = NULL;
-            }
+      if (!trans_impl->num_transients)
+        {
+          trans_impl->transient_children = NULL;
         }
+
       g_object_unref (G_OBJECT (window_impl->transient_owner));
       g_object_unref (G_OBJECT (window));
 
       window_impl->transient_owner = NULL;
     }
-  else
+
+  if (parent)
     {
       parent_impl = GDK_WINDOW_IMPL_WIN32 (parent->impl);
 
@@ -4759,6 +4773,9 @@ gdk_win32_window_end_move_resize_drag (GdkWindow *window)
   GdkWindowImplWin32 *impl = GDK_WINDOW_IMPL_WIN32 (window->impl);
   GdkW32DragMoveResizeContext *context = &impl->drag_move_resize_context;
 
+  if (context->op == GDK_WIN32_DRAGOP_RESIZE)
+    _gdk_win32_window_invalidate_egl_framebuffer (window);
+
   context->op = GDK_WIN32_DRAGOP_NONE;
 
   gdk_device_ungrab (context->device, GDK_CURRENT_TIME);
@@ -5277,6 +5294,8 @@ gdk_win32_window_unmaximize (GdkWindow *window)
   GDK_NOTE (MISC, g_print ("gdk_window_unmaximize: %p: %s\n",
 			   GDK_WINDOW_HWND (window),
 			   _gdk_win32_window_state_to_string (window->state)));
+
+  _gdk_win32_window_invalidate_egl_framebuffer (window);
 
   if (GDK_WINDOW_IS_MAPPED (window))
     GtkShowWindow (window, SW_RESTORE);
@@ -6017,6 +6036,7 @@ GtkShowWindow (GdkWindow *window,
     case SW_SHOWNA:
     case SW_SHOWNOACTIVATE:
     case SW_SHOWNORMAL:
+
       if (IsWindowVisible (hwnd))
         break;
 
@@ -6276,3 +6296,35 @@ gdk_win32_window_get_handle (GdkWindow *window)
 
   return GDK_WINDOW_HWND (window);
 }
+
+#ifdef GDK_WIN32_ENABLE_EGL
+EGLSurface
+_gdk_win32_window_get_egl_surface (GdkWindow *window,
+                                  EGLConfig  config,
+                                  gboolean   is_dummy)
+{
+  EGLSurface surface;
+  GdkWin32Display *display = GDK_WIN32_DISPLAY (gdk_window_get_display (window));
+  GdkWindowImplWin32 *impl = GDK_WINDOW_IMPL_WIN32 (window->impl);
+
+  if (is_dummy)
+    {
+      if (impl->egl_dummy_surface == EGL_NO_SURFACE)
+        {
+          EGLint attribs[] = {EGL_WIDTH, 1, EGL_WIDTH, 1, EGL_NONE};
+          impl->egl_dummy_surface = eglCreatePbufferSurface (display->egl_disp,
+                                                             config,
+                                                             attribs);
+        }
+      return impl->egl_dummy_surface;
+    }
+  else
+    {
+      if (impl->egl_surface == EGL_NO_SURFACE)
+        impl->egl_surface = eglCreateWindowSurface (display->egl_disp, config, display->gl_hwnd, NULL);
+
+      return impl->egl_surface;
+    }
+
+}
+#endif

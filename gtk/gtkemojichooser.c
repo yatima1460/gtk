@@ -35,6 +35,8 @@
 #include "gtkintl.h"
 #include "gtkprivate.h"
 
+#define BOX_SPACE 6
+
 typedef struct {
   GtkWidget *box;
   GtkWidget *heading;
@@ -124,7 +126,7 @@ scroll_to_section (GtkButton *button,
   if (section->heading)
     gtk_widget_get_allocation (section->heading, &alloc);
 
-  gtk_adjustment_animate_to_value (adj, alloc.y);
+  gtk_adjustment_animate_to_value (adj, alloc.y - BOX_SPACE);
 }
 
 static void
@@ -142,6 +144,7 @@ populate_recent_section (GtkEmojiChooser *chooser)
   GVariant *variant;
   GVariant *item;
   GVariantIter iter;
+  gboolean empty = FALSE;
 
   variant = g_settings_get_value (chooser->settings, "recent-emoji");
   g_variant_iter_init (&iter, variant);
@@ -155,6 +158,13 @@ populate_recent_section (GtkEmojiChooser *chooser)
       add_emoji (chooser->recent.box, FALSE, emoji_data, modifier, chooser);
       g_variant_unref (emoji_data);
       g_variant_unref (item);
+      empty = FALSE;
+    }
+
+  if (!empty)
+    {
+      gtk_widget_show (chooser->recent.box);
+      gtk_widget_set_sensitive (chooser->recent.button, TRUE);
     }
   g_variant_unref (variant);
 }
@@ -196,6 +206,10 @@ add_recent_item (GtkEmojiChooser *chooser,
   g_list_free (children);
 
   add_emoji (chooser->recent.box, TRUE, item, modifier, chooser);
+
+  /* Enable recent */
+  gtk_widget_show (chooser->recent.box);
+  gtk_widget_set_sensitive (chooser->recent.button, TRUE);
 
   g_settings_set_value (chooser->settings, "recent-emoji", g_variant_builder_end (&builder));
 
@@ -390,7 +404,8 @@ add_emoji (GtkWidget    *box,
   pango_layout_get_extents (layout, &rect, NULL);
 
   /* Check for fallback rendering that generates too wide items */
-  if (rect.width >= 2 * chooser->emoji_max_width)
+  if (pango_layout_get_unknown_glyphs_count (layout) > 0 ||
+      rect.width >= 1.5 * chooser->emoji_max_width)
     {
       gtk_widget_destroy (label);
       return;
@@ -493,7 +508,7 @@ adj_value_changed (GtkAdjustment *adj,
       else
         gtk_widget_get_allocation (section->box, &alloc);
 
-      if (value < alloc.y)
+      if (value < alloc.y - BOX_SPACE)
         break;
 
       select_section = section;
@@ -607,19 +622,15 @@ static void
 setup_section (GtkEmojiChooser *chooser,
                EmojiSection   *section,
                const char     *first,
-               gunichar        label)
+               const char     *icon)
 {
-  char text[14];
-  char *p;
   GtkAdjustment *adj;
+  GtkWidget *image;
 
   section->first = first;
 
-  p = text;
-  p += g_unichar_to_utf8 (label, p);
-  p += g_unichar_to_utf8 (0xfe0e, p);
-  p[0] = 0;
-  gtk_button_set_label (GTK_BUTTON (section->button), text);
+  image = gtk_bin_get_child (GTK_BIN (section->button));
+  gtk_image_set_from_icon_name (GTK_IMAGE (image), icon, GTK_ICON_SIZE_BUTTON);
 
   adj = gtk_scrolled_window_get_vadjustment (GTK_SCROLLED_WINDOW (chooser->scrolled_window));
 
@@ -640,7 +651,8 @@ gtk_emoji_chooser_init (GtkEmojiChooser *chooser)
   /* Get a reasonable maximum width for an emoji. We do this to
    * skip overly wide fallback rendering for certain emojis the
    * font does not contain and therefore end up being rendered
-   * as multiply glyphs. */
+   * as multiply glyphs.
+   */
   {
     PangoLayout *layout = gtk_widget_create_pango_layout (GTK_WIDGET (chooser), "🙂");
     PangoAttrList *attrs;
@@ -678,16 +690,16 @@ gtk_emoji_chooser_init (GtkEmojiChooser *chooser)
   adj = gtk_scrolled_window_get_vadjustment (GTK_SCROLLED_WINDOW (chooser->scrolled_window));
   g_signal_connect (adj, "value-changed", G_CALLBACK (adj_value_changed), chooser);
 
-  setup_section (chooser, &chooser->recent, NULL, 0x1f557);
-  setup_section (chooser, &chooser->people, "grinning face", 0x1f642);
-  setup_section (chooser, &chooser->body, "selfie", 0x1f44d);
-  setup_section (chooser, &chooser->nature, "monkey face", 0x1f337);
-  setup_section (chooser, &chooser->food, "grapes", 0x1f374);
-  setup_section (chooser, &chooser->travel, "globe showing Europe-Africa", 0x2708);
-  setup_section (chooser, &chooser->activities, "jack-o-lantern", 0x1f3c3);
-  setup_section (chooser, &chooser->objects, "muted speaker", 0x1f514);
-  setup_section (chooser, &chooser->symbols, "ATM sign", 0x2764);
-  setup_section (chooser, &chooser->flags, "chequered flag", 0x1f3f4);
+  setup_section (chooser, &chooser->recent, NULL, "emoji-recent-symbolic");
+  setup_section (chooser, &chooser->people, "grinning face", "emoji-people-symbolic");
+  setup_section (chooser, &chooser->body, "selfie", "emoji-body-symbolic");
+  setup_section (chooser, &chooser->nature, "monkey face", "emoji-nature-symbolic");
+  setup_section (chooser, &chooser->food, "grapes", "emoji-food-symbolic");
+  setup_section (chooser, &chooser->travel, "globe showing Europe-Africa", "emoji-travel-symbolic");
+  setup_section (chooser, &chooser->activities, "jack-o-lantern", "emoji-activities-symbolic");
+  setup_section (chooser, &chooser->objects, "muted speaker", "emoji-objects-symbolic");
+  setup_section (chooser, &chooser->symbols, "ATM sign", "emoji-symbols-symbolic");
+  setup_section (chooser, &chooser->flags, "chequered flag", "emoji-flags-symbolic");
 
   populate_emoji_chooser (chooser);
   populate_recent_section (chooser);

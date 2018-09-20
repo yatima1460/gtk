@@ -902,7 +902,6 @@ setup_toplevel_window (GdkWindow *window,
   XID xid = GDK_WINDOW_XID (window);
   GdkX11Screen *x11_screen = GDK_X11_SCREEN (GDK_WINDOW_SCREEN (parent));
   XSizeHints size_hints;
-  long pid;
   Window leader_window;
 
   set_wm_protocols (window);
@@ -933,12 +932,16 @@ setup_toplevel_window (GdkWindow *window,
   /* This will set WM_CLIENT_MACHINE and WM_LOCALE_NAME */
   XSetWMProperties (xdisplay, xid, NULL, NULL, NULL, 0, NULL, NULL, NULL);
   
-  pid = getpid ();
-  XChangeProperty (xdisplay, xid,
-		   gdk_x11_get_xatom_by_name_for_display (x11_screen->display, "_NET_WM_PID"),
-		   XA_CARDINAL, 32,
-		   PropModeReplace,
-		   (guchar *)&pid, 1);
+  if (!gdk_running_in_sandbox ())
+    {
+      /* if sandboxed, we're likely in a pid namespace and would only confuse the wm with this */
+      pid_t pid = getpid ();
+      XChangeProperty (xdisplay, xid,
+                       gdk_x11_get_xatom_by_name_for_display (x11_screen->display, "_NET_WM_PID"),
+                       XA_CARDINAL, 32,
+                       PropModeReplace,
+                       (guchar *)&pid, 1);
+    }
 
   leader_window = GDK_X11_DISPLAY (x11_screen->display)->leader_window;
   if (!leader_window)
@@ -2982,17 +2985,8 @@ gdk_window_x11_set_background (GdkWindow      *window,
 
   if (pattern == NULL)
     {
-      GdkWindow *parent;
-
-      /* X throws BadMatch if the parent has a different depth when
-       * using ParentRelative */
-      parent = gdk_window_get_parent (window);
-      if (parent && window->depth != parent->depth)
-        XSetWindowBackgroundPixmap (GDK_WINDOW_XDISPLAY (window),
-                                    GDK_WINDOW_XID (window), None);
-      else
-        XSetWindowBackgroundPixmap (GDK_WINDOW_XDISPLAY (window),
-                                    GDK_WINDOW_XID (window), ParentRelative);
+      XSetWindowBackgroundPixmap (GDK_WINDOW_XDISPLAY (window),
+                                  GDK_WINDOW_XID (window), None);
       return;
     }
 

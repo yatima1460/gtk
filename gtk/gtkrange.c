@@ -449,7 +449,7 @@ gtk_range_class_init (GtkRangeClass *class)
                          P_("The sensitivity policy for the stepper that points to the adjustment's lower side"),
                          GTK_TYPE_SENSITIVITY_TYPE,
                          GTK_SENSITIVITY_AUTO,
-                         GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
+                         GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY|G_PARAM_DEPRECATED);
 
   properties[PROP_UPPER_STEPPER_SENSITIVITY] =
       g_param_spec_enum ("upper-stepper-sensitivity",
@@ -457,7 +457,7 @@ gtk_range_class_init (GtkRangeClass *class)
                          P_("The sensitivity policy for the stepper that points to the adjustment's upper side"),
                          GTK_TYPE_SENSITIVITY_TYPE,
                          GTK_SENSITIVITY_AUTO,
-                         GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY);
+                         GTK_PARAM_READWRITE|G_PARAM_EXPLICIT_NOTIFY|G_PARAM_DEPRECATED);
 
   /**
    * GtkRange:show-fill-level:
@@ -3061,7 +3061,17 @@ _gtk_range_get_wheel_delta (GtkRange       *range,
   page_increment = gtk_adjustment_get_page_increment (adjustment);
 
   if (GTK_IS_SCROLLBAR (range))
-    scroll_unit = pow (page_size, 2.0 / 3.0);
+    {
+      gdouble pow_unit = pow (page_size, 2.0 / 3.0);
+
+      /* for very small page sizes of < 1.0, the effect of pow() is
+       * the opposite of what's intended and the scroll steps become
+       * unusably large, make sure we never get a scroll_unit larger
+       * than page_size / 2.0, which used to be the default before the
+       * pow() magic was introduced.
+       */
+      scroll_unit = MIN (pow_unit, page_size / 2.0);
+    }
   else
     scroll_unit = page_increment;
 
