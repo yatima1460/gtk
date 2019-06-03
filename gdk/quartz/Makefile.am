@@ -64,6 +64,7 @@ libgdkquartzinclude_HEADERS =		\
 	gdkquartzdisplay.h		\
 	gdkquartzdisplaymanager.h	\
 	gdkquartzdnd.h			\
+	gdkquartzglcontext.h		\
 	gdkquartzkeys.h			\
 	gdkquartzmonitor.h		\
 	gdkquartzscreen.h		\
@@ -71,5 +72,7 @@ libgdkquartzinclude_HEADERS =		\
 	gdkquartzvisual.h		\
 	gdkquartzwindow.h
 
+EXTRA_DIST += \
+	meson.build
 
 -include $(top_srcdir)/git.mk

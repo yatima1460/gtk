@@ -4324,6 +4324,7 @@ gtk_entry_event (GtkWidget *widget,
   for (i = 0; i < MAX_ICONS; i++)
     {
       if (priv->icons[i] &&
+          event->any.window != NULL &&
           priv->icons[i]->window == event->any.window)
         {
           icon_info = priv->icons[i];
@@ -6387,7 +6388,7 @@ gtk_entry_create_layout (GtkEntry *entry,
       PangoDirection pango_dir;
 
       if (gtk_entry_get_display_mode (entry) == DISPLAY_NORMAL)
-	pango_dir = pango_find_base_dir (display_text, n_bytes);
+	pango_dir = _gtk_pango_find_base_dir (display_text, n_bytes);
       else
 	pango_dir = PANGO_DIRECTION_NEUTRAL;
 
@@ -10833,7 +10834,7 @@ show_capslock_feedback (GtkEntry    *entry,
 
   if (gtk_entry_get_icon_storage_type (entry, GTK_ENTRY_ICON_SECONDARY) == GTK_IMAGE_EMPTY)
     {
-      gtk_entry_set_icon_from_icon_name (entry, GTK_ENTRY_ICON_SECONDARY, "dialog-warning-symbolic");
+      gtk_entry_set_icon_from_icon_name (entry, GTK_ENTRY_ICON_SECONDARY, "caps-lock-symbolic");
       gtk_entry_set_icon_activatable (entry, GTK_ENTRY_ICON_SECONDARY, FALSE);
       priv->caps_lock_warning_shown = TRUE;
     }

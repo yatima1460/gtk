@@ -704,6 +704,9 @@ gtk_scrolled_window_class_init (GtkScrolledWindowClass *class)
    * is present. Otherwise, they are overlayed on top of the content,
    * as narrow indicators.
    *
+   * Note that overlay scrolling can also be globally disabled, with
+   * the #GtkSettings::gtk-overlay-scrolling setting.
+   *
    * Since: 3.16
    */
   properties[PROP_OVERLAY_SCROLLING] =
@@ -848,8 +851,7 @@ gtk_scrolled_window_class_init (GtkScrolledWindowClass *class)
     g_signal_new (I_("edge-overshot"),
                   G_TYPE_FROM_CLASS (gobject_class),
                   G_SIGNAL_RUN_LAST, 0,
-                  NULL, NULL,
-                  g_cclosure_marshal_generic,
+                  NULL, NULL, NULL,
                   G_TYPE_NONE, 1, GTK_TYPE_POSITION_TYPE);
 
   /**
@@ -873,8 +875,7 @@ gtk_scrolled_window_class_init (GtkScrolledWindowClass *class)
     g_signal_new (I_("edge-reached"),
                   G_TYPE_FROM_CLASS (gobject_class),
                   G_SIGNAL_RUN_LAST, 0,
-                  NULL, NULL,
-                  g_cclosure_marshal_generic,
+                  NULL, NULL, NULL,
                   G_TYPE_NONE, 1, GTK_TYPE_POSITION_TYPE);
 
   binding_set = gtk_binding_set_by_class (class);
@@ -2854,7 +2855,7 @@ gtk_scrolled_window_finalize (GObject *object)
   g_clear_object (&priv->long_press_gesture);
   g_clear_object (&priv->pan_gesture);
   g_clear_object (&priv->gadget);
-  g_clear_pointer (&priv->scroll_history, (GDestroyNotify) g_array_unref);
+  g_clear_pointer (&priv->scroll_history, g_array_unref);
 
   G_OBJECT_CLASS (gtk_scrolled_window_parent_class)->finalize (object);
 }
@@ -3690,7 +3691,7 @@ scrolled_window_deceleration_cb (GtkWidget         *widget,
       gtk_adjustment_set_value (hadjustment, position);
     }
   else if (data->hscrolling)
-    g_clear_pointer (&data->hscrolling, (GDestroyNotify) gtk_kinetic_scrolling_free);
+    g_clear_pointer (&data->hscrolling, gtk_kinetic_scrolling_free);
 
   if (data->vscrolling &&
       gtk_kinetic_scrolling_tick (data->vscrolling, elapsed, &position))
@@ -3699,7 +3700,7 @@ scrolled_window_deceleration_cb (GtkWidget         *widget,
       gtk_adjustment_set_value (vadjustment, position);
     }
   else if (data->vscrolling)
-    g_clear_pointer (&data->vscrolling, (GDestroyNotify) gtk_kinetic_scrolling_free);
+    g_clear_pointer (&data->vscrolling, gtk_kinetic_scrolling_free);
 
   if (!data->hscrolling && !data->vscrolling)
     {
@@ -4163,6 +4164,7 @@ gtk_scrolled_window_map (GtkWidget *widget)
   GTK_WIDGET_CLASS (gtk_scrolled_window_parent_class)->map (widget);
 
   gtk_scrolled_window_update_animating (scrolled_window);
+  gtk_scrolled_window_update_use_indicators (scrolled_window);
 }
 
 static void
@@ -4439,8 +4441,12 @@ gtk_scrolled_window_update_use_indicators (GtkScrolledWindow *scrolled_window)
 {
   GtkScrolledWindowPrivate *priv = scrolled_window->priv;
   gboolean use_indicators;
+  GtkSettings *settings = gtk_widget_get_settings (GTK_WIDGET (scrolled_window));
+  gboolean overlay_scrolling;
 
-  use_indicators = priv->overlay_scrolling;
+  g_object_get (settings, "gtk-overlay-scrolling", &overlay_scrolling, NULL);
+
+  use_indicators = overlay_scrolling && priv->overlay_scrolling;
 
   if (g_strcmp0 (g_getenv ("GTK_OVERLAY_SCROLLING"), "0") == 0)
     use_indicators = FALSE;

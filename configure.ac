@@ -10,8 +10,8 @@
 
 m4_define([gtk_major_version], [3])
 m4_define([gtk_minor_version], [24])
-m4_define([gtk_micro_version], [1])
-m4_define([gtk_interface_age], [1])
+m4_define([gtk_micro_version], [8])
+m4_define([gtk_interface_age], [4])
 m4_define([gtk_binary_age],
           [m4_eval(100 * gtk_minor_version + gtk_micro_version)])
 m4_define([gtk_version],
@@ -55,6 +55,7 @@ m4_define([glib_max_allowed_version], m4_join([_], [GLIB_VERSION], glib_required
 GLIB_VERSION_CFLAGS="-DGLIB_MIN_REQUIRED_VERSION=glib_min_required_version -DGLIB_MAX_ALLOWED_VERSION=glib_max_allowed_version"
 
 m4_define([pango_required_version], [1.41.0])
+m4_define([fribidi_required_version], [0.19.7])
 m4_define([atk_required_version], [2.15.1])
 m4_define([cairo_required_version], [1.14.0])
 m4_define([gdk_pixbuf_required_version], [2.30.0])
@@ -409,7 +410,7 @@ if test "x$enable_quartz_backend" = xyes; then
   backend_immodules="$backend_immodules,quartz"
   GDK_WINDOWING="$GDK_WINDOWING
 #define GDK_WINDOWING_QUARTZ"
-  GDK_EXTRA_LIBS="$GDK_EXTRA_LIBS -framework Cocoa"
+  GDK_EXTRA_LIBS="$GDK_EXTRA_LIBS -Wl,-framework,Cocoa"
   DISABLE_ON_QUARTZ='%'
   AM_CONDITIONAL(USE_QUARTZ, true)
   if test "x$quartz_relocation" = xyes; then
@@ -585,6 +586,7 @@ PKG_CHECK_MODULES(BASE_DEPENDENCIES,
   [glib-2.0 >= glib_required_version dnl
    atk >= atk_required_version dnl
    pango >= pango_required_version dnl
+   fribidi >= fribidi_required_version dnl
    cairo >= cairo_required_version dnl
    cairo-gobject >= cairo_required_version dnl
    gdk-pixbuf-2.0 >= gdk_pixbuf_required_version])
@@ -749,32 +751,6 @@ AS_CASE([$host_os],
       [AC_MSG_ERROR([DISPLAYCONFIG_VIDEO_OUTPUT_TECHNOLOGY is unavailable])],
       [AC_MSG_RESULT([DISPLAYCONFIG_VIDEO_OUTPUT_TECHNOLOGY is not OK])]
     )
-    AC_MSG_CHECKING([for SetupDiGetDevicePropertyW])
-    gtk_save_LIBS="$LIBS"
-    LIBS="-lsetupapi $LIBS"
-    AC_TRY_LINK(
-      [
-#define _WIN32_WINNT 0x0600
-#include <windows.h>
-#include <devpropdef.h>
-#include <setupapi.h>
-      ],
-      [return SetupDiGetDevicePropertyW(NULL, NULL, NULL, NULL, NULL, 0, NULL, 0);],
-      [have_SetupDiGetDevicePropertyW=yes],
-      [have_SetupDiGetDevicePropertyW=no]
-    )
-    AS_IF(
-      [test x$have_SetupDiGetDevicePropertyW = xyes],
-      [
-       AC_DEFINE(
-         [HAVE_SETUP_DI_GET_DEVICE_PROPERTY_W],
-         [1],
-         [Define to 1 if SetupDiGetDevicePropertyW() is available]
-       )
-      ]
-    )
-    AC_MSG_RESULT([$have_SetupDiGetDevicePropertyW])
-    LIBS="$gtk_save_LIBS"
   ],
   []
 )
@@ -838,19 +814,6 @@ AC_CHECK_HEADERS(unistd.h,
 AC_CHECK_HEADERS(ftw.h,
                  AC_DEFINE(HAVE_FTW_H, 1,
                            [Define to 1 if ftw.h is available]))
-
-AC_MSG_CHECKING([for GNU ftw extensions])
-AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#define _XOPEN_SOURCE 500
-                                     #define _GNU_SOURCE
-                                     #include <ftw.h>]],
-                                   [[int flags = FTW_ACTIONRETVAL;]])],
-                  [gtk_ok=yes],[gtk_ok=no])
-if test $gtk_ok = yes; then
-    AC_MSG_RESULT([yes])
-    AC_DEFINE(HAVE_GNU_FTW, 1, [Have GNU ftw])
-else
-    AC_MSG_RESULT([no])
-fi
 
 #
 # Disable deprecation checks for all libraries we depend on on stable branches.
@@ -1375,7 +1338,7 @@ CFLAGS="$saved_cflags"
 LDFLAGS="$saved_ldflags"
 
 GDK_PACKAGES="$PANGO_PACKAGES gdk-pixbuf-2.0 >= gdk_pixbuf_required_version cairo >= cairo_required_version cairo-gobject >= cairo_required_version"
-GDK_PRIVATE_PACKAGES="$GDK_GIO_PACKAGE $X_PACKAGES $WAYLAND_PACKAGES $MIR_PACKAGES $cairo_backends epoxy >= epoxy_required_version $CLOUDPROVIDER_PACKAGES"
+GDK_PRIVATE_PACKAGES="$GDK_GIO_PACKAGE $X_PACKAGES $WAYLAND_PACKAGES $MIR_PACKAGES $cairo_backends epoxy >= epoxy_required_version $CLOUDPROVIDER_PACKAGES fribidi >= fribidi_required_version"
 
 PKG_CHECK_MODULES(GDK_DEP, $GDK_PACKAGES $GDK_PRIVATE_PACKAGES)
 GDK_DEP_LIBS="$GDK_EXTRA_LIBS $GDK_DEP_LIBS $MATH_LIB"
@@ -1409,7 +1372,7 @@ fi
 PKG_CHECK_MODULES(ATK, $ATK_PACKAGES)
 
 GTK_PACKAGES="atk >= atk_required_version cairo >= cairo_required_version cairo-gobject >= cairo_required_version gdk-pixbuf-2.0 >= gdk_pixbuf_required_version gio-2.0 >= glib_required_version"
-GTK_PRIVATE_PACKAGES="$ATK_PACKAGES $WAYLAND_PACKAGES $MIR_PACKAGES epoxy >= epoxy_required_version"
+GTK_PRIVATE_PACKAGES="$ATK_PACKAGES $WAYLAND_PACKAGES $MIR_PACKAGES epoxy >= epoxy_required_version fribidi >= fribidi_required_version"
 if test "x$enable_x11_backend" = xyes -o "x$enable_wayland_backend" = xyes; then
   GTK_PRIVATE_PACKAGES="$GTK_PRIVATE_PACKAGES pangoft2"
 fi
@@ -1514,37 +1477,6 @@ AC_SUBST(GTK_XIM_FLAGS)
 GDK_PIXBUF_LIBS=`$PKG_CONFIG --libs gdk-pixbuf-2.0`
 AC_SUBST(GDK_PIXBUF_LIBS)
 
-########################
-# Checks needed for gail
-########################
-
-old_LIBS="$LIBS"
-dnl Checks for inet libraries:
-AC_SEARCH_LIBS(gethostent, nsl)
-AC_SEARCH_LIBS(setsockopt, socket)
-AC_SEARCH_LIBS(connect, inet)
-
-dnl check for the sockaddr_un.sun_len member
-AC_CHECK_MEMBER([struct sockaddr_un.sun_len],
-		[struct_sockaddr_un_sun_len=true],
-		[struct_sockaddr_un_suin_len=false],
-		[#include <sys/types.h>
-		 #include <sys/un.h>]
-		)
-case $struct_sockaddr_un_sun_len in
-	true)
-		AC_DEFINE_UNQUOTED(HAVE_SOCKADDR_UN_SUN_LEN, 1,
-		                   [Have the sockaddr_un.sun_len member])
-		;;
-	*)
-		;;
-esac
-
-GAIL_INET_LIBS="$LIBS"
-AC_SUBST([GAIL_INET_LIBS])
-
-LIBS="$old_LIBS"
-
 ################################################################
 # Printing system checks
 ################################################################
@@ -1576,15 +1508,8 @@ else
     CUPS_API_MAJOR=`echo $ECHO_N $CUPS_API_VERSION | awk -F. '{print $1}'`
     CUPS_API_MINOR=`echo $ECHO_N $CUPS_API_VERSION | awk -F. '{print $2}'`
 
-    if test $CUPS_API_MAJOR -lt 1 -o \
-            $CUPS_API_MAJOR -eq 1 -a $CUPS_API_MINOR -lt 2; then
-      AC_MSG_ERROR([CUPS >= 1.2 not found])
-    fi
-    if test $CUPS_API_MAJOR -gt 1 -o \
-	    $CUPS_API_MAJOR -eq 1 -a $CUPS_API_MINOR -ge 6; then
-      AC_DEFINE(HAVE_CUPS_API_1_6, 1,
-                [Define to 1 if CUPS 1.6 API is available])
-      have_cups_api_1_6=yes
+    if test $CUPS_API_MAJOR -lt 2; then
+      AC_MSG_ERROR([CUPS >= 2.0 not found])
     fi
 
     AC_SUBST(CUPS_API_MAJOR)
@@ -2025,6 +1950,7 @@ docs/reference/gdk/version.xml
 docs/reference/gtk/Makefile
 docs/reference/gtk/gtk3.types
 docs/reference/gtk/version.xml
+docs/reference/gtk/getting_started.xml
 docs/reference/libgail-util/Makefile
 docs/reference/libgail-util/version.xml
 docs/tools/Makefile

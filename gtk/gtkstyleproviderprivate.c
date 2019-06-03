@@ -40,7 +40,7 @@ _gtk_style_provider_private_default_init (GtkStyleProviderPrivateInterface *ifac
                                    G_SIGNAL_RUN_LAST,
                                    G_STRUCT_OFFSET (GtkStyleProviderPrivateInterface, changed),
                                    NULL, NULL,
-                                   g_cclosure_marshal_VOID__VOID,
+                                   NULL,
                                    G_TYPE_NONE, 0);
 
 }
@@ -118,7 +118,7 @@ _gtk_style_provider_private_get_settings (GtkStyleProviderPrivate *provider)
 {
   GtkStyleProviderPrivateInterface *iface;
 
-  gtk_internal_return_val_if_fail (GTK_IS_STYLE_PROVIDER_PRIVATE (provider), NULL);
+  g_return_val_if_fail (GTK_IS_STYLE_PROVIDER_PRIVATE (provider), NULL);
 
   iface = GTK_STYLE_PROVIDER_PRIVATE_GET_INTERFACE (provider);
 

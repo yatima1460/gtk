@@ -935,7 +935,7 @@ setup_toplevel_window (GdkWindow *window,
   if (!gdk_running_in_sandbox ())
     {
       /* if sandboxed, we're likely in a pid namespace and would only confuse the wm with this */
-      pid_t pid = getpid ();
+      long pid = getpid ();
       XChangeProperty (xdisplay, xid,
                        gdk_x11_get_xatom_by_name_for_display (x11_screen->display, "_NET_WM_PID"),
                        XA_CARDINAL, 32,
@@ -1052,6 +1052,12 @@ _gdk_x11_display_create_window_impl (GdkDisplay    *display,
     xattributes.override_redirect = False;
 
   impl->override_redirect = xattributes.override_redirect;
+
+  /* This event mask will be set near the end of the function, but to avoid some
+   * races, the window has to be created with this mask already.
+   */
+  xattributes.event_mask = StructureNotifyMask | PropertyChangeMask;
+  xattributes_mask |= CWEventMask;
 
   /* Sanity checks */
   switch (window->window_type)
@@ -2979,6 +2985,7 @@ gdk_window_x11_set_background (GdkWindow      *window,
   double r, g, b, a;
   cairo_surface_t *surface;
   cairo_matrix_t matrix;
+  cairo_pattern_t *parent_relative_pattern;
 
   if (GDK_WINDOW_DESTROYED (window))
     return;
@@ -2988,6 +2995,34 @@ gdk_window_x11_set_background (GdkWindow      *window,
       XSetWindowBackgroundPixmap (GDK_WINDOW_XDISPLAY (window),
                                   GDK_WINDOW_XID (window), None);
       return;
+    }
+
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+  parent_relative_pattern = gdk_x11_get_parent_relative_pattern ();
+G_GNUC_END_IGNORE_DEPRECATIONS
+
+  if (pattern == parent_relative_pattern)
+    {
+      GdkWindow *parent;
+
+      /* X throws BadMatch if the parent has a different depth when
+       * using ParentRelative */
+      parent = gdk_window_get_parent (window);
+      if (parent != NULL && window->depth == parent->depth &&
+          cairo_pattern_status (pattern) == CAIRO_STATUS_SUCCESS)
+        {
+          XSetWindowBackgroundPixmap (GDK_WINDOW_XDISPLAY (window),
+                                      GDK_WINDOW_XID (window), ParentRelative);
+          return;
+        }
+      else
+        {
+          g_warning ("Can't set ParentRelative background for window %#lx, depth of parent doesn't match",
+                     GDK_WINDOW_XID (window));
+          XSetWindowBackgroundPixmap (GDK_WINDOW_XDISPLAY (window),
+                                      GDK_WINDOW_XID (window), None);
+          return;
+        }
     }
 
   switch (cairo_pattern_get_type (pattern))

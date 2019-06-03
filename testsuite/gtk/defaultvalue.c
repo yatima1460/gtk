@@ -94,6 +94,10 @@ test_type (gconstpointer data)
   if (g_type_is_a (type, GTK_TYPE_APP_CHOOSER_DIALOG))
     return;
 
+  /* pixbufs without pixel data are just pointless */
+  if (g_type_is_a (type, GDK_TYPE_PIXBUF))
+    return;
+
   /* These leak their GDBusConnections */
   if (g_type_is_a (type, GTK_TYPE_FILE_CHOOSER_BUTTON) ||
       g_type_is_a (type, GTK_TYPE_FILE_CHOOSER_DIALOG) ||
@@ -468,7 +472,8 @@ main (int argc, char **argv)
 
   /* g_test_build_filename must be called after gtk_test_init */
   schema_dir = g_test_build_filename (G_TEST_BUILT, "", NULL);
-  g_setenv ("GSETTINGS_SCHEMA_DIR", schema_dir, TRUE);
+  if (g_getenv ("GTK_TEST_MESON") == NULL)
+    g_setenv ("GSETTINGS_SCHEMA_DIR", schema_dir, TRUE);
 
   /* Create one test bus for all tests, as we have a lot of very small
    * and quick tests.

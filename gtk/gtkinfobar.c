@@ -381,7 +381,7 @@ gtk_info_bar_class_init (GtkInfoBarClass *klass)
                                     G_SIGNAL_RUN_LAST,
                                     G_STRUCT_OFFSET (GtkInfoBarClass, response),
                                     NULL, NULL,
-                                    g_cclosure_marshal_VOID__INT,
+                                    NULL,
                                     G_TYPE_NONE, 1,
                                     G_TYPE_INT);
 
@@ -402,7 +402,7 @@ gtk_info_bar_class_init (GtkInfoBarClass *klass)
                                   G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
                                   G_STRUCT_OFFSET (GtkInfoBarClass, close),
                                   NULL, NULL,
-                                  g_cclosure_marshal_VOID__VOID,
+                                  NULL,
                                   G_TYPE_NONE, 0);
 
   /**
@@ -505,8 +505,6 @@ gtk_info_bar_init (GtkInfoBar *info_bar)
   GtkWidget *widget = GTK_WIDGET (info_bar);
 
   priv = info_bar->priv = gtk_info_bar_get_instance_private (info_bar);
-
-  gtk_widget_set_redraw_on_allocate (widget, TRUE);
 
   /* message-type is a CONSTRUCT property, so we init to a value
    * different from its default to trigger its property setter

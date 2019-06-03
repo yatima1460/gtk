@@ -2131,7 +2131,6 @@ gtk_header_bar_init (GtkHeaderBar *bar)
   priv = gtk_header_bar_get_instance_private (bar);
 
   gtk_widget_set_has_window (GTK_WIDGET (bar), FALSE);
-  gtk_widget_set_redraw_on_allocate (GTK_WIDGET (bar), FALSE);
 
   priv->title = NULL;
   priv->subtitle = NULL;
@@ -2371,6 +2370,7 @@ gtk_header_bar_set_decoration_layout (GtkHeaderBar *bar,
 
   priv = gtk_header_bar_get_instance_private (bar);
 
+  g_free (priv->decoration_layout);
   priv->decoration_layout = g_strdup (layout);
   priv->decoration_layout_set = (layout != NULL);
 

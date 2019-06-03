@@ -31,7 +31,10 @@ EXTRA_DIST += 			\
 	makefile.msc		\
 	gdkenumtypes.c.template	\
 	gdkenumtypes.h.template	\
-	gdkversionmacros.h.in
+	gdkversionmacros.h.in	\
+	meson.build \
+	gen-gdk-gresources-xml.py \
+	gdkconfig.h.meson
 
 GDK_CFLAGS_DEFINES =	\
 	-DG_LOG_USE_STRUCTURED=1	\
@@ -112,6 +115,7 @@ gdk_h_sources =					\
 gdk_private_headers = 				\
 	gdk-private.h				\
 	gdkapplaunchcontextprivate.h		\
+	gdkconstructor.h		\
 	gdkcursorprivate.h			\
 	gdkdevicemanagerprivate.h		\
 	gdkdeviceprivate.h			\
@@ -243,8 +247,7 @@ if HAVE_INTROSPECTION
 introspection_files = 		\
 	$(filter-out gdkkeysyms-compat.h, $(gdk_h_sources))	\
 	$(gdk_c_sources)	\
-        gdkenumtypes.c		\
-        gdkenumtypes.h
+	$(gdk_built_sources)
 
 Gdk-3.0.gir: libgdk-3.la Makefile
 Gdk_3_0_gir_SCANNERFLAGS = 	\
@@ -274,8 +277,10 @@ x11_introspection_files = 		\
 	x11/gdkeventsource.c		\
 	x11/gdkeventtranslator.c	\
 	x11/gdkgeometry-x11.c		\
+	x11/gdkglcontext-x11.c		\
 	x11/gdkkeys-x11.c		\
 	x11/gdkmain-x11.c		\
+	x11/gdkmonitor-x11.c		\
 	x11/gdkproperty-x11.c		\
 	x11/gdkscreen-x11.c		\
 	x11/gdkselection-x11.c		\
@@ -298,7 +303,9 @@ x11_introspection_files = 		\
 	x11/gdkx11display.h		\
 	x11/gdkx11displaymanager.h	\
 	x11/gdkx11dnd.h			\
+	x11/gdkx11glcontext.h		\
 	x11/gdkx11keys.h		\
+	x11/gdkx11monitor.h		\
 	x11/gdkx11property.h		\
 	x11/gdkx11screen.h		\
 	x11/gdkx11selection.h		\
@@ -442,6 +449,7 @@ gdkenumtypes.c: $(gdk_h_sources) gdkenumtypes.c.template
 gdkmarshalers.h: gdkmarshalers.list
 	$(AM_V_GEN) $(GLIB_GENMARSHAL) \
 		--prefix=_gdk_marshal \
+		--valist-marshallers \
 		--header \
 		$(srcdir)/gdkmarshalers.list > gdkmarshalers-h.tmp \
 	&& mv gdkmarshalers-h.tmp gdkmarshalers.h \
@@ -449,6 +457,7 @@ gdkmarshalers.h: gdkmarshalers.list
 gdkmarshalers.c: gdkmarshalers.list
 	$(AM_V_GEN) $(GLIB_GENMARSHAL) \
 		--prefix=_gdk_marshal \
+		--valist-marshallers \
 		--body \
 		$(srcdir)/gdkmarshalers.list > gdkmarshalers-c.tmp	\
 	&& mv gdkmarshalers-c.tmp gdkmarshalers.c \
@@ -534,7 +543,7 @@ GdkWin32_3_0_gir_MSVC_CFLAGS = $(BASE_MSVC_GIR_CFLAGS)
 GdkWin32_3_0_gir_MSVC_SCANNERFLAGS =	\
 	--identifier-prefix=Gdk		\
 	--c-include="gdk/gdkwin32.h"	\
-	--include-uninstalled=./Gdk-3.0.gir
+	--include-uninstalled='./vs$$$$(VSVER)/$$$$(CFG)/$$$$(PLAT)/bin/Gdk-3.0.gir'
 
 include $(top_srcdir)/build/Makefile.msvc-introspection
 

@@ -9,7 +9,7 @@
 	>
 	<Tool
 		Name="VCCLCompilerTool"
-		AdditionalIncludeDirectories="..\..\..;$(GlibEtcInstallRoot)\include\gdk-pixbuf-2.0;$(GlibEtcInstallRoot)\include\pango-1.0;$(GlibEtcInstallRoot)\include\atk-1.0;$(GlibEtcInstallRoot)\include\cairo;$(GlibEtcInstallRoot)\include\gio-win32-2.0;$(GlibEtcInstallRoot)\include\glib-2.0;$(GlibEtcInstallRoot)\lib\glib-2.0\include;$(GlibEtcInstallRoot)\include"
+		AdditionalIncludeDirectories="..\..\..;$(GlibEtcInstallRoot)\include\gdk-pixbuf-2.0;$(GlibEtcInstallRoot)\include\pango-1.0;$(GlibEtcInstallRoot)\include\atk-1.0;$(GlibEtcInstallRoot)\include\cairo;$(GlibEtcInstallRoot)\include\gio-win32-2.0;$(GlibEtcInstallRoot)\include\glib-2.0;$(GlibEtcInstallRoot)\lib\glib-2.0\include;$(GlibEtcInstallRoot)\include\fribidi;$(GlibEtcInstallRoot)\include"
 		PreprocessorDefinitions="HAVE_CONFIG_H;G_DISABLE_SINGLE_INCLUDES;ATK_DISABLE_SINGLE_INCLUDES;GDK_PIXBUF_DISABLE_SINGLE_INCLUDES;GTK_DISABLE_SINGLE_INCLUDES;_USE_MATH_DEFINES"
 		ForcedIncludeFiles="msvc_recommended_pragmas.h"
 		AdditionalOptions="/MP"
@@ -45,7 +45,7 @@
 	/>
 	<UserMacro
 		Name="GtkGdkCommonLibs"
-		Value="imm32.lib"
+		Value="pangowin32-1.0.lib fribidi.lib imm32.lib"
 	/>
 	<UserMacro
 		Name="GdkBroadwayAdditionalLibs"
@@ -57,7 +57,7 @@
 	/>
 	<UserMacro
 		Name="GtkAdditionalLibs"
-		Value="atk-1.0.lib pangowin32-1.0.lib winspool.lib comctl32.lib $(GtkGdkCommonLibs)"
+		Value="atk-1.0.lib winspool.lib comctl32.lib $(GtkGdkCommonLibs)"
 	/>
 	<UserMacro
 		Name="GtkIntrospectNMakeCmd"
@@ -65,6 +65,6 @@
 	/>
 	<UserMacro
 		Name="GtkIntrospectBuiltFiles"
-		Value="$(SolutionDir)\..\Gtk-3.0.gir;$(SolutionDir)\..\Gtk-3.0.typelib;$(SolutionDir)\..\GdkWin32-3.0.gir;$(SolutionDir)\..\GdkWin32-3.0.typelib;$(SolutionDir)\..\Gdk-3.0.gir;$(SolutionDir)\..\Gdk-3.0.typelib"
+		Value="$(SolutionDir)\$(ConfigurationName)\$(PlatformName)\bin\Gtk-3.0.gir;$(SolutionDir)\$(ConfigurationName)\$(PlatformName)\bin\Gtk-3.0.typelib;$(SolutionDir)\$(ConfigurationName)\$(PlatformName)\bin\GdkWin32-3.0.gir;$(SolutionDir)\$(ConfigurationName)\$(PlatformName)\bin\GdkWin32-3.0.typelib;$(SolutionDir)\$(ConfigurationName)\$(PlatformName)\bin\Gdk-3.0.gir;$(SolutionDir)\$(ConfigurationName)\$(PlatformName)\bin\Gdk-3.0.typelib"
 	/>
 </VisualStudioPropertySheet>

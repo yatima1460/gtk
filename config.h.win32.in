@@ -29,9 +29,6 @@
 /* Define to 1 if you have the <crt_externs.h> header file. */
 /* #undef HAVE_CRT_EXTERNS_H */
 
-/* Define to 1 if CUPS 1.2 API is available */
-/* #undef HAVE_CUPS_API_1_2 */
-
 /* Define to 1 if you have the `dcgettext' function. */
 #define HAVE_DCGETTEXT 1
 
@@ -76,9 +73,6 @@
 
 /* Define if gio-unix is available */
 /* #undef HAVE_GIO_UNIX */
-
-/* Have GNU ftw */
-/* #undef HAVE_GNU_FTW */
 
 /* Define to 1 if you have the `httpGetAuthString' function. */
 /* #undef HAVE_HTTPGETAUTHSTRING */
@@ -156,9 +150,6 @@
 
 /* Define to 1 if sincos() is available */
 /* #undef HAVE_SINCOS */
-
-/* Have the sockaddr_un.sun_len member */
-/* #undef HAVE_SOCKADDR_UN_SUN_LEN */
 
 /* Define to 1 if solaris xinerama is available */
 /* #undef HAVE_SOLARIS_XINERAMA */
