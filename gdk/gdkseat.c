@@ -124,7 +124,7 @@ gdk_seat_class_init (GdkSeatClass *klass)
                   G_SIGNAL_RUN_LAST,
                   G_STRUCT_OFFSET (GdkSeatClass, device_added),
                   NULL, NULL,
-                  g_cclosure_marshal_VOID__OBJECT,
+                  NULL,
                   G_TYPE_NONE, 1,
                   GDK_TYPE_DEVICE);
 
@@ -144,7 +144,7 @@ gdk_seat_class_init (GdkSeatClass *klass)
                   G_SIGNAL_RUN_LAST,
                   G_STRUCT_OFFSET (GdkSeatClass, device_removed),
                   NULL, NULL,
-                  g_cclosure_marshal_VOID__OBJECT,
+                  NULL,
                   G_TYPE_NONE, 1,
                   GDK_TYPE_DEVICE);
 
@@ -167,7 +167,7 @@ gdk_seat_class_init (GdkSeatClass *klass)
                   G_TYPE_FROM_CLASS (klass),
                   G_SIGNAL_RUN_LAST,
                   0, NULL, NULL,
-                  g_cclosure_marshal_VOID__BOXED,
+                  NULL,
                   G_TYPE_NONE, 1,
                   GDK_TYPE_DEVICE_TOOL);
 
@@ -186,7 +186,7 @@ gdk_seat_class_init (GdkSeatClass *klass)
                   G_TYPE_FROM_CLASS (klass),
                   G_SIGNAL_RUN_LAST,
                   0, NULL, NULL,
-                  g_cclosure_marshal_VOID__BOXED,
+                  NULL,
                   G_TYPE_NONE, 1,
                   GDK_TYPE_DEVICE_TOOL);
 
@@ -449,12 +449,13 @@ gdk_seat_tool_removed (GdkSeat       *seat,
 
 GdkDeviceTool *
 gdk_seat_get_tool (GdkSeat *seat,
-                   guint64  serial)
+                   guint64  serial,
+                   guint64  hw_id)
 {
   GdkSeatClass *seat_class;
 
   g_return_val_if_fail (GDK_IS_SEAT (seat), NULL);
 
   seat_class = GDK_SEAT_GET_CLASS (seat);
-  return seat_class->get_tool (seat, serial);
+  return seat_class->get_tool (seat, serial, hw_id);
 }

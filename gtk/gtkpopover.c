@@ -1009,7 +1009,7 @@ _gtk_popover_update_child_visible (GtkPopover *popover)
     }
 
   parent = gtk_widget_get_parent (GTK_WIDGET (priv->parent_scrollable));
-  rect = priv->pointing_to;
+  gtk_popover_get_pointing_to (popover, &rect);
 
   gtk_widget_translate_coordinates (priv->widget, parent,
                                     rect.x, rect.y, &rect.x, &rect.y);
@@ -1184,12 +1184,14 @@ gtk_popover_draw (GtkWidget *widget,
           gap_end = final_y - rect_y;
         }
 
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
       /* Now render the frame, without the gap for the arrow tip */
       gtk_render_frame_gap (context, cr,
                             rect_x, rect_y,
                             rect_w, rect_h,
                             gap_side,
                             gap_start, gap_end);
+G_GNUC_END_IGNORE_DEPRECATIONS
     }
   else
     {
@@ -1789,6 +1791,14 @@ gtk_popover_class_init (GtkPopoverClass *klass)
 
   g_object_class_install_properties (object_class, NUM_PROPERTIES, properties);
 
+  /**
+   * GtkPopover::closed:
+   *
+   * This signal is emitted when the popover is dismissed either through
+   * API or user interaction.
+   *
+   * Since: 3.12
+   */
   signals[CLOSED] =
     g_signal_new (I_("closed"),
                   G_TYPE_FROM_CLASS (object_class),

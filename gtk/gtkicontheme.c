@@ -32,8 +32,9 @@
 #ifndef S_ISDIR
 #define S_ISDIR(mode) ((mode)&_S_IFDIR)
 #endif
-#define WIN32_MEAN_AND_LEAN
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <shellapi.h>
 #include "win32/gdkwin32.h"
 #endif /* G_OS_WIN32 */
 
@@ -516,7 +517,7 @@ gtk_icon_theme_class_init (GtkIconThemeClass *klass)
                                  G_SIGNAL_RUN_LAST,
                                  G_STRUCT_OFFSET (GtkIconThemeClass, changed),
                                  NULL, NULL,
-                                 g_cclosure_marshal_VOID__VOID,
+                                 NULL,
                                  G_TYPE_NONE, 0);
 }
 
@@ -1031,11 +1032,12 @@ void
 gtk_icon_theme_add_resource_path (GtkIconTheme *icon_theme,
                                   const gchar  *path)
 {
-  GtkIconThemePrivate *priv = icon_theme->priv;
+  GtkIconThemePrivate *priv = NULL;
 
   g_return_if_fail (GTK_IS_ICON_THEME (icon_theme));
   g_return_if_fail (path != NULL);
 
+  priv = icon_theme->priv;
   priv->resource_paths = g_list_append (priv->resource_paths, g_strdup (path));
 
   do_theme_change (icon_theme);
@@ -4555,7 +4557,7 @@ gtk_icon_info_load_symbolic_svg (GtkIconInfo    *icon_info,
   width = g_strdup_printf ("%d", icon_info->symbolic_width);
   height = g_strdup_printf ("%d", icon_info->symbolic_height);
 
-  escaped_file_data = g_markup_escape_text (file_data, file_len);
+  escaped_file_data = g_base64_encode ((guchar *) file_data, file_len);
   g_free (file_data);
 
   g_ascii_dtostr (alphastr, G_ASCII_DTOSTR_BUF_SIZE, CLAMP (alpha, 0, 1));
@@ -4567,7 +4569,7 @@ gtk_icon_info_load_symbolic_svg (GtkIconInfo    *icon_info,
                       "     width=\"", width, "\"\n"
                       "     height=\"", height, "\">\n"
                       "  <style type=\"text/css\">\n"
-                      "    rect,path,ellipse,circle {\n"
+                      "    rect,path,ellipse,circle,polygon {\n"
                       "      fill: ", css_fg," !important;\n"
                       "    }\n"
                       "    .warning {\n"
@@ -4580,7 +4582,7 @@ gtk_icon_info_load_symbolic_svg (GtkIconInfo    *icon_info,
                       "      fill: ", css_success, " !important;\n"
                       "    }\n"
                       "  </style>\n"
-                      "  <g opacity=\"", alphastr, "\" ><xi:include href=\"data:text/xml,", escaped_file_data, "\"/></g>\n"
+                      "  <g opacity=\"", alphastr, "\" ><xi:include href=\"data:text/xml;base64,", escaped_file_data, "\"/></g>\n"
                       "</svg>",
                       NULL);
   g_free (escaped_file_data);

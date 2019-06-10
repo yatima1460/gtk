@@ -1728,7 +1728,7 @@ _gdk_x11_display_open (const gchar *display_name)
   if (!gdk_running_in_sandbox ())
     {
       /* if sandboxed, we're likely in a pid namespace and would only confuse the wm with this */
-      pid_t pid = getpid ();
+      long pid = getpid ();
       XChangeProperty (display_x11->xdisplay,
                        display_x11->leader_window,
                        gdk_x11_get_xatom_by_name_for_display (display, "_NET_WM_PID"),
@@ -2229,19 +2229,9 @@ gdk_x11_display_make_default (GdkDisplay *display)
   g_free (display_x11->startup_notification_id);
   display_x11->startup_notification_id = NULL;
 
-  startup_id = g_getenv ("DESKTOP_STARTUP_ID");
-  if (startup_id && *startup_id != '\0')
-    {
-      if (!g_utf8_validate (startup_id, -1, NULL))
-        g_warning ("DESKTOP_STARTUP_ID contains invalid UTF-8");
-      else
-        gdk_x11_display_set_startup_notification_id (display, startup_id);
-
-      /* Clear the environment variable so it won't be inherited by
-       * child processes and confuse things.
-       */
-      g_unsetenv ("DESKTOP_STARTUP_ID");
-    }
+  startup_id = gdk_get_desktop_startup_id ();
+  if (startup_id)
+    gdk_x11_display_set_startup_notification_id (display, startup_id);
 }
 
 static void
@@ -3006,8 +2996,8 @@ gdk_x11_display_error_trap_pop_ignored (GdkDisplay *display)
 
 /**
  * gdk_x11_set_sm_client_id:
- * @sm_client_id: the client id assigned by the session manager when the
- *    connection was opened, or %NULL to remove the property.
+ * @sm_client_id: (nullable): the client id assigned by the session manager
+ *    when the connection was opened, or %NULL to remove the property.
  *
  * Sets the `SM_CLIENT_ID` property on the application’s leader window so that
  * the window manager can save the application’s state using the X11R6 ICCCM

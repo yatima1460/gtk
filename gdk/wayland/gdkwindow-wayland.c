@@ -140,6 +140,7 @@ struct _GdkWindowImplWayland
   EGLSurface dummy_egl_surface;
 
   unsigned int initial_configure_received : 1;
+  unsigned int configuring_popup : 1;
   unsigned int mapped : 1;
   unsigned int use_custom_surface : 1;
   unsigned int pending_buffer_attached : 1;
@@ -932,6 +933,9 @@ gdk_window_impl_wayland_end_paint (GdkWindow *window)
   cairo_rectangle_int_t rect;
   int i, n;
 
+  if (!GDK_WINDOW_IS_MAPPED (window))
+    return;
+
   if (impl->staging_cairo_surface &&
       _gdk_wayland_is_shm_surface (impl->staging_cairo_surface) &&
       !window->current_paint.use_gl &&
@@ -1085,12 +1089,18 @@ gdk_wayland_window_maybe_configure (GdkWindow *window,
   is_xdg_popup = is_realized_popup (window);
   is_visible = gdk_window_is_visible (window);
 
-  if (is_xdg_popup && is_visible && !impl->initial_configure_received)
+  if (is_xdg_popup &&
+      is_visible &&
+      !impl->initial_configure_received &&
+      !impl->configuring_popup)
     gdk_window_hide (window);
 
   gdk_wayland_window_configure (window, width, height, scale);
 
-  if (is_xdg_popup && is_visible && !impl->initial_configure_received)
+  if (is_xdg_popup &&
+      is_visible &&
+      !impl->initial_configure_received &&
+      !impl->configuring_popup)
     gdk_window_show (window);
 }
 
@@ -2410,9 +2420,11 @@ calculate_moved_to_rect_result (GdkWindow    *window,
   window_width = width + window->shadow_left + window->shadow_right;
   window_height = height + window->shadow_top + window->shadow_bottom;
 
+  impl->configuring_popup = TRUE;
   gdk_window_move_resize (window,
                           window_x, window_y,
                           window_width, window_height);
+  impl->configuring_popup = FALSE;
 
   calculate_popup_rect (window,
                         impl->pending_move_to_rect.rect_anchor,
@@ -3520,14 +3532,20 @@ gdk_wayland_window_focus (GdkWindow *window,
   if (!impl->display_server.gtk_surface)
     return;
 
-  /* We didn't have an event to fetch a time from, meaning we have nothing valid
-   * to send. This should rather be translated to a 'needs-attention' request or
-   * something.
-   */
   if (timestamp == GDK_CURRENT_TIME)
-    return;
+    {
+      GdkWaylandDisplay *display_wayland =
+        GDK_WAYLAND_DISPLAY (gdk_window_get_display (window));
 
-  gtk_surface1_present (impl->display_server.gtk_surface, timestamp);
+      if (display_wayland->gtk_shell_version >= 3)
+        {
+          gtk_surface1_request_focus (impl->display_server.gtk_surface,
+                                      display_wayland->startup_notification_id);
+          g_clear_pointer (&display_wayland->startup_notification_id, g_free);
+        }
+    }
+  else
+    gtk_surface1_present (impl->display_server.gtk_surface, timestamp);
 }
 
 static void
@@ -4439,6 +4457,7 @@ gdk_wayland_window_show_window_menu (GdkWindow *window,
     GDK_WAYLAND_DISPLAY (gdk_window_get_display (window));
   struct wl_seat *seat;
   GdkWaylandDevice *device;
+  GdkWindow *event_window;
   double x, y;
   uint32_t serial;
 
@@ -4458,7 +4477,14 @@ gdk_wayland_window_show_window_menu (GdkWindow *window,
 
   device = GDK_WAYLAND_DEVICE (gdk_event_get_device (event));
   seat = gdk_wayland_device_get_wl_seat (GDK_DEVICE (device));
+
   gdk_event_get_coords (event, &x, &y);
+  event_window = gdk_event_get_window (event);
+  while (gdk_window_get_window_type (event_window) != GDK_WINDOW_TOPLEVEL)
+    {
+      gdk_window_coords_to_parent (event_window, x, y, &x, &y);
+      event_window = gdk_window_get_effective_parent (event_window);
+    }
 
   serial = _gdk_wayland_device_get_implicit_grab_serial (device, event);
 

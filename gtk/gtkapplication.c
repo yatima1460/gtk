@@ -28,6 +28,8 @@
 #include <unistd.h>
 #endif
 
+#include "gdk/gdk-private.h"
+
 #include "gtkapplicationprivate.h"
 #include "gtkclipboardprivate.h"
 #include "gtkmarshalers.h"
@@ -129,6 +131,7 @@
 enum {
   WINDOW_ADDED,
   WINDOW_REMOVED,
+  QUERY_END,
   LAST_SIGNAL
 };
 
@@ -338,8 +341,6 @@ static void
 gtk_application_add_platform_data (GApplication    *application,
                                    GVariantBuilder *builder)
 {
-  const gchar *startup_id;
-
   /* This is slightly evil.
    *
    * We don't have an impl here because we're remote so we can't figure
@@ -347,11 +348,11 @@ gtk_application_add_platform_data (GApplication    *application,
    *
    * So we do all the things... which currently is just one thing.
    */
-  startup_id = getenv ("DESKTOP_STARTUP_ID");
-
-  if (startup_id && g_utf8_validate (startup_id, -1, NULL))
+  const gchar *desktop_startup_id =
+    GDK_PRIVATE_CALL (gdk_get_desktop_startup_id) ();
+  if (desktop_startup_id)
     g_variant_builder_add (builder, "{sv}", "desktop-startup-id",
-                           g_variant_new_string (startup_id));
+                           g_variant_new_string (desktop_startup_id));
 }
 
 static void
@@ -380,6 +381,9 @@ gtk_application_init (GtkApplication *application)
   application->priv->muxer = gtk_action_muxer_new ();
 
   application->priv->accels = gtk_application_accels_new ();
+
+  /* getenv now at the latest */
+  GDK_PRIVATE_CALL (gdk_get_desktop_startup_id) ();
 }
 
 static void
@@ -623,7 +627,7 @@ gtk_application_class_init (GtkApplicationClass *class)
     g_signal_new (I_("window-added"), GTK_TYPE_APPLICATION, G_SIGNAL_RUN_FIRST,
                   G_STRUCT_OFFSET (GtkApplicationClass, window_added),
                   NULL, NULL,
-                  g_cclosure_marshal_VOID__OBJECT,
+                  NULL,
                   G_TYPE_NONE, 1, GTK_TYPE_WINDOW);
 
   /**
@@ -641,9 +645,27 @@ gtk_application_class_init (GtkApplicationClass *class)
     g_signal_new (I_("window-removed"), GTK_TYPE_APPLICATION, G_SIGNAL_RUN_FIRST,
                   G_STRUCT_OFFSET (GtkApplicationClass, window_removed),
                   NULL, NULL,
-                  g_cclosure_marshal_VOID__OBJECT,
+                  NULL,
                   G_TYPE_NONE, 1, GTK_TYPE_WINDOW);
 
+  /**
+   * GtkApplication::query-end:
+   * @application: the #GtkApplication which emitted the signal
+   *
+   * Emitted when the session manager is about to end the session, only
+   * if #GtkApplication::register-session is %TRUE. Applications can
+   * connect to this signal and call gtk_application_inhibit() with
+   * %GTK_APPLICATION_INHIBIT_LOGOUT to delay the end of the session
+   * until state has been saved.
+   *
+   * Since: 3.24.8
+   */
+  gtk_application_signals[QUERY_END] =
+    g_signal_new (I_("query-end"), GTK_TYPE_APPLICATION, G_SIGNAL_RUN_FIRST,
+                  0,
+                  NULL, NULL,
+                  NULL,
+                  G_TYPE_NONE, 0);
   /**
    * GtkApplication:register-session:
    *

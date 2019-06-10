@@ -29,7 +29,8 @@ SUBDIRS=rc
 
 EXTRA_DIST += \
 	bdfcursor.c \
-	makefile.msc
+	makefile.msc \
+	meson.build
 
 libgdk_win32_la_SOURCES = \
 	gdkcursor-win32.c \
@@ -66,6 +67,8 @@ libgdk_win32_la_SOURCES = \
 	gdkwin32dnd.h \
 	gdkwin32dnd-private.h \
 	gdkwin32glcontext.h \
+	gdkwin32langnotification.c \
+	gdkwin32langnotification.h \
 	gdkwin32.h \
 	gdkwin32id.c \
 	gdkwin32keys.h \

@@ -17,6 +17,7 @@
  * License along with this library. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <AvailabilityMacros.h>
 #include "config.h"
 #import "GdkQuartzView.h"
 #include "gdkquartzwindow.h"
@@ -30,8 +31,9 @@
   if ((self = [super initWithFrame: frameRect]))
     {
       markedRange = NSMakeRange (NSNotFound, 0);
-      selectedRange = NSMakeRange (NSNotFound, 0);
+      selectedRange = NSMakeRange (0, 0);
     }
+  [self setValue: @(YES) forKey: @"postsFrameChangedNotifications"];
 
   return self;
 }
@@ -56,6 +58,16 @@
 
 -(void) keyDown: (NSEvent *) theEvent
 {
+  /* NOTE: When user press Cmd+A, interpretKeyEvents: will call noop:
+     method. When user press and hold A to show the accented char window,
+     it consumed repeating key down events for key 'A' do NOT call
+     any other method. We use this behavior to determine if this key
+     down event is filtered by interpretKeyEvents.
+  */
+
+  g_object_set_data (G_OBJECT (gdk_window), GIC_FILTER_KEY,
+                     GUINT_TO_POINTER (GIC_FILTER_FILTERED));
+
   GDK_NOTE (EVENTS, g_message ("keyDown"));
   [self interpretKeyEvents: [NSArray arrayWithObject: theEvent]];
 }
@@ -123,8 +135,8 @@
 -(void)unmarkText
 {
   GDK_NOTE (EVENTS, g_message ("unmarkText"));
-  gchar *prev_str;
-  markedRange = selectedRange = NSMakeRange (NSNotFound, 0);
+  selectedRange = NSMakeRange (0, 0);
+  markedRange = NSMakeRange (NSNotFound, 0);
 
   g_object_set_data_full (G_OBJECT (gdk_window), TIC_MARKED_TEXT, NULL, g_free);
 }
@@ -133,7 +145,6 @@
 {
   GDK_NOTE (EVENTS, g_message ("setMarkedText"));
   const char *str;
-  gchar *prev_str;
 
   if (replacementRange.location == NSNotFound)
     {
@@ -183,7 +194,6 @@
   GDK_NOTE (EVENTS, g_message ("insertText"));
   const char *str;
   NSString *string;
-  gchar *prev_str;
 
   if ([self hasMarkedText])
     [self unmarkText];
@@ -201,13 +211,24 @@
       /* discard invalid text input with Chinese input methods */
       str = "";
       [self unmarkText];
+#if MAC_OS_X_VERSION_MIN_REQUIRED < 1060
       NSInputManager *currentInputManager = [NSInputManager currentInputManager];
       [currentInputManager markedTextAbandoned:self];
+#else
+      [[NSTextInputContext currentInputContext] discardMarkedText];
+#endif
     }
   else
    {
       str = [string UTF8String];
+      selectedRange = NSMakeRange ([string length], 0);
    }
+
+  if (replacementRange.length > 0)
+    {
+      g_object_set_data (G_OBJECT (gdk_window), TIC_INSERT_TEXT_REPLACE_LEN,
+                         GINT_TO_POINTER (replacementRange.length));
+    }
 
   g_object_set_data_full (G_OBJECT (gdk_window), TIC_INSERT_TEXT, g_strdup (str), g_free);
   GDK_NOTE (EVENTS, g_message ("insertText: set %s (%p, nsview %p): %s",
@@ -535,6 +556,8 @@
 -(void)noop: (id)sender
 {
   GDK_NOTE (EVENTS, g_message ("noop"));
+  g_object_set_data (G_OBJECT (gdk_window), GIC_FILTER_KEY,
+                     GUINT_TO_POINTER (GIC_FILTER_PASSTHRU));
 }
 
 /* --------------------------------------------------------------- */
@@ -705,6 +728,9 @@
 
 -(void)setFrame: (NSRect)frame
 {
+  if (GDK_WINDOW_DESTROYED (gdk_window))
+    return;
+  
   [super setFrame: frame];
 
   if ([self window])

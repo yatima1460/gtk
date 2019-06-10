@@ -562,6 +562,8 @@ static void gtk_notebook_menu_switch_page    (GtkWidget        *widget,
 /*** GtkNotebook Menu Functions ***/
 static void gtk_notebook_menu_item_create    (GtkNotebook      *notebook,
                                               GList            *list);
+static void gtk_notebook_menu_item_recreate  (GtkNotebook      *notebook,
+                                              GList            *list);
 static void gtk_notebook_menu_label_unparent (GtkWidget        *widget,
                                               gpointer          data);
 static void gtk_notebook_menu_detacher       (GtkWidget        *widget,
@@ -1047,6 +1049,9 @@ gtk_notebook_class_init (GtkNotebookClass *class)
                   G_TYPE_NONE, 2,
                   GTK_TYPE_WIDGET,
                   G_TYPE_UINT);
+  g_signal_set_va_marshaller (notebook_signals[SWITCH_PAGE],
+                              G_TYPE_FROM_CLASS (gobject_class),
+                              _gtk_marshal_VOID__OBJECT_UINTv);
   notebook_signals[FOCUS_TAB] =
     g_signal_new (I_("focus-tab"),
                   G_TYPE_FROM_CLASS (gobject_class),
@@ -1056,6 +1061,9 @@ gtk_notebook_class_init (GtkNotebookClass *class)
                   _gtk_marshal_BOOLEAN__ENUM,
                   G_TYPE_BOOLEAN, 1,
                   GTK_TYPE_NOTEBOOK_TAB);
+  g_signal_set_va_marshaller (notebook_signals[FOCUS_TAB],
+                              G_TYPE_FROM_CLASS (gobject_class),
+                              _gtk_marshal_BOOLEAN__ENUMv);
   notebook_signals[SELECT_PAGE] =
     g_signal_new (I_("select-page"),
                   G_TYPE_FROM_CLASS (gobject_class),
@@ -1065,6 +1073,9 @@ gtk_notebook_class_init (GtkNotebookClass *class)
                   _gtk_marshal_BOOLEAN__BOOLEAN,
                   G_TYPE_BOOLEAN, 1,
                   G_TYPE_BOOLEAN);
+  g_signal_set_va_marshaller (notebook_signals[SELECT_PAGE],
+                              G_TYPE_FROM_CLASS (gobject_class),
+                              _gtk_marshal_BOOLEAN__BOOLEANv);
   notebook_signals[CHANGE_CURRENT_PAGE] =
     g_signal_new (I_("change-current-page"),
                   G_TYPE_FROM_CLASS (gobject_class),
@@ -1074,6 +1085,9 @@ gtk_notebook_class_init (GtkNotebookClass *class)
                   _gtk_marshal_BOOLEAN__INT,
                   G_TYPE_BOOLEAN, 1,
                   G_TYPE_INT);
+  g_signal_set_va_marshaller (notebook_signals[CHANGE_CURRENT_PAGE],
+                              G_TYPE_FROM_CLASS (gobject_class),
+                              _gtk_marshal_BOOLEAN__INTv);
   notebook_signals[MOVE_FOCUS_OUT] =
     g_signal_new (I_("move-focus-out"),
                   G_TYPE_FROM_CLASS (gobject_class),
@@ -1093,6 +1107,9 @@ gtk_notebook_class_init (GtkNotebookClass *class)
                   G_TYPE_BOOLEAN, 2,
                   GTK_TYPE_DIRECTION_TYPE,
                   G_TYPE_BOOLEAN);
+  g_signal_set_va_marshaller (notebook_signals[REORDER_TAB],
+                              G_TYPE_FROM_CLASS (gobject_class),
+                              _gtk_marshal_BOOLEAN__ENUM_BOOLEANv);
   /**
    * GtkNotebook::page-reordered:
    * @notebook: the #GtkNotebook
@@ -1114,6 +1131,9 @@ gtk_notebook_class_init (GtkNotebookClass *class)
                   G_TYPE_NONE, 2,
                   GTK_TYPE_WIDGET,
                   G_TYPE_UINT);
+  g_signal_set_va_marshaller (notebook_signals[PAGE_REORDERED],
+                              G_TYPE_FROM_CLASS (gobject_class),
+                              _gtk_marshal_VOID__OBJECT_UINTv);
   /**
    * GtkNotebook::page-removed:
    * @notebook: the #GtkNotebook
@@ -1135,6 +1155,9 @@ gtk_notebook_class_init (GtkNotebookClass *class)
                   G_TYPE_NONE, 2,
                   GTK_TYPE_WIDGET,
                   G_TYPE_UINT);
+  g_signal_set_va_marshaller (notebook_signals[PAGE_REMOVED],
+                              G_TYPE_FROM_CLASS (gobject_class),
+                              _gtk_marshal_VOID__OBJECT_UINTv);
   /**
    * GtkNotebook::page-added:
    * @notebook: the #GtkNotebook
@@ -1156,6 +1179,9 @@ gtk_notebook_class_init (GtkNotebookClass *class)
                   G_TYPE_NONE, 2,
                   GTK_TYPE_WIDGET,
                   G_TYPE_UINT);
+  g_signal_set_va_marshaller (notebook_signals[PAGE_ADDED],
+                              G_TYPE_FROM_CLASS (gobject_class),
+                              _gtk_marshal_VOID__OBJECT_UINTv);
 
   /**
    * GtkNotebook::create-window:
@@ -1187,6 +1213,9 @@ gtk_notebook_class_init (GtkNotebookClass *class)
                   _gtk_marshal_OBJECT__OBJECT_INT_INT,
                   GTK_TYPE_NOTEBOOK, 3,
                   GTK_TYPE_WIDGET, G_TYPE_INT, G_TYPE_INT);
+  g_signal_set_va_marshaller (notebook_signals[CREATE_WINDOW],
+                              G_TYPE_FROM_CLASS (gobject_class),
+                              _gtk_marshal_OBJECT__OBJECT_INT_INTv);
 
   binding_set = gtk_binding_set_by_class (class);
   gtk_binding_entry_add_signal (binding_set,
@@ -6335,6 +6364,7 @@ gtk_notebook_menu_switch_page (GtkWidget       *widget,
 /* Private GtkNotebook Menu Functions:
  *
  * gtk_notebook_menu_item_create
+ * gtk_notebook_menu_item_recreate
  * gtk_notebook_menu_label_unparent
  * gtk_notebook_menu_detacher
  */
@@ -6366,6 +6396,19 @@ gtk_notebook_menu_item_create (GtkNotebook *notebook,
                     G_CALLBACK (gtk_notebook_menu_switch_page), page);
   if (gtk_widget_get_visible (page->child))
     gtk_widget_show (menu_item);
+}
+
+static void
+gtk_notebook_menu_item_recreate (GtkNotebook *notebook,
+                                 GList       *list)
+{
+  GtkNotebookPrivate *priv = notebook->priv;
+  GtkNotebookPage *page = list->data;
+  GtkWidget *menu_item = gtk_widget_get_parent (page->menu_label);
+
+  gtk_container_remove (GTK_CONTAINER (menu_item), page->menu_label);
+  gtk_container_remove (GTK_CONTAINER (priv->menu), menu_item);
+  gtk_notebook_menu_item_create (notebook, list);
 }
 
 static void
@@ -7363,7 +7406,6 @@ gtk_notebook_set_tab_label (GtkNotebook *notebook,
   if (page->tab_label == tab_label)
     return;
 
-
   gtk_notebook_remove_tab_label (notebook, page);
 
   if (tab_label)
@@ -7405,6 +7447,9 @@ gtk_notebook_set_tab_label (GtkNotebook *notebook,
       gtk_widget_queue_resize (GTK_WIDGET (notebook));
     }
 
+  if (priv->menu)
+    gtk_notebook_menu_item_recreate (notebook, list);
+
   gtk_widget_child_notify (child, "tab-label");
 }
 
@@ -7429,7 +7474,6 @@ gtk_notebook_set_tab_label_text (GtkNotebook *notebook,
   if (tab_text)
     tab_label = gtk_label_new (tab_text);
   gtk_notebook_set_tab_label (notebook, child, tab_label);
-  gtk_widget_child_notify (child, "tab-label");
 }
 
 /**
@@ -7610,14 +7654,7 @@ gtk_notebook_child_reordered (GtkNotebook     *notebook,
   list = g_list_find (priv->children, page);
 
   if (priv->menu)
-    {
-      GtkWidget *menu_item;
-
-      menu_item = gtk_widget_get_parent (page->menu_label);
-      gtk_container_remove (GTK_CONTAINER (menu_item), page->menu_label);
-      gtk_container_remove (GTK_CONTAINER (priv->menu), menu_item);
-      gtk_notebook_menu_item_create (notebook, list);
-    }
+    gtk_notebook_menu_item_recreate (notebook, list);
 
   if (list->prev)
     sibling = gtk_css_gadget_get_node (GTK_NOTEBOOK_PAGE (list->prev)->gadget);

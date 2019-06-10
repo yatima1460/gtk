@@ -382,6 +382,9 @@ gdk_window_class_init (GdkWindowClass *klass)
 		  2,
 		  G_TYPE_DOUBLE,
 		  G_TYPE_DOUBLE);
+  g_signal_set_va_marshaller (signals[PICK_EMBEDDED_CHILD],
+                              G_OBJECT_CLASS_TYPE (object_class),
+                              _gdk_marshal_OBJECT__DOUBLE_DOUBLEv);
 
   /**
    * GdkWindow::to-embedder:
@@ -413,6 +416,9 @@ gdk_window_class_init (GdkWindowClass *klass)
 		  G_TYPE_DOUBLE,
 		  G_TYPE_POINTER,
 		  G_TYPE_POINTER);
+  g_signal_set_va_marshaller (signals[TO_EMBEDDER],
+                              G_OBJECT_CLASS_TYPE (object_class),
+                              _gdk_marshal_VOID__DOUBLE_DOUBLE_POINTER_POINTERv);
 
   /**
    * GdkWindow::from-embedder:
@@ -444,6 +450,9 @@ gdk_window_class_init (GdkWindowClass *klass)
 		  G_TYPE_DOUBLE,
 		  G_TYPE_POINTER,
 		  G_TYPE_POINTER);
+  g_signal_set_va_marshaller (signals[FROM_EMBEDDER],
+                              G_OBJECT_CLASS_TYPE (object_class),
+                              _gdk_marshal_VOID__DOUBLE_DOUBLE_POINTER_POINTERv);
 
   /**
    * GdkWindow::create-surface:
@@ -477,6 +486,9 @@ gdk_window_class_init (GdkWindowClass *klass)
                   2,
                   G_TYPE_INT,
                   G_TYPE_INT);
+  g_signal_set_va_marshaller (signals[CREATE_SURFACE],
+                              G_OBJECT_CLASS_TYPE (object_class),
+                              _gdk_marshal_BOXED__INT_INTv);
 
   /**
    * GdkWindow::moved-to-rect:
@@ -517,6 +529,9 @@ gdk_window_class_init (GdkWindowClass *klass)
                   G_TYPE_POINTER,
                   G_TYPE_BOOLEAN,
                   G_TYPE_BOOLEAN);
+  g_signal_set_va_marshaller (signals[MOVED_TO_RECT],
+                              G_OBJECT_CLASS_TYPE (object_class),
+                              _gdk_marshal_VOID__POINTER_POINTER_BOOLEAN_BOOLEANv);
 }
 
 static void
@@ -6442,8 +6457,9 @@ G_GNUC_END_IGNORE_DEPRECATIONS
  *
  * Sets the background of @window.
  *
- * A background of %NULL means that the window will inherit its
- * background from its parent window.
+ * A background of %NULL means that the window won't have any background. On the
+ * X11 backend it's also possible to inherit the background from the parent
+ * window using gdk_x11_get_parent_relative_pattern().
  *
  * The windowing system will normally fill a window with its background
  * when the window is obscured then exposed.
@@ -6478,12 +6494,10 @@ gdk_window_set_background_pattern (GdkWindow       *window,
  * gdk_window_get_background_pattern:
  * @window: a window
  *
- * Gets the pattern used to clear the background on @window. If @window
- * does not have its own background and reuses the parent's, %NULL is
- * returned and you’ll have to query it yourself.
+ * Gets the pattern used to clear the background on @window.
  *
  * Returns: (nullable) (transfer none): The pattern to use for the
- * background or %NULL to use the parent’s background.
+ * background or %NULL if there is no background.
  *
  * Since: 2.22
  *
@@ -10276,7 +10290,7 @@ gdk_window_create_similar_image_surface (GdkWindow *     window,
  * @window: a #GdkWindow
  * @timestamp: timestamp of the event triggering the window focus
  *
- * Sets keyboard focus to @window. In most cases, gtk_window_present()
+ * Sets keyboard focus to @window. In most cases, gtk_window_present_with_time()
  * should be used on a #GtkWindow, rather than calling this function.
  *
  **/
@@ -10501,7 +10515,10 @@ void
 gdk_window_set_startup_id (GdkWindow   *window,
 			   const gchar *startup_id)
 {
-  GDK_WINDOW_IMPL_GET_CLASS (window->impl)->set_startup_id (window, startup_id);
+  GdkWindowImplClass *klass = GDK_WINDOW_IMPL_GET_CLASS (window->impl);
+
+  if (klass->set_startup_id)
+    klass->set_startup_id (window, startup_id);
 }
 
 /**
@@ -10750,7 +10767,7 @@ gdk_window_iconify (GdkWindow *window)
  * Attempt to deiconify (unminimize) @window. On X11 the window manager may
  * choose to ignore the request to deiconify. When using GTK+,
  * use gtk_window_deiconify() instead of the #GdkWindow variant. Or better yet,
- * you probably want to use gtk_window_present(), which raises the window, focuses it,
+ * you probably want to use gtk_window_present_with_time(), which raises the window, focuses it,
  * unminimizes it, and puts it on the current desktop.
  *
  **/

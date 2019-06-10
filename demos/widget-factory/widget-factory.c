@@ -211,15 +211,15 @@ activate_about (GSimpleAction *action,
                              gtk_get_micro_version ());
 
   gtk_show_about_dialog (GTK_WINDOW (gtk_application_get_active_window (app)),
-                         "program-name", "GTK+ Widget Factory",
+                         "program-name", "GTK Widget Factory",
                          "version", version,
-                         "copyright", "(C) 1997-2013 The GTK+ Team",
+                         "copyright", "© 1997—2019 The GTK Team",
                          "license-type", GTK_LICENSE_LGPL_2_1,
                          "website", "http://www.gtk.org",
-                         "comments", "Program to demonstrate GTK+ themes and widgets",
+                         "comments", "Program to demonstrate GTK themes and widgets",
                          "authors", authors,
                          "logo-icon-name", "gtk3-widget-factory",
-                         "title", "About GTK+ Widget Factory",
+                         "title", "About GTK Widget Factory",
                          NULL);
 
   g_free (version);
@@ -244,6 +244,14 @@ activate_quit (GSimpleAction *action,
 
       list = next;
     }
+}
+
+static void
+activate_inspector (GSimpleAction *action,
+                    GVariant      *parameter,
+                    gpointer       user_data)
+{
+  gtk_window_set_interactive_debugging (TRUE);
 }
 
 static void
@@ -1968,6 +1976,7 @@ main (int argc, char *argv[])
   static GActionEntry app_entries[] = {
     { "about", activate_about, NULL, NULL, NULL },
     { "quit", activate_quit, NULL, NULL, NULL },
+    { "inspector", activate_inspector, NULL, NULL, NULL },
     { "main", NULL, "s", "'steak'", NULL },
     { "wine", NULL, NULL, "false", NULL },
     { "beer", NULL, NULL, "false", NULL },

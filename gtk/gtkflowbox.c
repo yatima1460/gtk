@@ -297,6 +297,9 @@ gtk_flow_box_child_set_focus (GtkFlowBoxChild *child)
   gboolean modify;
   gboolean extend;
 
+  if (box == NULL)
+    return;
+
   get_current_selection_modifiers (GTK_WIDGET (box), &modify, &extend);
 
   if (modify)
@@ -628,7 +631,7 @@ gtk_flow_box_child_class_init (GtkFlowBoxChildClass *class)
                   G_SIGNAL_RUN_FIRST | G_SIGNAL_ACTION,
                   G_STRUCT_OFFSET (GtkFlowBoxChildClass, activate),
                   NULL, NULL,
-                  g_cclosure_marshal_VOID__VOID,
+                  NULL,
                   G_TYPE_NONE, 0);
   widget_class->activate_signal = child_signals[CHILD_ACTIVATE];
 
@@ -640,7 +643,6 @@ static void
 gtk_flow_box_child_init (GtkFlowBoxChild *child)
 {
   gtk_widget_set_can_focus (GTK_WIDGET (child), TRUE);
-  gtk_widget_set_redraw_on_allocate (GTK_WIDGET (child), TRUE);
 
   CHILD_PRIV (child)->gadget = gtk_css_custom_gadget_new_for_node (gtk_widget_get_css_node (GTK_WIDGET (child)),
                                                      GTK_WIDGET (child),
@@ -3032,13 +3034,16 @@ gtk_flow_box_multipress_gesture_pressed (GtkGestureMultiPress *gesture,
   if (n_press != 1)
     gtk_gesture_set_state (priv->drag_gesture, GTK_EVENT_SEQUENCE_DENIED);
 
-  gtk_gesture_set_state (GTK_GESTURE (gesture), GTK_EVENT_SEQUENCE_CLAIMED);
   priv->active_child = child;
   priv->active_child_active = TRUE;
   gtk_widget_queue_draw (GTK_WIDGET (box));
 
   if (n_press == 2 && !priv->activate_on_single_click)
-    g_signal_emit (box, signals[CHILD_ACTIVATED], 0, child);
+    {
+      gtk_gesture_set_state (GTK_GESTURE (gesture),
+                             GTK_EVENT_SEQUENCE_CLAIMED);
+      g_signal_emit (box, signals[CHILD_ACTIVATED], 0, child);
+    }
 }
 
 static void
@@ -3052,6 +3057,9 @@ gtk_flow_box_multipress_gesture_released (GtkGestureMultiPress *gesture,
 
   if (priv->active_child != NULL && priv->active_child_active)
     {
+      gtk_gesture_set_state (GTK_GESTURE (gesture),
+                             GTK_EVENT_SEQUENCE_CLAIMED);
+
       if (priv->activate_on_single_click)
         gtk_flow_box_select_and_activate (box, priv->active_child);
       else
@@ -3872,7 +3880,7 @@ gtk_flow_box_class_init (GtkFlowBoxClass *class)
                        P_("Maximum Children Per Line"),
                        P_("The maximum amount of children to request space for "
                           "consecutively in the given orientation."),
-                       0, G_MAXUINT, DEFAULT_MAX_CHILDREN_PER_LINE,
+                       1, G_MAXUINT, DEFAULT_MAX_CHILDREN_PER_LINE,
                        G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY);
 
   /**
@@ -3914,7 +3922,7 @@ gtk_flow_box_class_init (GtkFlowBoxClass *class)
                                            G_SIGNAL_RUN_LAST,
                                            G_STRUCT_OFFSET (GtkFlowBoxClass, child_activated),
                                            NULL, NULL,
-                                           g_cclosure_marshal_VOID__OBJECT,
+                                           NULL,
                                            G_TYPE_NONE, 1,
                                            GTK_TYPE_FLOW_BOX_CHILD);
 
@@ -3934,7 +3942,7 @@ gtk_flow_box_class_init (GtkFlowBoxClass *class)
                                                      G_SIGNAL_RUN_FIRST,
                                                      G_STRUCT_OFFSET (GtkFlowBoxClass, selected_children_changed),
                                                      NULL, NULL,
-                                                     g_cclosure_marshal_VOID__VOID,
+                                                     NULL,
                                                      G_TYPE_NONE, 0);
 
   /**
@@ -3950,7 +3958,7 @@ gtk_flow_box_class_init (GtkFlowBoxClass *class)
                                                  G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
                                                  G_STRUCT_OFFSET (GtkFlowBoxClass, activate_cursor_child),
                                                  NULL, NULL,
-                                                 g_cclosure_marshal_VOID__VOID,
+                                                 NULL,
                                                  G_TYPE_NONE, 0);
 
   /**
@@ -3968,7 +3976,7 @@ gtk_flow_box_class_init (GtkFlowBoxClass *class)
                                                G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
                                                G_STRUCT_OFFSET (GtkFlowBoxClass, toggle_cursor_child),
                                                NULL, NULL,
-                                               g_cclosure_marshal_VOID__VOID,
+                                               NULL,
                                                G_TYPE_NONE, 0);
 
   /**
@@ -4004,6 +4012,9 @@ gtk_flow_box_class_init (GtkFlowBoxClass *class)
                                        _gtk_marshal_BOOLEAN__ENUM_INT,
                                        G_TYPE_BOOLEAN, 2,
                                        GTK_TYPE_MOVEMENT_STEP, G_TYPE_INT);
+  g_signal_set_va_marshaller (signals[MOVE_CURSOR],
+                              G_TYPE_FROM_CLASS (class),
+                              _gtk_marshal_BOOLEAN__ENUM_INTv);
   /**
    * GtkFlowBox::select-all:
    * @box: the #GtkFlowBox on which the signal is emitted
@@ -4020,7 +4031,7 @@ gtk_flow_box_class_init (GtkFlowBoxClass *class)
                                       G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
                                       G_STRUCT_OFFSET (GtkFlowBoxClass, select_all),
                                       NULL, NULL,
-                                      g_cclosure_marshal_VOID__VOID,
+                                      NULL,
                                       G_TYPE_NONE, 0);
 
   /**
@@ -4039,7 +4050,7 @@ gtk_flow_box_class_init (GtkFlowBoxClass *class)
                                         G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
                                         G_STRUCT_OFFSET (GtkFlowBoxClass, unselect_all),
                                         NULL, NULL,
-                                        g_cclosure_marshal_VOID__VOID,
+                                        NULL,
                                         G_TYPE_NONE, 0);
 
   widget_class->activate_signal = signals[ACTIVATE_CURSOR_CHILD];
@@ -4100,7 +4111,6 @@ gtk_flow_box_init (GtkFlowBox *box)
   GtkCssNode *widget_node;
 
   gtk_widget_set_has_window (GTK_WIDGET (box), TRUE);
-  gtk_widget_set_redraw_on_allocate (GTK_WIDGET (box), TRUE);
 
   priv->orientation = GTK_ORIENTATION_HORIZONTAL;
   priv->selection_mode = GTK_SELECTION_SINGLE;
@@ -4708,6 +4718,7 @@ gtk_flow_box_set_max_children_per_line (GtkFlowBox *box,
                                         guint       n_children)
 {
   g_return_if_fail (GTK_IS_FLOW_BOX (box));
+  g_return_if_fail (n_children > 0);
 
   if (BOX_PRIV (box)->max_children_per_line != n_children)
     {

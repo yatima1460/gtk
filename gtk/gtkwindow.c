@@ -262,6 +262,10 @@ struct _GtkWindowPrivate
   guint    maximized                 : 1;
   guint    fullscreen                : 1;
   guint    tiled                     : 1;
+  guint    unlimited_guessed_size_x  : 1;
+  guint    unlimited_guessed_size_y  : 1;
+  guint    force_resize              : 1;
+  guint    fixate_size               : 1;
 
   guint    use_subsurface            : 1;
 
@@ -470,7 +474,6 @@ static GdkScreen *gtk_window_check_screen (GtkWindow *window);
 static GtkWindowGeometryInfo* gtk_window_get_geometry_info         (GtkWindow    *window,
                                                                     gboolean      create);
 
-static void     gtk_window_move_resize               (GtkWindow    *window);
 static gboolean gtk_window_compare_hints             (GdkGeometry  *geometry_a,
                                                       guint         flags_a,
                                                       GdkGeometry  *geometry_b,
@@ -547,6 +550,10 @@ static void gtk_window_get_preferred_height_for_width (GtkWidget *widget,
 static void gtk_window_style_updated (GtkWidget     *widget);
 static void gtk_window_state_flags_changed (GtkWidget     *widget,
                                             GtkStateFlags  previous_state);
+
+static void gtk_window_get_remembered_size (GtkWindow *window,
+                                            int       *width,
+                                            int       *height);
 
 static GSList      *toplevel_list = NULL;
 static guint        window_signals[LAST_SIGNAL] = { 0 };
@@ -3341,6 +3348,8 @@ gtk_window_set_transient_for  (GtkWindow *window,
     }
 
   update_window_buttons (window);
+
+  g_object_notify_by_pspec (G_OBJECT (window), window_props[PROP_TRANSIENT_FOR]);
 }
 
 /**
@@ -6431,6 +6440,8 @@ gtk_window_unmap (GtkWidget *widget)
    */
   priv->need_default_position = TRUE;
 
+  priv->fixate_size = FALSE;
+
   info = gtk_window_get_geometry_info (window, FALSE);
   if (info)
     {
@@ -6451,6 +6462,33 @@ gtk_window_unmap (GtkWidget *widget)
   child = gtk_bin_get_child (&(window->bin));
   if (child != NULL)
     gtk_widget_unmap (child);
+}
+
+void
+gtk_window_set_unlimited_guessed_size (GtkWindow *window,
+                                       gboolean   x,
+                                       gboolean   y)
+{
+  GtkWindowPrivate *priv = window->priv;
+
+  priv->unlimited_guessed_size_x = x;
+  priv->unlimited_guessed_size_y = y;
+}
+
+void
+gtk_window_force_resize (GtkWindow *window)
+{
+  GtkWindowPrivate *priv = window->priv;
+
+  priv->force_resize = TRUE;
+}
+
+void
+gtk_window_fixate_size (GtkWindow *window)
+{
+  GtkWindowPrivate *priv = window->priv;
+
+  priv->fixate_size = TRUE;
 }
 
 /* (Note: Replace "size" with "width" or "height". Also, the request
@@ -6484,6 +6522,13 @@ gtk_window_guess_default_size (GtkWindow *window,
   display = gtk_widget_get_display (widget);
   gdkwindow = _gtk_widget_get_window (widget);
 
+  if (window->priv->fixate_size)
+    {
+      g_assert (gdkwindow);
+      gtk_window_get_remembered_size (window, width, height);
+      return;
+    }
+
   if (gdkwindow)
     monitor = gdk_display_get_monitor_at_window (display, gdkwindow);
   else
@@ -6491,8 +6536,15 @@ gtk_window_guess_default_size (GtkWindow *window,
 
   gdk_monitor_get_workarea (monitor, &workarea);
 
-  *width = workarea.width;
-  *height = workarea.height;
+  if (window->priv->unlimited_guessed_size_x)
+    *width = INT_MAX;
+  else
+    *width = workarea.width;
+
+  if (window->priv->unlimited_guessed_size_y)
+    *height = INT_MAX;
+  else
+    *height = workarea.height;
 
   if (gtk_widget_get_request_mode (widget) == GTK_SIZE_REQUEST_WIDTH_FOR_HEIGHT)
     {
@@ -9362,7 +9414,8 @@ gtk_window_compute_configure_request_size (GtkWindow   *window,
   
   info = gtk_window_get_geometry_info (window, FALSE);
 
-  if (priv->need_default_size)
+  if (priv->need_default_size ||
+      priv->force_resize)
     {
       gtk_window_guess_default_size (window, width, height);
       gtk_window_get_remembered_size (window, &w, &h);
@@ -9697,7 +9750,7 @@ gtk_window_constrain_position (GtkWindow    *window,
     }
 }
 
-static void
+void
 gtk_window_move_resize (GtkWindow *window)
 {
   /* Overview:
@@ -9767,9 +9820,13 @@ gtk_window_move_resize (GtkWindow *window)
       info->last.configure_request.y != new_request.y)
     configure_request_pos_changed = TRUE;
 
-  if ((info->last.configure_request.width != new_request.width ||
+  if (priv->force_resize ||
+      (info->last.configure_request.width != new_request.width ||
        info->last.configure_request.height != new_request.height))
-    configure_request_size_changed = TRUE;
+    {
+      priv->force_resize = FALSE;
+      configure_request_size_changed = TRUE;
+    }
   
   hints_changed = FALSE;
   
@@ -10426,23 +10483,9 @@ gtk_window_draw (GtkWidget *widget,
  * gtk_window_present:
  * @window: a #GtkWindow
  *
- * Presents a window to the user. This may mean raising the window
- * in the stacking order, deiconifying it, moving it to the current
- * desktop, and/or giving it the keyboard focus, possibly dependent
- * on the user’s platform, window manager, and preferences.
- *
- * If @window is hidden, this function calls gtk_widget_show()
- * as well.
- * 
- * This function should be used when the user tries to open a window
- * that’s already open. Say for example the preferences dialog is
- * currently open, and the user chooses Preferences from the menu
- * a second time; use gtk_window_present() to move the already-open dialog
- * where the user can see it.
- *
- * If you are calling this function in response to a user interaction,
- * it is preferable to use gtk_window_present_with_time().
- * 
+ * Presents a window to the user. This function should not be used
+ * as when it is called, it is too late to gather a valid timestamp
+ * to allow focus stealing prevention to work correctly.
  **/
 void
 gtk_window_present (GtkWindow *window)
@@ -10456,10 +10499,25 @@ gtk_window_present (GtkWindow *window)
  * @timestamp: the timestamp of the user interaction (typically a 
  *   button or key press event) which triggered this call
  *
- * Presents a window to the user in response to a user interaction.
- * If you need to present a window without a timestamp, use 
- * gtk_window_present(). See gtk_window_present() for details. 
- * 
+ * Presents a window to the user. This may mean raising the window
+ * in the stacking order, deiconifying it, moving it to the current
+ * desktop, and/or giving it the keyboard focus, possibly dependent
+ * on the user’s platform, window manager, and preferences.
+ *
+ * If @window is hidden, this function calls gtk_widget_show()
+ * as well.
+ *
+ * This function should be used when the user tries to open a window
+ * that’s already open. Say for example the preferences dialog is
+ * currently open, and the user chooses Preferences from the menu
+ * a second time; use gtk_window_present() to move the already-open dialog
+ * where the user can see it.
+ *
+ * Presents a window to the user in response to a user interaction. The
+ * timestamp should be gathered when the window was requested to be shown
+ * (when clicking a link for example), rather than once the window is
+ * ready to be shown.
+ *
  * Since: 2.8
  **/
 void
@@ -12730,7 +12788,9 @@ gtk_window_set_debugging (gboolean enable,
 
   if (enable)
     {
+      G_GNUC_BEGIN_IGNORE_DEPRECATIONS
       gtk_window_present (GTK_WINDOW (inspector_window));
+      G_GNUC_END_IGNORE_DEPRECATIONS
       if (dialog)
         gtk_widget_show (dialog);
 

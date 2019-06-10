@@ -24,6 +24,7 @@
 
 #include "config.h"
 
+#define GDK_DISABLE_DEPRECATION_WARNINGS
 #include "gtkcontainer.h"
 #include "gtkcontainerprivate.h"
 
@@ -2455,6 +2456,8 @@ gtk_container_forall (GtkContainer *container,
  * should iterate over precisely those child widgets that were
  * added to the container by the application with explicit add()
  * calls.
+ *
+ * It is permissible to remove the child from the @callback handler.
  *
  * Most applications should use gtk_container_foreach(),
  * rather than gtk_container_forall().

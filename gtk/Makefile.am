@@ -30,7 +30,6 @@ AM_CPPFLAGS =						\
 	-I$(top_srcdir)/gdk				\
 	$(GMODULE_CFLAGS)				\
 	$(GTK_DEBUG_FLAGS)				\
-	$(GDK_HIDDEN_VISIBILITY_CFLAGS)			\
 	$(GTK_DEP_CFLAGS)				\
 	$(INCLUDED_IMMODULE_DEFINE)
 
@@ -1106,7 +1105,6 @@ gtk_use_quartz_private_h_sources = 	\
 	gtkquartz.h
 if USE_QUARTZ
 gtk_c_sources += $(gtk_use_quartz_c_sources)
-libgtk_3_la_CFLAGS = "-xobjective-c"
 gtk_private_h_sources += $(gtk_use_quartz_private_h_sources)
 endif
 
@@ -1179,7 +1177,7 @@ MAINTAINERCLEANFILES = \
 	$(print_portal_built_sources)		\
 	$(stamp_files)
 
-DISTCLEANFILES =
+DISTCLEANFILES = gtktypefuncs.inc
 
 if OS_WIN32
 DISTCLEANFILES += gtk-win32.rc
@@ -1336,6 +1334,15 @@ gtk.gresource.xml: Makefile.am inspector/Makefile.inc
 	    done; \
 	  done; \
 	done; \
+	for s in scalable; do \
+	  for c in status; do \
+	    for f in $(srcdir)/icons/$$s/$$c/*.svg; do \
+	      test "$$f" = "$(srcdir)/icons/$$s/$$c/*.svg" && continue; \
+	      n=`basename $$f`; \
+	      echo "    <file>icons/$$s/$$c/$$n</file>" >> $@; \
+	    done; \
+	  done; \
+	done; \
 	for f in $(srcdir)/inspector/*.ui; do \
 	  n=`basename $$f`; \
 	  echo "    <file compressed='true' preprocess='xml-stripblanks'>inspector/$$n</file>" >> $@; \
@@ -1435,15 +1442,16 @@ gtkprivatetypebuiltins.c: $(gtk_private_type_h_sources)  gtkprivatetypebuiltins.
 	&& rm -f xgen-gptbc
 
 
-gtktypefuncs.c: stamp-gtktypebuiltins.h stamp-gtkprivatetypebuiltins.h $(top_srcdir)/gtk/*.h $(top_srcdir)/gtk/a11y/*.h $(top_srcdir)/gtk/deprecated/*.h $(top_srcdir)/gdk/*.h Makefile
-	$(AM_V_GEN) (echo '#undef GTK_COMPILATION' && echo '#include <gtk/gtkx.h>') > xgen-gtfsrc.c && \
+gtktypefuncs.inc: stamp-gtktypebuiltins.h stamp-gtkprivatetypebuiltins.h $(top_srcdir)/gtk/*.h $(top_srcdir)/gtk/a11y/*.h $(top_srcdir)/gtk/deprecated/*.h $(top_srcdir)/gdk/*.h Makefile
+	$(AM_V_GEN) export LC_ALL=C ; \
+	  (echo '#undef GTK_COMPILATION' && echo '#include <gtk/gtkx.h>') > xgen-gtfsrc.c && \
 	  echo 'G_GNUC_BEGIN_IGNORE_DEPRECATIONS' > xgen-gtf && \
 	  ${CPP} $(DEFS) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) xgen-gtfsrc.c | \
 	  $(GREP) -o '\bg[td]k_[a-zA-Z0-9_]*_get_type\b' | \
 	  sort | uniq | \
 	  $(SED) '{ s/^/*tp++ = /; s/$$/();/; s/^.*\(gdk_x11\|gtk_plug_\|gtk_socket_\).*$$/#ifdef GDK_WINDOWING_X11\n&\n#endif/; }' >> xgen-gtf \
 	&& cp xgen-gtf $@ && rm -f xgen-gtf
-$(srcdir)/gtktestutils.c: gtktypefuncs.c
+$(srcdir)/gtktestutils.c: gtktypefuncs.inc
 
 # target platform:
 lib_LTLIBRARIES = libgtk-3.la
@@ -1462,9 +1470,14 @@ gtkunixprintinclude_HEADERS = $(gtk_unix_print_public_h_sources)
 
 nodist_libgtk_3_la_SOURCES = $(nodist_gtk_c_sources)
 libgtk_3_la_SOURCES = $(gtk_c_sources)
+libgtk_3_la_CFLAGS = $(AM_CFLAGS) $(GDK_HIDDEN_VISIBILITY_CFLAGS)
 libgtk_3_la_LDFLAGS = $(libtool_opts)
 libgtk_3_la_LIBADD = $(libadd)
 libgtk_3_la_DEPENDENCIES = $(deps)
+
+if USE_QUARTZ
+libgtk_3_la_CFLAGS += "-xobjective-c"
+endif
 
 if USE_WIN32
 libgtk_3_la_LIBADD += -lole32 -lgdi32 -lcomdlg32 -lwinspool -lcomctl32
@@ -1551,7 +1564,7 @@ Gtk_3_0_gir_MSVC_EXPORT_PACKAGES = $(Gtk_3_0_gir_EXPORT_PACKAGES)
 Gtk_3_0_gir_MSVC_INCLUDE_GIRS = Atk-1.0
 Gtk_3_0_gir_MSVC_LIBS = gtk-3.0 gdk-3.0
 Gtk_3_0_gir_MSVC_CFLAGS = $(GTK_MSVC_GIR_CFLAGS)
-Gtk_3_0_gir_MSVC_SCANNERFLAGS = --warn-all --add-include-path=. --include-uninstalled=./Gdk-3.0.gir
+Gtk_3_0_gir_MSVC_SCANNERFLAGS = --warn-all --include-uninstalled='./vs$$$$(VSVER)/$$$$(CFG)/$$$$(PLAT)/bin/Gdk-3.0.gir'
 
 include $(top_srcdir)/build/Makefile.msvc-introspection
 
@@ -1711,7 +1724,7 @@ $(GTK_UPDATE_ICON_CACHE_MANIFEST):
 	 echo '</assembly>' ) >$@
 
 $(GTK_UPDATE_ICON_CACHE_RC):
-	(echo 'CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST '$(GTK_UPDATE_ICON_CACHE_MANIFEST)) >$@
+	(echo -e '#include <winuser.h>\nCREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST '$(GTK_UPDATE_ICON_CACHE_MANIFEST)) >$@
 
 $(GTK_UPDATE_ICON_CACHE_MANIFEST_OBJECT): $(GTK_UPDATE_ICON_CACHE_RC) $(GTK_UPDATE_ICON_CACHE_MANIFEST)
 	$(WINDRES) --input $< --output $@ --output-format=coff
@@ -1763,6 +1776,16 @@ EXTRA_DIST +=                   \
 	gtktypebuiltins.c.template \
 	gtktypebuiltins.h.template \
 	gtkprivatetypebuiltins.c.template \
-	gtkprivatetypebuiltins.h.template
+	gtkprivatetypebuiltins.h.template \
+	meson.build \
+	gen-gtk-gresources-xml.py \
+	gen-rc.py \
+	gentypefuncs.py \
+	a11y/meson.build \
+	deprecated/meson.build \
+	inspector/meson.build \
+	theme/Adwaita/meson.build \
+	theme/HighContrast/meson.build
+
 
 -include $(top_srcdir)/git.mk
